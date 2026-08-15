@@ -91,6 +91,16 @@ Memory:
 | Frame arena | 8 MB per buffer, two buffers |
 | Editor resident set | 300 MB |
 
+## Known costs, deliberately carried for now
+
+* **The viewport traces at window resolution, not panel resolution.** In the editor the
+  panel is a fraction of the window, so a small viewport currently costs as much as a
+  full-screen one — exactly backwards. Fixing this is the next item in M21 and is worth
+  more than any micro-optimisation on the list.
+* **Two full-screen passes to present in game mode**: the tracer writes the present
+  texture, then a compute copy moves it to the drawable. The copy exists so screenshots
+  capture what the screen shows. It can be collapsed into one pass when not capturing.
+
 ## Rules that keep the budgets
 
 1. **No allocation in the frame loop.** Per-frame scratch comes from the arena, which is

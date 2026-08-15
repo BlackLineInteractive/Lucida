@@ -223,6 +223,18 @@ The lesson is worth keeping: the offscreen readback used for verification never 
 the drawable, so `--bench --shot` produced correct images for a renderer that displayed
 nothing. A test that does not exercise the presentation path does not test presentation.
 
+### Fixed: driver crash on the present blit
+
+Moving the presented image to the drawable with the whole-texture
+`copyFromTexture:toTexture:` crashed inside the AMD Metal driver. That convenience form
+requires identical dimensions, formats *and* mip counts, and when they differ it does
+not report an error — it dereferences. The compute copy that replaced it makes no such
+demand and samples across any size difference, which is also what the renderer already
+relied on before a present texture existed.
+
+Worth remembering as a rule: prefer the operation that degrades to a wrong image over
+the one that degrades to a crash in someone else's code.
+
 ### Two more assumptions M7 removed
 
 Both were invisible until the scene became data and something contradicted them:
