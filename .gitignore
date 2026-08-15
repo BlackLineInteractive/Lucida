@@ -20,6 +20,9 @@ external/
 *.png
 !docs/**/*.png
 
+# Private notes — never published
+private/
+
 # Editor / OS
 .DS_Store
 .vscode/
