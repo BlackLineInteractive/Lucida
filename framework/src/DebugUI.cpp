@@ -57,7 +57,7 @@ void DebugUI::Shutdown() { ImGui::DestroyContext(); }
 
 void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
                     const RenderStats& stats, CameraController& camera,
-                    const FrameTime& time) {
+                    const FrameTime& time, void* viewport_texture, f32 viewport_aspect) {
     ImGui::NewFrame();
 
     if (!ui.show_menu) {
@@ -75,6 +75,7 @@ void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
                                  ImGuiDockNodeFlags_PassthruCentralNode);
 
     DrawMenuBar(ui);
+    if (ui.show_viewport && viewport_texture) DrawViewport(ui, viewport_texture, viewport_aspect);
     if (ui.show_hierarchy) DrawHierarchy(world, ui);
     if (ui.show_inspector) DrawInspector(world, ui);
     if (ui.show_renderer)  DrawRenderer(ui, settings, camera);
@@ -107,6 +108,7 @@ void DebugUI::DrawMenuBar(UiState& ui) {
     }
 
     if (ImGui::BeginMenu("View")) {
+        ImGui::MenuItem("Viewport", nullptr, &ui.show_viewport);
         ImGui::MenuItem("Hierarchy", nullptr, &ui.show_hierarchy);
         ImGui::MenuItem("Inspector", nullptr, &ui.show_inspector);
         ImGui::MenuItem("Renderer", nullptr, &ui.show_renderer);
@@ -128,6 +130,31 @@ void DebugUI::DrawMenuBar(UiState& ui) {
     }
 
     ImGui::EndMainMenuBar();
+}
+
+void DebugUI::DrawViewport(UiState& ui, void* texture, f32 aspect) {
+    // No padding: the image is the panel, and a border of window background
+    // around a rendered frame reads as a bug.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    const bool open = ImGui::Begin("Viewport", &ui.show_viewport);
+    ImGui::PopStyleVar();
+
+    if (open) {
+        // Fit the image inside the panel without stretching it. The trace still
+        // runs at window resolution; matching it to the panel is the next step
+        // and is what will make a small viewport genuinely cheaper.
+        const ImVec2 avail = ImGui::GetContentRegionAvail();
+        ImVec2 size = avail;
+        if (avail.x / avail.y > aspect) {
+            size.x = avail.y * aspect;
+        } else {
+            size.y = avail.x / aspect;
+        }
+        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + (avail.x - size.x) * 0.5f,
+                                   ImGui::GetCursorPosY() + (avail.y - size.y) * 0.5f));
+        ImGui::Image(reinterpret_cast<ImTextureID>(texture), size);
+    }
+    ImGui::End();
 }
 
 void DebugUI::DrawHierarchy(World& world, UiState& ui) {

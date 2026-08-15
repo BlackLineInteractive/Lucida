@@ -25,6 +25,7 @@ struct UiState {
     bool show_inspector = true;
     bool show_stats     = true;
     bool show_renderer  = true;
+    bool show_viewport  = true;
 
     bool request_quit       = false;
     bool request_fullscreen = false;
@@ -44,11 +45,15 @@ public:
     void Shutdown();
 
     // Between platform->OverlayNewFrame() and backend->Render().
+    // viewport_texture is the backend's presented image, or null when the
+    // renderer is drawing straight to the window.
     void Build(World& world, UiState& ui, RenderSettings& settings,
-               const RenderStats& stats, CameraController& camera, const FrameTime& time);
+               const RenderStats& stats, CameraController& camera, const FrameTime& time,
+               void* viewport_texture = nullptr, f32 viewport_aspect = 16.0f / 9.0f);
 
 private:
     void DrawMenuBar(UiState& ui);
+    void DrawViewport(UiState& ui, void* texture, f32 aspect);
     void DrawHierarchy(World& world, UiState& ui);
     void DrawInspector(World& world, UiState& ui);
     void DrawRenderer(UiState& ui, RenderSettings& settings, CameraController& camera);

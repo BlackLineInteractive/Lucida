@@ -1042,12 +1042,23 @@ public:
         [pe endEncoding];
       }
 
-      // The editor draws the image inside a dockable panel instead, so the
+      // The editor draws the image inside a dockable panel instead, so there the
       // drawable starts clear and carries only the UI.
-      if (!m_viewport_as_panel) {
-        id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-        [blit copyFromTexture:m_tex_present toTexture:drawable.texture];
-        [blit endEncoding];
+      //
+      // A whole-texture blit was the obvious way to get from the present texture
+      // to the drawable, and it crashed inside the driver: that convenience
+      // method demands identical dimensions, formats and mip counts, and gives
+      // no diagnostic when they differ — it dereferences. The compute copy makes
+      // no such demand, samples across any size difference, and is the path the
+      // renderer already trusted before this texture existed.
+      if (!m_viewport_as_panel && m_tex_present) {
+        id<MTLComputeCommandEncoder> be = [cmd computeCommandEncoder];
+        [be setComputePipelineState:m_pipeline_present];
+        [be setTexture:m_tex_present atIndex:0];
+        [be setTexture:drawable.texture atIndex:1];
+        [be dispatchThreads:MTLSizeMake(drawable.texture.width, drawable.texture.height, 1)
+             threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+        [be endEncoding];
       }
 
       // --- Render pass (ImGui overlay)
@@ -1092,36 +1103,41 @@ public:
   // image the ray tracer actually produced, which is what you want to inspect
   // when judging shading — MetalFX upscaling is a separate stage on top.
   bool ReadbackFrame(std::vector<uint8_t> &rgba, int &w, int &h) override {
-    if (!m_tex_gbuffer || m_ray_w <= 0 || m_ray_h <= 0)
-      return false;
-    w = m_ray_w;
-    h = m_ray_h;
+    if (!m_tex_present) return false;
 
-    const size_t row_bytes = size_t(w) * 8; // RGBA16Float
-    id<MTLBuffer> dst =
-        [m_device newBufferWithLength:row_bytes * h
-                              options:MTLResourceStorageModeShared];
+    w = m_render_w;
+    h = m_render_h;
+
+    // Blit into a shared buffer rather than reading the private texture
+    // directly: on a discrete GPU the presented texture lives in VRAM.
+    const size_t row_bytes = size_t(w) * 4;
+    const size_t bytes = row_bytes * size_t(h);
+    id<MTLBuffer> staging = [m_device newBufferWithLength:bytes
+                                                  options:MTLResourceStorageModeShared];
+
     id<MTLCommandBuffer> cmd = [m_queue commandBuffer];
     id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
-    [blit copyFromTexture:m_tex_gbuffer
-                     sourceSlice:0
-                     sourceLevel:0
-                    sourceOrigin:MTLOriginMake(0, 0, 0)
-                      sourceSize:MTLSizeMake(w, h, 1)
-                        toBuffer:dst
-               destinationOffset:0
-          destinationBytesPerRow:row_bytes
-        destinationBytesPerImage:row_bytes * h];
+    [blit copyFromTexture:m_tex_present
+              sourceSlice:0
+              sourceLevel:0
+             sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(w, h, 1)
+                 toBuffer:staging
+        destinationOffset:0
+   destinationBytesPerRow:row_bytes
+ destinationBytesPerImage:bytes];
     [blit endEncoding];
     [cmd commit];
     [cmd waitUntilCompleted];
 
-    const uint16_t *src = (const uint16_t *)[dst contents];
-    rgba.resize(size_t(w) * h * 4);
-    for (size_t i = 0; i < size_t(w) * h * 4; i++) {
-      rgba[i] =
-          (uint8_t)(std::clamp(half_to_float(src[i]), 0.0f, 1.0f) * 255.0f +
-                    0.5f);
+    // BGRA on the wire, RGBA out.
+    rgba.resize(bytes);
+    const uint8_t *src = static_cast<const uint8_t *>([staging contents]);
+    for (size_t i = 0; i < bytes; i += 4) {
+      rgba[i + 0] = src[i + 2];
+      rgba[i + 1] = src[i + 1];
+      rgba[i + 2] = src[i + 0];
+      rgba[i + 3] = 255;
     }
     return true;
   }

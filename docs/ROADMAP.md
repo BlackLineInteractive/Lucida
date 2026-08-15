@@ -217,11 +217,15 @@ Inspector (name, transform, world position, mesh and vehicle components), Render
 (quality and camera), Statistics (frame, GPU, profiler slots). Opening a project starts
 in editor mode with the cursor free; without one the sandbox still starts as a game.
 
-* Still to do: a dockable **viewport panel**, which needs the backend to render into
-  an offscreen texture and hand it to ImGui as a texture id rather than drawing
-  straight to the drawable
-* Still to do: **selection by clicking in the viewport** through a ray query, the
-  asset browser and the console
+Also landed: the **viewport panel**. Everything now presents into a persistent texture
+which either goes to the window (game mode) or is handed to ImGui as a texture id and
+drawn inside a dockable panel (editor mode). The same change made screenshots capture
+what the screen shows rather than an offscreen intermediate.
+
+* Still to do: **trace at the panel's resolution** rather than the window's — today a
+  small viewport costs the same as a full-screen one, which is exactly backwards
+* Still to do: **selection by clicking in the viewport** through a ray query, ImGuizmo,
+  undo/redo as a command stack, the asset browser and the console
 * Selection: clicking in the viewport picks an entity through a ray query — the tracer
   already answers exactly that question
 * **ImGuizmo** for translate/rotate/scale, with snapping and local/world space
