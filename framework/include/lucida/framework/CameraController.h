@@ -1,0 +1,48 @@
+#pragma once
+// Player camera. This logic used to live inside the Metal renderer, which is
+// why it is called out here: movement, gravity and collision are gameplay, and
+// a renderer that owns them cannot be swapped for another one.
+
+#include "lucida/input/Input.h"
+#include "lucida/render/Camera.h"
+
+namespace lucida {
+
+enum class CameraMode : u8 { Fly, Walk };
+
+struct CameraTuning {
+    f32 look_sensitivity = 0.003f;
+    f32 walk_speed  = 4.5f;
+    f32 fly_speed   = 6.0f;
+    f32 sprint_mul  = 2.2f;
+    f32 gravity     = 16.0f;
+    f32 jump_speed  = 5.5f;
+    f32 eye_height  = 0.0f;    // standing eye level above the floor plane
+    f32 crouch_drop = 0.5f;
+    f32 pitch_limit = 1.5f;    // radians
+};
+
+class CameraController {
+public:
+    void Update(const InputState& input, f32 dt);
+
+    // Fixed step for the parts that integrate: gravity and jumping.
+    void FixedUpdate(const InputState& input, f32 dt);
+
+    CameraState& Camera() { return m_camera; }
+    const CameraState& Camera() const { return m_camera; }
+
+    CameraMode Mode() const { return m_mode; }
+    void SetMode(CameraMode mode);
+    void ToggleMode() { SetMode(m_mode == CameraMode::Fly ? CameraMode::Walk : CameraMode::Fly); }
+
+    CameraTuning& Tuning() { return m_tuning; }
+
+private:
+    CameraState  m_camera;
+    CameraTuning m_tuning;
+    CameraMode   m_mode = CameraMode::Walk;
+    f32 m_velocity_y = 0.0f;
+};
+
+} // namespace lucida

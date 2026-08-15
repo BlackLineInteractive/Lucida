@@ -1,0 +1,130 @@
+#pragma once
+// GPU-side data layout. Every struct here has a mirror in the shaders, so the
+// padding is load-bearing: rows are 16 bytes and the static_asserts fail the
+// build the moment a field is added without fixing the shader.
+//
+// DOD ch.8: hot and cold fields are separated, not grouped by "what an object
+// is". See GPUTriPos / GPUTriAttr below.
+
+#include "lucida/core/math/Math.h"
+
+namespace lucida {
+
+enum MaterialType { DIFFUSE = 0, METAL = 1, GLASS = 2, EMISSIVE = 3, CHECKERBOARD = 4, WATER = 5, PBR = 6 };
+
+// Evaluated in the shader from the hit position: one material slot can vary
+// albedo, roughness and metallic across a surface with no texture data.
+enum ProceduralPattern {
+    PROC_NONE = 0,
+    PROC_MARBLE,
+    PROC_WOOD,
+    PROC_RUST,
+    PROC_TILES,
+    PROC_BRUSHED,
+    PROC_HEX,
+    PROC_ROUGH_RAMP,
+    PROC_PATINA,
+    PROC_CONCRETE,
+    PROC_COUNT
+};
+
+enum MaterialFlags {
+    MATFLAG_HAS_BASECOLOR_TEX = 1 << 0,
+    MATFLAG_HAS_ORM_TEX       = 1 << 1,
+    // Set only when the base-colour texture really carries transparency: stb
+    // fills a missing alpha channel with 255, but a texture holding zeros would
+    // punch rays straight through solid geometry.
+    MATFLAG_ALPHA_BLEND       = 1 << 2,
+};
+
+struct GPUMaterial {
+    float albedo[3];       float roughness;
+    float emission[3];     float metallic;
+    float albedo2[3];      float refractive_index;
+    int   type;            int flags; int proc_id; int pad3;
+};
+
+struct GPUSphere { float center[3]; float radius;   int mat_index; int pad1, pad2, pad3; };
+struct GPUPlane  { float normal[3]; float d_offset; int mat_index; int pad1, pad2, pad3; };
+struct GPUCube   { float center[3]; float pad1; float half_size[3]; int mat_index; };
+struct GPULight  { float position[3]; float intensity; float color[3]; float radius; };
+
+// Build-time triangle. Split into the two structs below before upload.
+struct GPUTriangle {
+    float v0[3], pad0;
+    float v1[3], pad1;
+    float v2[3], pad2;
+    float n0[3], pad3;
+    float n1[3], pad4;
+    float n2[3], pad5;
+    float uv0[2], uv1[2];
+    float uv2[2]; int mat_index; float pad6;
+};
+
+// Traversal-only data. The BVH leaf loop reads nothing else, and at 5.7M
+// triangles the 128-byte version streamed 735 MB through the hottest loop to
+// use 37% of it. Edges are pre-subtracted for Moller-Trumbore.
+struct GPUTriPos {
+    float v0[3]; float pad0;
+    float e1[3]; float pad1;
+    float e2[3]; float pad2;
+};
+
+// Read exactly once, after the closest hit is known.
+struct GPUTriAttr {
+    float n0[3]; float pad0;
+    float n1[3]; float pad1;
+    float n2[3]; float pad2;
+    float uv0[2], uv1[2];
+    float uv2[2]; int mat_index; float pad3;
+};
+static_assert(sizeof(GPUTriPos)  == 48);
+static_assert(sizeof(GPUTriAttr) == 80);
+
+// One BLAS instance. Nodes and triangles of every mesh live in shared buffers;
+// an instance names a range plus its own transform, so moving an object costs
+// a matrix write instead of a BVH rebuild.
+// Transforms are 3x4 affine, row-major: rows 0..2 are axes, column 3 translation.
+struct GPUInstance {
+    float world_to_local[12];
+    float local_to_world[12];
+    float aabb_min[3]; int node_base;
+    float aabb_max[3]; int tri_base;
+    int   node_count; int mat_base; int flags; int pad0;
+};
+static_assert(sizeof(GPUInstance) == 144);
+
+struct GPUBVHNode {
+    float aabb_min[3]; int left_or_tri;      // leaf: index into the triangle buffer
+    float aabb_max[3]; int right_or_count;   // leaf: count, negative marks a leaf
+};
+
+struct GPUNeedle {
+    float position[3]; float radius;
+    float normal[3];   int   object_id;
+    float radiance[3]; int   pad;
+};
+
+// 16-byte rows; prev_view_proj must land on offset 176 for float4x4.
+struct GPUUniforms {
+    int   num_spheres, num_planes, num_cubes, num_bvh_nodes;
+    int   num_lights,  max_depth,  num_triangles, enable_triangles;
+    float tan_half_fov, aspect_ratio, screen_width, screen_height;
+    float ambient_light[3]; float pad2;
+    float camera_origin[3]; float pad3;
+    float camera_forward[3]; float pad4;
+    float camera_right[3];   float pad5;
+    float camera_up[3];      float pad6;
+    float time; int enable_fog; int enable_jitter; int samples_per_pixel;
+    int   debug_mode; float model_pos[3];
+    float fog_width, fog_height, jitter_x, jitter_y;
+    float prev_view_proj[16];
+    float fog_density; int fog_steps; int frame_index;
+    float mesh_tex_dim;
+    float orm_tex_dim; int mesh_mat_count; int num_instances; float pad10;
+};
+static_assert(sizeof(GPUUniforms) == 272);
+
+inline void SetVec3(float* dst, const Vec3& v) { dst[0] = v.x; dst[1] = v.y; dst[2] = v.z; }
+
+} // namespace lucida

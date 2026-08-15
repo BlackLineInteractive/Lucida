@@ -1,0 +1,27 @@
+# Build output
+build*/
+cmake-build-*/
+out/
+*.o
+*.a
+*.spv
+*.metallib
+compile_commands.json
+
+# Fetched dependencies live in the build tree, never in the repo
+_deps/
+external/
+
+# Assets and captures that do not belong in source control
+*.glb
+*.gltf
+*.fbx
+*.obj
+*.png
+!docs/**/*.png
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+imgui.ini
