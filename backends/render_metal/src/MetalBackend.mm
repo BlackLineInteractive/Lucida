@@ -446,6 +446,10 @@ class MetalBackend final : public IRenderBackend {
       sdesc.outputTextureFormat = m_layer.pixelFormat;
       sdesc.autoExposureEnabled = NO;
       m_temporal_scaler = [sdesc newTemporalScalerWithDevice:m_device];
+      if (!m_temporal_scaler) {
+        LUCIDA_WARN(Render, "MetalFX temporal scaler unavailable for %dx%d -> %dx%d",
+                    m_ray_w, m_ray_h, m_render_w, m_render_h);
+      }
       // Motion vectors are written in input-texture pixels, and depth is
       // a conventional near=0 / far=1 buffer.
       m_temporal_scaler.motionVectorScaleX = 1.0f;
@@ -1005,6 +1009,20 @@ public:
         }
       }
 #endif
+
+      // Temporary diagnostic: is anything actually writing the drawable?
+      if ((m_frame_counter % 60) == 1) {
+        LUCIDA_INFO(Render, "frame %llu: scaler=%s rays=%dx%d out=%dx%d drawable=%s imgui_lists=%d",
+                    (unsigned long long)m_frame_counter,
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 130000
+                    m_temporal_scaler ? "yes" : "NO",
+#else
+                    "unavailable",
+#endif
+                    m_ray_w, m_ray_h, m_render_w, m_render_h,
+                    drawable ? "yes" : "NO",
+                    ImGui::GetDrawData() ? ImGui::GetDrawData()->CmdListsCount : -1);
+      }
 
       // --- Render pass (ImGui overlay)
       m_rpdesc.colorAttachments[0].texture = drawable.texture;
