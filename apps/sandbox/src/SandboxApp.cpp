@@ -409,20 +409,6 @@ int main(int argc, char** argv) {
         return Project::Create(new_project_dir, name.empty() ? "Untitled" : name) ? 0 : 1;
     }
 
-    // A --scene argument is either a file or the name of a built-in.
-    const bool scene_is_file = scene_arg.size() > 5 &&
-                               scene_arg.compare(scene_arg.size() - 5, 5, ".json") == 0;
-    const scenes::BuiltIn start_scene =
-        scene_is_file ? scenes::BuiltIn::WaterAndFog : ParseScene(scene_arg.empty() ? "water"
-                                                                                    : scene_arg.c_str());
-
-    // Tool mode: write a built-in out as an editable file and stop. This is how
-    // you get a starting point to edit rather than authoring JSON from nothing.
-    if (!export_path.empty()) {
-        const RenderScene scene = scenes::Build(start_scene);
-        return SaveScene(scene, export_path) ? 0 : 1;
-    }
-
     // A project supplies what config.txt used to: window, render defaults, the
     // scene to open. Command-line arguments still win over both.
     Project project;
@@ -447,6 +433,20 @@ int main(int argc, char** argv) {
         config = LoadConfig(config_path);
     }
     if (!model_override.empty()) config.model_path = model_override;
+
+    // A --scene argument is either a file or the name of a built-in.
+    const bool scene_is_file = scene_arg.size() > 5 &&
+                               scene_arg.compare(scene_arg.size() - 5, 5, ".json") == 0;
+    const scenes::BuiltIn start_scene =
+        scene_is_file ? scenes::BuiltIn::WaterAndFog : ParseScene(scene_arg.empty() ? "water"
+                                                                                    : scene_arg.c_str());
+
+    // Tool mode: write a built-in out as an editable file and stop. This is how
+    // you get a starting point to edit rather than authoring JSON from nothing.
+    if (!export_path.empty()) {
+        const RenderScene scene = scenes::Build(start_scene);
+        return SaveScene(scene, export_path) ? 0 : 1;
+    }
 
     EngineConfig engine_config;
     engine_config.loop.fixed_step = 1.0f / 60.0f;

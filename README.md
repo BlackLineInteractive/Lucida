@@ -108,6 +108,28 @@ cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
 
 ## Running
 
+### Projects
+
+A game is a folder, not a config file. Create one, then open it:
+
+```bash
+./build/lucida_sandbox --new-project MyGame    # scaffolds the layout below
+./build/lucida_sandbox --project MyGame        # opens it
+```
+
+```
+MyGame/
+├── project.json      name, startup scene, window and render defaults
+├── scenes/           .json scenes
+├── assets/           models and textures
+└── scripts/          Lua, once scripting lands
+```
+
+Everything inside is stored project-relative, so the folder can be zipped, moved to
+another machine and opened there.
+
+### Direct launch
+
 ```bash
 ./build/lucida_sandbox --scene lab             # basic | water | lab
 ./build/lucida_sandbox --scene world.json      # or a scene file

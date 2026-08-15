@@ -184,7 +184,7 @@ Still open, deliberately: the camera stays in `CameraController` until M21 needs
 select it in the viewport, and scene files do not yet carry entities — that arrives
 with the editor, which is what will create them.
 
-### M20 — Project structure [next, E2]
+### M20 — Project structure (done, E2)
 
 A game is a folder, not a config file next to the binary.
 
@@ -196,12 +196,18 @@ MyGame/
  scripts/          Lua (E5)
 ```
 
-* `Project` in `engine/resource`: open, save, recent list, path resolution
-* Asset paths in scene files become project-relative, so a project is movable
-* `lucida_sandbox --project MyGame`, and the recent list on the start screen
-* **Done when:** a project folder can be zipped, moved to another machine, and opened
+* `Project` in `engine/resource`: create, open, save, path resolution. `RecentProjects`
+  keeps the list per user, not per project — it is state about the person
+* Paths are stored project-relative; anything outside the project stays absolute
+  rather than becoming `../../../Users/...` and breaking on the first move
+* `--new-project <dir>` scaffolds the folders, a starter scene and `project.json`;
+  `--project <dir>` opens it and supplies window, render defaults and startup scene
+* With a project open it *is* the settings file. `config.txt` remains only for the
+  no-project case and no longer shadows it
+* **Verified:** created, zipped, unzipped somewhere else, opened there. No absolute
+  path survives in any project file
 
-### M21 — Editor shell (E3)
+### M21 — Editor shell [next, E3]
 
 * **ImGui docking branch** — the current single-window build cannot lay out an editor.
   A dependency change, not a UI tweak

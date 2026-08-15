@@ -125,7 +125,7 @@ No graphics API appears here.
 
 ### `engine/resource` — GEA 6.2
 
-Mesh loading, texture array packing, BLAS construction.
+Mesh loading, texture array packing, BLAS construction, scene files and projects.
 
 ### `framework`
 
@@ -159,7 +159,8 @@ UI/UX shell: debug menus, statistics, file dialog, camera controller.
 | M7 | scene lifted out of the backend into `RenderScene` | done |
 | M7b | scene serialised to JSON, loadable at runtime | done |
 | M10 | ECS on EnTT; physics and render sync as systems | done |
-| M20+ | editor track, see [ROADMAP.md](ROADMAP.md) | next |
+| M20 | project folders: create, open, movable paths | done |
+| M21+ | editor shell, see [ROADMAP.md](ROADMAP.md) | next |
 
 Verified: `lucida_sandbox --bench 90 --shot f.png` gives 57.8 fps at 1971×1065 rays
 (Intel Mac, Metal) and writes the frame out.
