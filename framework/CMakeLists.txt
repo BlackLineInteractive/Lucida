@@ -3,6 +3,7 @@
 
 add_library(lucida_framework STATIC
     src/CameraController.cpp
+    src/SceneAssets.cpp
     src/SceneLibrary.cpp
     src/Theme.cpp
     src/Systems.cpp
