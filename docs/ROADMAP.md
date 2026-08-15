@@ -1,170 +1,173 @@
-# Lucida — план розвитку
+# Lucida — Roadmap
 
-## Куди цілимось
+## What this engine is for
 
-Lucida — **вузькоспеціалізований рушій**: процедурні матеріали й ефекти + вибіркове
-трасування променів. Мета не «ще один UE», а зробити RT-графіку доступною на
-звичайному залізі: промінь витрачається лише там, де він реально видно (скло,
-дзеркала, вода, каустика, контактні тіні), решта — процедурні текстури, які нічого
-не важать у пам'яті й не тягнуть гігабайти ассетів.
+Lucida is a **narrow, opinionated engine**: procedural materials plus selective ray
+tracing. The goal is not another UE, it is to make ray-traced graphics affordable on
+ordinary hardware — spend a ray only where a ray is visible (glass, mirrors, water,
+caustics, contact shadows), and compute everything else from procedural material code
+that costs no memory and ships no gigabytes of textures.
 
-Наслідки для всіх рішень нижче:
+Every decision below follows from that:
 
-* **Пам'ять важливіша за фічі.** Процедурна текстура — це 40 рядків шейдера замість
-  60 МБ BC7. Це і є оптимізація, яку рушій продає.
-* **Промінь — дефіцитний ресурс.** Матеріал сам оголошує, які ефекти вартують
-  променя. Все інше рахується дешевими наближеннями.
-* **Однакова картинка на різному залізі.** Один шейдерний код, кілька рівнів якості,
-  а не окремі рендерери для «слабких» і «сильних» машин.
+* **Memory beats features.** A procedural texture is 40 lines of shader instead of
+  60 MB of BC7. That is the optimisation the engine sells.
+* **Rays are scarce.** A material declares which effects are worth a ray. Everything
+  else is approximated cheaply.
+* **One image across hardware tiers.** One shader, several quality tiers — not
+  separate renderers for weak and strong machines.
 
 ---
 
-## Рішення щодо залежностей
+## Dependency decisions
 
-Правило те саме, що в [ARCHITECTURE.md](ARCHITECTURE.md) §2: беремо готове і ховаємо
-за фасадом. Нижче — вибір і причина, а не список «що буває».
+Same rule as [ARCHITECTURE.md](ARCHITECTURE.md) §2: take what exists, hide it behind a
+facade. Below is the choice and the reason, not a catalogue of what is available.
 
-| Задача | Береться | Чому саме це |
+| Area | Choice | Why this one |
 |---|---|---|
-| ECS | **EnTT** | header-only, sparse-set під SoA, нульова інфраструктура. Flecs дає ієрархії й запити «з коробки», але тягне свій рантайм і модель світу — надлишок для нашого профілю |
-| Job system | **enkiTS** | ~2k рядків, task-parallel, саме те, що треба для «оновити N систем». Taskflow — граф залежностей і heavy C++; повернемось, якщо граф справді знадобиться |
-| Шейдери | **slang** (осн.) + **SPIRV-Cross** | один код → SPIR-V, MSL, HLSL, і slang уміє RT-конструкції, яких немає в GLSL→SPIRV шляху. `glslang`/`shaderc` лишаються запасним варіантом для GLSL-джерел |
-| Vulkan-пам'ять | **VMA** | ручний менеджмент `VkDeviceMemory` — це два тижні й купа багів, які VMA вже виправив |
-| RHI | **власний, тонкий** | bgfx і sokol_gfx не віддають ні `VK_KHR_ray_query`, ні Metal intersection functions. Для RT-рушія обгортка, що ховає саме RT, — безглузда. `IRenderBackend` уже є, лишається дотягнути |
-| Текстури | **stb_image** + **KTX-Software/Basis** | stb для імпорту, KTX2+Basis для транскодування в BCn/ASTC/ETC під конкретну GPU |
-| Шрифти | **msdf-atlas-gen** + **FreeType** | SDF-атлас: різкий текст на будь-якому масштабі за одну текстуру |
-| Аудіо | **miniaudio** | один файл, мікшер, просторовий звук, декодери |
-| Скрипти | **Lua 5.4** + **sol2** | sol2 прибирає ручний стек Lua; біндинги пишуться як звичайний C++ |
-| Профайлер | **Tracy** | покадрові зони, пам'ять, потоки, GPU — в реальному часі |
-| Логування | **власний фронтенд + fmt** | канальний лог уже є і працює; замінюємо лише бекенд виводу на `fmt`, spdlog як ціле нам не потрібен |
-| Конфіги/сейви | **nlohmann/json** | ергономіка важливіша за швидкість там, де файл читається раз за запуск. `yyjson` — якщо профайлер покаже потребу |
-| Діалоги | **nativefiledialog-extended** | нативне вікно вибору файлу замість ImGui-емуляції |
-| Редактор | **ImGui** + **ImGuizmo** + **ImPlot** + **ImNodes** | гізмо трансформацій, графіки продуктивності, нодовий редактор матеріалів |
+| ECS | **EnTT** | header-only, sparse sets that match our SoA layout, no runtime of its own. Flecs gives hierarchies and queries out of the box but brings its own world model — more than this profile needs |
+| Job system | **enkiTS** | ~2k lines, task-parallel, exactly the shape of "update N systems". Taskflow's dependency graph is heavier; revisit if a real graph appears |
+| Shaders | **slang** (primary) + **SPIRV-Cross** | one source → SPIR-V, MSL, HLSL, and slang understands ray tracing constructs the GLSL→SPIR-V path does not expose. `glslang`/`shaderc` stay as the fallback for GLSL sources |
+| Vulkan memory | **VMA** | hand-rolling `VkDeviceMemory` is two weeks and a pile of bugs VMA already fixed |
+| RHI | **our own, thin** | neither bgfx nor sokol_gfx exposes `VK_KHR_ray_query` or Metal intersection functions. A wrapper that hides exactly the feature this engine is built on is pointless. `IRenderBackend` already exists; it needs finishing, not replacing |
+| Textures | **stb_image** + **KTX-Software / Basis** | stb for import, KTX2+Basis to transcode into BCn/ASTC/ETC for the actual GPU |
+| Fonts | **msdf-atlas-gen** + **FreeType** | SDF atlas: crisp text at any scale from one texture |
+| Audio | **miniaudio** | single file, mixer, spatial audio, decoders |
+| Scripting | **Lua 5.4** + **sol2** | sol2 removes the manual Lua stack; bindings read as ordinary C++ |
+| Profiler | **Tracy** | per-frame zones, memory, threads, GPU, live |
+| Logging | **our front end + fmt** | the channelled log already works; only the output backend becomes `fmt`. spdlog as a whole is not needed |
+| Config / saves | **nlohmann/json** | ergonomics beat throughput for a file read once per launch. `yyjson` if the profiler ever disagrees |
+| File dialogs | **nativefiledialog-extended** | a native picker instead of an ImGui imitation |
+| Editor | **ImGui** + **ImGuizmo** + **ImPlot** + **ImNodes** | transform gizmos, frame-time plots, node graph for materials |
 
-Усе тягнеться через `cmake/Dependencies.cmake`. У репозиторії — нічого.
+Everything is fetched by `cmake/Dependencies.cmake`. Nothing lands in the repository.
 
 ---
 
-## Віхи
+## Milestones
 
-### M7 — Сцена геть із шейдера ⬅ наступне
+### M7 — Get the scene out of the shader ⬅ next
 
-Зараз демо-сцени зашиті в `shader_v02/v03.metal` і в `MetalBackend::SetupScene`.
-Поки це так, ні другий бекенд, ні редактор, ні процедурні матеріали не мають сенсу.
+The demo scenes are currently baked into `shader_v02/v03.metal` and
+`MetalBackend::SetupScene`. While that holds, a second backend, an editor and
+procedural materials are all blocked.
 
-* `engine/render/Scene.h`: `RenderScene` у SoA — примітиви, матеріали, світла, інстанси
-* Шейдер читає **лише буфери**; жодного `if (version == 2)` і жодних констант сцени
-* `SceneBuilder` у `framework` будує демо-сцени з коду застосунку
-* `IRenderBackend::SubmitScene(const RenderScene&)` замість `SetDemoScene(int)`
-* **Готово, коли:** обидві демо-сцени будуються з `apps/sandbox`, а в `.metal` не
-  лишилось жодного літерала сцени
+* `engine/render/Scene.h`: `RenderScene` in SoA — primitives, materials, lights, instances
+* The shader reads **buffers only**: no `if (version == 2)`, no scene constants
+* `SceneBuilder` in `framework` assembles demo scenes from application code
+* `IRenderBackend::SubmitScene(const RenderScene&)` replaces `SetDemoScene(int)`
+* **Done when:** both demo scenes are built from `apps/sandbox` and no scene literal
+  remains in any `.metal` file
 
-### M8 — Вибіркове трасування: рівні якості
+### M8 — Selective ray tracing: quality tiers
 
-Суть рушія. Матеріал оголошує, які ефекти вартують променя.
+The point of the engine. A material declares which effects deserve a ray.
 
 ```
 EffectMask: REFLECT | REFRACT | SHADOW | AO | CAUSTIC | GI
-RayBudget:  скільки променів на піксель дозволено цьому кадру
+RayBudget:  rays per pixel this frame is allowed to spend
 ```
 
-* `RenderTier`: `Baseline` (0 променів: процедурне затінення + екранні наближення),
-  `Selective` (промені лише для матеріалів з прапорцем), `Full` (як зараз)
-* Ядро трасування спільне; тір вимикає гілки, а не підмінює шейдер
-* Бюджет променів адаптується під час кадру: впав нижче цільового ms — знімаємо
-  ефекти за пріоритетом, а не роздільність
-* **Готово, коли:** та сама сцена йде в 60 fps на Baseline і на Full, різниця лише
-  в переліку ефектів; перемикання без релоуду
+* `RenderTier`: `Baseline` (zero rays — procedural shading plus screen-space
+  approximations), `Selective` (rays only for flagged materials), `Full` (today's path)
+* One tracing kernel; a tier disables branches instead of swapping shaders
+* The ray budget adapts inside the frame: when the frame misses its target, drop
+  effects by priority rather than resolution
+* **Done when:** the same scene holds 60 fps on Baseline and on Full, differing only
+  in which effects are present, and tiers switch without a reload
 
-### M9 — Процедурні матеріали (диференціатор)
+### M9 — Procedural material library (the differentiator)
 
-* Розширити наявні 10 патернів (`PROC_MARBLE`…`PROC_CONCRETE`) до бібліотеки з шумами
-  (Perlin/Simplex/Worley/FBM), доменним викривленням і триплан-проєкцією
-* Опис матеріалу — дані, не гілка `switch` у шейдері: граф вузлів → компільований код
-* Нодовий редактор на **ImNodes**, попередній перегляд у реальному часі
-* **Готово, коли:** сцена рівня Sponza без жодної растрової текстури, VRAM під 200 МБ
+* Grow the existing ten patterns (`PROC_MARBLE`…`PROC_CONCRETE`) into a library:
+  Perlin/Simplex/Worley/FBM noise, domain warping, triplanar projection
+* A material is data, not a `switch` in the shader: a node graph compiled to code
+* Node editor on **ImNodes** with live preview
+* **Done when:** a Sponza-scale scene renders with no raster textures at all and
+  stays under 200 MB of VRAM
 
-### M10 — ECS на EnTT
+### M10 — ECS on EnTT
 
-* `engine/core/ecs`: фасад над EnTT (реєстр, види, групи) — прикладний код не
-  включає `entt.hpp` напряму
-* Системи `ISystem` працюють з видами, а не з масивами вручну
-* Перенести транспорт, камеру й інстанси рендеру на компоненти
-* **Готово, коли:** `World` не тримає жодного власного контейнера сутностей
+* `engine/core/ecs`: a facade over EnTT (registry, views, groups) — application code
+  never includes `entt.hpp` directly
+* `ISystem` implementations iterate views instead of hand-rolled arrays
+* Move the vehicle, the camera and render instances onto components
+* **Done when:** `World` holds no entity container of its own
 
-### M11 — Job system на enkiTS
+### M11 — Job system on enkiTS
 
-* `engine/core/jobs`: `JobScheduler`, `ParallelFor`, залежності між задачами
-* Розпаралелити: побудову BVH (уже частково), пакування текстур, оновлення систем,
-  підготовку кадру
-* **Готово, коли:** завантаження моделі й оновлення світу масштабуються по ядрах,
-  а Tracy показує зайняті всі потоки без простоїв
+* `engine/core/jobs`: `JobScheduler`, `ParallelFor`, task dependencies
+* Parallelise BVH construction (already partly), texture packing, system updates,
+  frame setup
+* **Done when:** model loading and world update scale across cores, and Tracy shows
+  every worker busy rather than idling
 
-### M12 — Шейдерний пайплайн
+### M12 — Shader pipeline
 
-* Перевести ядра на **slang**, компіляція в SPIR-V і MSL офлайн + гарячий
-  перезавантаж у дебазі
-* **SPIRV-Cross** для транспіляції під бекенди, які цього потребують
-* Кеш скомпільованих варіантів на диску (зараз кожен старт компілює `.metal` з нуля)
-* **Готово, коли:** один шейдерний код працює на Metal і Vulkan, старт не чекає компілятор
+* Move the kernels to **slang**, compiled to SPIR-V and MSL offline, with hot reload
+  in debug builds
+* **SPIRV-Cross** for backends that need transpilation
+* On-disk cache of compiled variants — today every launch compiles `.metal` from source
+* **Done when:** one shader source runs on Metal and Vulkan, and startup does not wait
+  on a compiler
 
-### M13 — Vulkan-бекенд
+### M13 — Vulkan backend
 
-* `backends/render_vulkan` на новому `IRenderBackend`
-* **VMA** для всієї пам'яті пристрою
-* `VK_KHR_ray_query` там, де є; compute-фолбек, де немає
-* **Готово, коли:** та сама сцена рендериться на Linux з тим самим кодом застосунку
+* `backends/render_vulkan` against the current `IRenderBackend`
+* **VMA** for all device memory
+* `VK_KHR_ray_query` where present, compute fallback where not
+* **Done when:** the same scene renders on Linux with no change to application code
 
-### M14 — Ресурси і стиснення
+### M14 — Resources and compression
 
-* Асинхронне завантаження через job system
-* **KTX-Software + Basis Universal**: транскодування в BCn/ASTC/ETC під GPU
-* Кеш підготовлених ассетів поруч із джерелом
-* **Готово, коли:** повторний запуск із великою моделлю стартує з кешу за <1 с
+* Asynchronous loading through the job system
+* **KTX-Software + Basis Universal**: transcode to BCn/ASTC/ETC per GPU
+* Cache of prepared assets next to the source
+* **Done when:** a second launch with a large model starts from cache in under a second
 
-### M15 — Текст і оболонка редактора
+### M15 — Text and editor shell
 
-* **msdf-atlas-gen** + FreeType → SDF-атлас, різкий текст на будь-якому DPI
-* **ImGuizmo** (трансформації), **ImPlot** (кадрові графіки),
-  **nativefiledialog-extended** замість ImGuiFileDialog
-* **Готово, коли:** об'єкт можна пересунути гізмом і побачити результат у кадрі
+* **msdf-atlas-gen** + FreeType → SDF atlas, crisp text at any DPI
+* **ImGuizmo** (transforms), **ImPlot** (frame plots),
+  **nativefiledialog-extended** replacing ImGuiFileDialog
+* **Done when:** an object can be dragged with a gizmo and the result appears in frame
 
-### M16 — Аудіо
+### M16 — Audio
 
-* `engine/audio` + `backends/audio_miniaudio`: інтерфейс, як у фізики
-* Просторовий звук, мікшер, стрімінг музики
-* **Готово, коли:** джерело звуку — компонент ECS із позицією у світі
+* `engine/audio` plus `backends/audio_miniaudio`, shaped like the physics split
+* Spatial audio, mixer, music streaming
+* **Done when:** a sound source is an ECS component with a world position
 
-### M17 — Скрипти
+### M17 — Scripting
 
-* **Lua 5.4 + sol2**, `engine/script`
-* Гаряче перезавантаження, ігрова логіка й налаштування сцен зі скриптів
-* Пісочниця: скрипт не бачить нічого, крім явно зареєстрованого API
-* **Готово, коли:** демо-сцена описана скриптом, правки застосовуються без перезбірки
+* **Lua 5.4 + sol2** in `engine/script`
+* Hot reload, game logic and scene setup from script
+* Sandboxed: a script sees only the API explicitly registered for it
+* **Done when:** the demo scene is described by a script and edits apply without a rebuild
 
-### M18 — Інструменти
+### M18 — Tooling
 
-* **Tracy**: зони навколо фаз кадру, GPU-таймінги, алокатори
-* **fmt** як бекенд наявного логу
-* **nlohmann/json** для конфігів і сейвів замість `key=value`
-* **Готово, коли:** просадку кадру видно в Tracy з точністю до системи
+* **Tracy**: zones around frame phases, GPU timings, allocators
+* **fmt** as the backend of the existing log front end
+* **nlohmann/json** for config and saves, replacing `key=value`
+* **Done when:** a frame-time spike is attributable to a system in Tracy
 
-### M19 — Bullet як другий фізичний бекенд
+### M19 — Bullet as a second physics backend
 
-Не заради Bullet, а щоб довести, що абстракція фізики справді абстракція.
-Заразом дописати `CreateBody`, якого бракує в Jolt-бекенді.
+Not for Bullet's sake, but to prove the physics abstraction is one. Finish
+`CreateBody` in the Jolt backend along the way.
 
 ---
 
-## Порядок і залежності
+## Order and dependencies
 
 ```
-M7 (сцена з шейдера)
- ├── M8 (рівні якості) ──── M9 (процедурні матеріали) ── M15 (редактор)
- ├── M12 (шейдери) ──────── M13 (Vulkan + VMA)
- └── M10 (ECS) ── M11 (jobs) ── M14 (ресурси) ── M16 (аудіо) ── M17 (скрипти)
-M18 (інструменти) — паралельно, будь-коли
-M19 (Bullet) — після M10
+M7 (scene out of shader)
+ ├── M8 (quality tiers) ──── M9 (procedural materials) ── M15 (editor)
+ ├── M12 (shader pipeline) ─ M13 (Vulkan + VMA)
+ └── M10 (ECS) ── M11 (jobs) ── M14 (resources) ── M16 (audio) ── M17 (scripting)
+M18 (tooling) — in parallel, any time
+M19 (Bullet) — after M10
 ```
 
-M7 і M8 — критичний шлях: без них рушій лишається одним демо, а не рушієм.
+M7 and M8 are the critical path: without them this stays one demo rather than an engine.
