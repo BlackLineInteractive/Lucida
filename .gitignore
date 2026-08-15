@@ -17,7 +17,6 @@ external/
 *.gltf
 *.fbx
 *.obj
-*.png
 !docs/**/*.png
 
 # Private notes — never published
