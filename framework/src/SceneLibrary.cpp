@@ -91,24 +91,24 @@ RenderScene MaterialLab() {
     struct Stand { MaterialType type; Vec3 albedo; double rough, metal, ri; i32 proc;
                    const char* name; };
     static constexpr Stand kStands[] = {
-        { METAL,   {0.95f, 0.96f, 0.98f}, 0.02, 1.0, 1.50, PROC_NONE },       // polished chrome
-        { METAL,   {0.95f, 0.96f, 0.98f}, 0.25, 1.0, 1.50, PROC_BRUSHED },    // brushed steel
-        { METAL,   {1.00f, 0.77f, 0.34f}, 0.10, 1.0, 1.50, PROC_NONE },       // gold
-        { METAL,   {0.95f, 0.64f, 0.54f}, 0.20, 1.0, 1.50, PROC_PATINA },     // copper, oxidising
-        { METAL,   {0.56f, 0.57f, 0.58f}, 0.30, 1.0, 1.50, PROC_RUST },       // iron turning to rust
-        { METAL,   {0.94f, 0.78f, 0.38f}, 0.50, 1.0, 1.50, PROC_ROUGH_RAMP }, // roughness sweep
-        { METAL,   {0.75f, 0.62f, 0.18f}, 0.30, 1.0, 1.50, PROC_HEX },        // hex-cell inlay
-        { GLASS,   {0.98f, 0.99f, 1.00f}, 0.00, 0.0, 1.52, PROC_NONE },       // clear glass
-        { GLASS,   {0.85f, 0.93f, 0.98f}, 0.35, 0.0, 1.33, PROC_NONE },       // frosted, low IOR
-        { WATER,   {0.00f, 0.30f, 0.40f}, 0.00, 0.0, 1.33, PROC_NONE },       // water
-        { DIFFUSE, {0.86f, 0.85f, 0.82f}, 0.10, 0.0, 1.50, PROC_MARBLE },     // polished marble
-        { DIFFUSE, {0.45f, 0.26f, 0.12f}, 0.45, 0.0, 1.50, PROC_WOOD },       // wood
-        { DIFFUSE, {0.18f, 0.45f, 0.55f}, 0.30, 0.0, 1.50, PROC_TILES },      // glazed tiles
-        { DIFFUSE, {0.52f, 0.51f, 0.49f}, 0.85, 0.0, 1.50, PROC_CONCRETE },   // concrete
-        { DIFFUSE, {0.80f, 0.12f, 0.10f}, 0.12, 0.0, 1.50, PROC_NONE },       // smooth plastic
-        { DIFFUSE, {0.05f, 0.05f, 0.06f}, 0.95, 0.0, 1.50, PROC_NONE },       // matte rubber
-        { EMISSIVE,{0.00f, 0.00f, 0.00f}, 1.00, 0.0, 1.50, PROC_NONE },       // emitter
-        { CHECKERBOARD, {0.9f, 0.9f, 0.9f}, 0.35, 0.0, 1.50, PROC_NONE },     // reference checker
+        { METAL,   {0.95f, 0.96f, 0.98f}, 0.02, 1.0, 1.50, PROC_NONE, "polished_chrome" },       // polished chrome
+        { METAL,   {0.95f, 0.96f, 0.98f}, 0.25, 1.0, 1.50, PROC_BRUSHED, "brushed_steel" },    // brushed steel
+        { METAL,   {1.00f, 0.77f, 0.34f}, 0.10, 1.0, 1.50, PROC_NONE, "gold" },       // gold
+        { METAL,   {0.95f, 0.64f, 0.54f}, 0.20, 1.0, 1.50, PROC_PATINA, "copper_patina" },     // copper, oxidising
+        { METAL,   {0.56f, 0.57f, 0.58f}, 0.30, 1.0, 1.50, PROC_RUST, "rusted_iron" },       // iron turning to rust
+        { METAL,   {0.94f, 0.78f, 0.38f}, 0.50, 1.0, 1.50, PROC_ROUGH_RAMP, "roughness_sweep" }, // roughness sweep
+        { METAL,   {0.75f, 0.62f, 0.18f}, 0.30, 1.0, 1.50, PROC_HEX, "hex_inlay" },        // hex-cell inlay
+        { GLASS,   {0.98f, 0.99f, 1.00f}, 0.00, 0.0, 1.52, PROC_NONE, "clear_glass" },       // clear glass
+        { GLASS,   {0.85f, 0.93f, 0.98f}, 0.35, 0.0, 1.33, PROC_NONE, "frosted_glass" },       // frosted, low IOR
+        { WATER,   {0.00f, 0.30f, 0.40f}, 0.00, 0.0, 1.33, PROC_NONE, "water" },       // water
+        { DIFFUSE, {0.86f, 0.85f, 0.82f}, 0.10, 0.0, 1.50, PROC_MARBLE, "marble" },     // polished marble
+        { DIFFUSE, {0.45f, 0.26f, 0.12f}, 0.45, 0.0, 1.50, PROC_WOOD, "wood" },       // wood
+        { DIFFUSE, {0.18f, 0.45f, 0.55f}, 0.30, 0.0, 1.50, PROC_TILES, "glazed_tiles" },      // glazed tiles
+        { DIFFUSE, {0.52f, 0.51f, 0.49f}, 0.85, 0.0, 1.50, PROC_CONCRETE, "concrete" },   // concrete
+        { DIFFUSE, {0.80f, 0.12f, 0.10f}, 0.12, 0.0, 1.50, PROC_NONE, "red_plastic" },       // smooth plastic
+        { DIFFUSE, {0.05f, 0.05f, 0.06f}, 0.95, 0.0, 1.50, PROC_NONE, "matte_rubber" },       // matte rubber
+        { EMISSIVE,{0.00f, 0.00f, 0.00f}, 1.00, 0.0, 1.50, PROC_NONE, "emitter" },       // emitter
+        { CHECKERBOARD, {0.9f, 0.9f, 0.9f}, 0.35, 0.0, 1.50, PROC_NONE, "reference_checker" },     // reference checker
     };
     constexpr i32 kCount = i32(sizeof(kStands) / sizeof(kStands[0]));
 

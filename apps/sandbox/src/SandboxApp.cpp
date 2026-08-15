@@ -15,6 +15,7 @@
 #include "lucida/framework/DebugUI.h"
 #include "lucida/framework/SceneLibrary.h"
 #include "lucida/resource/ModelLoader.h"
+#include "lucida/resource/SceneSerializer.h"
 #include "lucida/runtime/Engine.h"
 
 #include <stb_image_write.h>
@@ -116,6 +117,10 @@ public:
           m_bench(std::move(bench)) {}
 
     void SetStartScene(scenes::BuiltIn which) { m_ui_state.scene = which; }
+
+    // A scene file wins over the built-in list: once a world lives on disk, the
+    // built-ins are only a starting point.
+    void SetSceneFile(std::string path) { m_scene_path = std::move(path); }
 
     bool Finished() const { return m_finished; }
 
@@ -248,7 +253,19 @@ private:
     // geometry, the application takes the spawn point — placing a camera is not
     // the renderer's job.
     void LoadScene(scenes::BuiltIn which) {
-        const RenderScene scene = scenes::Build(which);
+        RenderScene scene;
+        if (!m_scene_path.empty() && LoadSceneFile(m_scene_path, scene)) {
+            Submit(scene);
+            return;
+        }
+        if (!m_scene_path.empty()) {
+            LUCIDA_WARN(App, "falling back to the built-in scene");
+            m_scene_path.clear();
+        }
+        Submit(scenes::Build(which));
+    }
+
+    void Submit(const RenderScene& scene) {
         m_renderer->SubmitScene(scene);
         m_camera.Camera() = scene.spawn;
         m_scene_spheres = scene.spheres;
@@ -324,6 +341,7 @@ private:
     // application's business rather than the renderer's.
     std::vector<GPUSphere> m_scene_spheres;
 
+    std::string      m_scene_path;
     BenchOptions     m_bench;
     std::vector<f32> m_bench_times;
     bool             m_finished = false;
@@ -338,14 +356,30 @@ int main(int argc, char** argv) {
     std::string config_path = "config.txt";
     std::string model_override;
     BenchOptions bench;
-    scenes::BuiltIn start_scene = scenes::BuiltIn::WaterAndFog;
+    std::string scene_arg;
+    std::string export_path;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)      config_path = argv[++i];
         else if (std::strcmp(argv[i], "--mesh") == 0 && i + 1 < argc)   model_override = argv[++i];
         else if (std::strcmp(argv[i], "--bench") == 0 && i + 1 < argc)  bench.frames = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--shot") == 0 && i + 1 < argc)   bench.screenshot_path = argv[++i];
-        else if (std::strcmp(argv[i], "--scene") == 0 && i + 1 < argc)  start_scene = ParseScene(argv[++i]);
+        else if (std::strcmp(argv[i], "--scene") == 0 && i + 1 < argc)  scene_arg = argv[++i];
+        else if (std::strcmp(argv[i], "--export-scene") == 0 && i + 1 < argc) export_path = argv[++i];
         else if (std::strcmp(argv[i], "--verbose") == 0)                LogSetLevel(LogLevel::Debug);
+    }
+
+    // A --scene argument is either a file or the name of a built-in.
+    const bool scene_is_file = scene_arg.size() > 5 &&
+                               scene_arg.compare(scene_arg.size() - 5, 5, ".json") == 0;
+    const scenes::BuiltIn start_scene =
+        scene_is_file ? scenes::BuiltIn::WaterAndFog : ParseScene(scene_arg.empty() ? "water"
+                                                                                    : scene_arg.c_str());
+
+    // Tool mode: write a built-in out as an editable file and stop. This is how
+    // you get a starting point to edit rather than authoring JSON from nothing.
+    if (!export_path.empty()) {
+        const RenderScene scene = scenes::Build(start_scene);
+        return SaveScene(scene, export_path) ? 0 : 1;
     }
 
     Config config = LoadConfig(config_path);
@@ -360,6 +394,7 @@ int main(int argc, char** argv) {
 
     SandboxApp app(config, config_path, bench);
     app.SetStartScene(start_scene);
+    if (scene_is_file) app.SetSceneFile(scene_arg);
     const int result = engine.Run(app);
     engine.Shutdown();
     return result;
