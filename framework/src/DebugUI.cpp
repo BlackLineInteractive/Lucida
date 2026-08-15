@@ -10,11 +10,14 @@
 #include "lucida/render/Components.h"
 #include "lucida/runtime/World.h"
 
+#include "lucida/framework/SceneAssets.h"
 #include "ImGuiFileDialog.h"
+#include "ImGuizmo.h"
 #include "imgui.h"
 #include "imgui_internal.h"   // DockBuilder
 
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <cstdarg>
 #include <cstdio>
@@ -73,10 +76,11 @@ void DebugUI::Init() {
 
 void DebugUI::Shutdown() { ImGui::DestroyContext(); }
 
-void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
+void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettings& settings,
                     const RenderStats& stats, CameraController& camera,
                     const FrameTime& time, void* viewport_texture, f32 viewport_aspect) {
     ImGui::NewFrame();
+    ImGuizmo::BeginFrame();
 
     if (!ui.show_menu) {
         ImGui::Render();
@@ -112,9 +116,9 @@ void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
 
     if (ui.show_viewport && viewport_texture)
         DrawViewport(world, ui, viewport_texture, viewport_aspect, camera);
-    if (ui.show_hierarchy) DrawHierarchy(world, ui);
-    if (ui.show_inspector) DrawInspector(world, ui);
-    if (ui.show_renderer)  DrawRenderer(ui, settings, camera);
+    if (ui.show_hierarchy) DrawHierarchy(world, ui); // Calls DrawSceneGraph
+    if (ui.show_inspector) DrawInspector(world, ui, assets);
+    if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
     if (ui.show_stats)     DrawStats(stats, time);
 
     if (ImGuiFileDialog::Instance()->Display("LoadModel", ImGuiWindowFlags_NoCollapse,
@@ -169,7 +173,7 @@ void DebugUI::DrawMenuBar(UiState& ui) {
         ImGui::MenuItem("Viewport", nullptr, &ui.show_viewport);
         ImGui::MenuItem("Hierarchy", nullptr, &ui.show_hierarchy);
         ImGui::MenuItem("Inspector", nullptr, &ui.show_inspector);
-        ImGui::MenuItem("Renderer", nullptr, &ui.show_renderer);
+        ImGui::MenuItem("Graphics Settings", nullptr, &ui.show_graphics_settings);
         ImGui::MenuItem("Statistics", nullptr, &ui.show_stats);
         ImGui::Separator();
         if (ImGui::MenuItem("Reset layout")) m_reset_layout = true;
@@ -237,11 +241,82 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             const PickResult hit = PickEntity(world.Entities(), ray);
             ui.selection = hit.entity;   // a miss clears the selection, as it should
         }
+
+        // Toolbar for Gizmo
+        ImGui::SetCursorPos(ImVec2(10, 30));
+        ImGui::BeginGroup();
+        if (ImGui::RadioButton("Translate", ui.gizmo_operation == 0)) ui.gizmo_operation = 0;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Rotate", ui.gizmo_operation == 1)) ui.gizmo_operation = 1;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Scale", ui.gizmo_operation == 2)) ui.gizmo_operation = 2;
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(20, 0));
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Local", ui.gizmo_space == 0)) ui.gizmo_space = 0;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("World", ui.gizmo_space == 1)) ui.gizmo_space = 1;
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(20, 0));
+        ImGui::SameLine();
+        ImGui::Checkbox("Snap", &ui.snap_enabled);
+        ImGui::EndGroup();
+
+        DrawGizmo(world, ui, const_cast<CameraController&>(camera), aspect);
     } else {
         ui.viewport_width = 0;
         ui.viewport_height = 0;
     }
     ImGui::End();
+}
+
+void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
+    Registry& entities = world.Entities();
+    for (auto [entity, name] : entities.View<Name>().each()) {
+        Entity its_parent = kNullEntity;
+        if (Parent* p = entities.Get<Parent>(entity)) its_parent = p->entity;
+        
+        if (its_parent != current_parent) continue;
+
+        ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
+        
+        bool has_children = false;
+        for (auto [child] : entities.View<Parent>().each()) {
+            if (entities.Get<Parent>(child)->entity == entity) { has_children = true; break; }
+        }
+
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+        if (ui.selection == entity) flags |= ImGuiTreeNodeFlags_Selected;
+        if (!has_children) flags |= ImGuiTreeNodeFlags_Leaf;
+        flags |= ImGuiTreeNodeFlags_DefaultOpen;
+
+        bool opened = ImGui::TreeNodeEx(name.value.c_str(), flags);
+        if (ImGui::IsItemClicked()) {
+            ui.selection = entity;
+        }
+
+        if (ImGui::BeginDragDropSource()) {
+            Entity dragged = entity;
+            ImGui::SetDragDropPayload("ENTITY_PAYLOAD", &dragged, sizeof(Entity));
+            ImGui::TextUnformatted(name.value.c_str());
+            ImGui::EndDragDropSource();
+        }
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_PAYLOAD")) {
+                Entity dropped = *static_cast<const Entity*>(payload->Data);
+                if (dropped != entity) {
+                    entities.AddOrReplace<Parent>(dropped, Parent{entity});
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+
+        if (opened) {
+            DrawSceneGraph(world, ui, entity);
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
 }
 
 void DebugUI::DrawHierarchy(World& world, UiState& ui) {
@@ -252,22 +327,39 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui) {
 
     Registry& entities = world.Entities();
     ImGui::TextDisabled("%zu entities", entities.Count());
+
+    ImGui::SameLine(ImGui::GetWindowWidth() - 40);
+    if (ImGui::Button("+")) ImGui::OpenPopup("AddPrimitivePopup");
+    if (ImGui::BeginPopup("AddPrimitivePopup")) {
+        auto add = [&](PrimitiveType type, const char* name) {
+            ui.selection = CreatePrimitive(entities, type, Vec3(0,0,0), 0, name);
+        };
+        if (ImGui::MenuItem("Sphere")) add(PrimitiveType::Sphere, "Sphere");
+        if (ImGui::MenuItem("Box")) add(PrimitiveType::Box, "Box");
+        if (ImGui::MenuItem("Plane")) add(PrimitiveType::Plane, "Plane");
+        if (ImGui::MenuItem("Cylinder")) add(PrimitiveType::Cylinder, "Cylinder");
+        if (ImGui::MenuItem("Cone")) add(PrimitiveType::Cone, "Cone");
+        if (ImGui::MenuItem("Torus")) add(PrimitiveType::Torus, "Torus");
+        if (ImGui::MenuItem("Disk")) add(PrimitiveType::Disk, "Disk");
+        ImGui::Separator();
+        if (ImGui::MenuItem("Light")) {
+            ui.selection = CreateLight(entities, Vec3(0, 1, 0), Vec3(1), 50.0f, 1.0f, "Light");
+        }
+        ImGui::EndPopup();
+    }
+
     ImGui::Separator();
 
-    // Flat list for now. Nesting arrives with reparenting: a tree that cannot be
-    // rearranged is a list wearing a costume.
-    for (auto [entity, name] : entities.View<Name>().each()) {
-        ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
+    DrawSceneGraph(world, ui, kNullEntity);
 
-        if (Visibility* visibility = entities.Get<Visibility>(entity)) {
-            ImGui::Checkbox("##visible", &visibility->visible);
-            ImGui::SameLine();
+    // Drop on empty space to unparent
+    ImGui::Dummy(ImGui::GetContentRegionAvail());
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_PAYLOAD")) {
+            Entity dropped = *static_cast<const Entity*>(payload->Data);
+            entities.Remove<Parent>(dropped);
         }
-        if (ImGui::Selectable(name.value.c_str(), ui.selection == entity)) {
-            ui.selection = entity;
-        }
-
-        ImGui::PopID();
+        ImGui::EndDragDropTarget();
     }
 
     if (entities.Count() == 0) {
@@ -278,7 +370,7 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui) {
     ImGui::End();
 }
 
-void DebugUI::DrawInspector(World& world, UiState& ui) {
+void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets) {
     if (!ImGui::Begin("Inspector", &ui.show_inspector)) {
         ImGui::End();
         return;
@@ -297,16 +389,15 @@ void DebugUI::DrawInspector(World& world, UiState& ui) {
         if (ImGui::InputText("Name", buffer, sizeof(buffer))) name->value = buffer;
     }
 
+    if (Visibility* visibility = entities.Get<Visibility>(ui.selection)) {
+        ImGui::Checkbox("Visible", &visibility->visible);
+    }
+
     if (LocalTransform* local = entities.Get<LocalTransform>(ui.selection)) {
         if (BeginSection("Transform", true)) {
-            // One undo entry per drag, not per frame: remember the value when the
-            // control is grabbed, push the command when it is let go.
             Vec3Row("Position", local->position);
             TrackEdit(entities, ui.selection, *local, "Move");
 
-            // Euler angles exist for editing only: derived on read, rebuilt on
-            // write, never stored. A second representation of the same rotation
-            // is how gimbal bugs get in.
             Vec3 euler = glm::degrees(glm::eulerAngles(local->rotation));
             if (Vec3Row("Rotation", euler, 0.5f)) {
                 local->rotation = Quat(glm::radians(euler));
@@ -322,8 +413,57 @@ void DebugUI::DrawInspector(World& world, UiState& ui) {
         }
     }
 
+    if (PrimitiveShape* shape = entities.Get<PrimitiveShape>(ui.selection)) {
+        if (BeginSection("Shape", true)) {
+            const char* type_names[] = { "Sphere", "Box", "Plane", "Cylinder", "Cone", "Torus", "Disk" };
+            int type_idx = (int)shape->type;
+            if (ImGui::Combo("Type", &type_idx, type_names, 7)) {
+                shape->type = (PrimitiveType)type_idx;
+            }
+
+            if (shape->type == PrimitiveType::Sphere) {
+                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
+            } else if (shape->type == PrimitiveType::Box) {
+                Vec3Row("Half Extents", shape->size);
+            } else if (shape->type == PrimitiveType::Plane) {
+                Vec3Row("Normal", shape->normal);
+                ImGui::DragFloat("Offset", &shape->offset, 0.01f);
+            } else if (shape->type == PrimitiveType::Cylinder || shape->type == PrimitiveType::Cone) {
+                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
+                ImGui::DragFloat("Height", &shape->cylinder_height, 0.01f);
+            } else if (shape->type == PrimitiveType::Torus) {
+                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
+                ImGui::DragFloat("Inner Radius", &shape->inner_radius, 0.01f);
+            } else if (shape->type == PrimitiveType::Disk) {
+                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
+                Vec3Row("Normal", shape->normal);
+            }
+            EndSection();
+        }
+    }
+
+    if (MaterialRef* mat_ref = entities.Get<MaterialRef>(ui.selection)) {
+        if (BeginSection("Material", true)) {
+            if (mat_ref->index >= 0 && mat_ref->index < (i32)assets.materials.size()) {
+                GPUMaterial& m = assets.materials[mat_ref->index];
+                ImGui::Text("Material: %s", assets.material_names[mat_ref->index].c_str());
+                const char* mat_types[] = { "Diffuse", "Metal", "Glass", "Emissive", "Checkerboard", "Water", "PBR" };
+                ImGui::Combo("Type", &m.type, mat_types, 7);
+                ImGui::ColorEdit3("Albedo", m.albedo);
+                if (m.type == 3) ImGui::ColorEdit3("Emission", m.emission);
+                ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f);
+                ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f);
+                if (m.type == 2 || m.type == 5) ImGui::SliderFloat("IOR", &m.refractive_index, 1.0f, 3.0f);
+
+                const char* proc_types[] = { "None", "Marble", "Wood", "Rust", "Tiles", "Brushed", "Hex", "Rough Ramp", "Patina", "Concrete" };
+                ImGui::Combo("Pattern", &m.proc_id, proc_types, 10);
+            }
+            EndSection();
+        }
+    }
+
     if (const WorldTransform* world_transform = entities.Get<WorldTransform>(ui.selection)) {
-        if (BeginSection("World")) {
+        if (BeginSection("World", true)) {
             const Vec3 position(world_transform->matrix[3]);
             LabelledText("Position", "%.3f  %.3f  %.3f", position.x, position.y, position.z);
             ImGui::TextDisabled("Derived from the parent chain each frame.");
@@ -352,8 +492,8 @@ void DebugUI::DrawInspector(World& world, UiState& ui) {
     ImGui::End();
 }
 
-void DebugUI::DrawRenderer(UiState& ui, RenderSettings& settings, CameraController& camera) {
-    if (!ImGui::Begin("Renderer", &ui.show_renderer)) {
+void DebugUI::DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSettings& settings, CameraController& camera) {
+    if (!ImGui::Begin("Graphics Settings", &ui.show_graphics_settings)) {
         ImGui::End();
         return;
     }
@@ -366,6 +506,36 @@ void DebugUI::DrawRenderer(UiState& ui, RenderSettings& settings, CameraControll
         ImGui::SameLine();
         ImGui::Checkbox("vsync", &settings.vsync);
         ImGui::SliderInt("debug view", &settings.debug_mode, 0, 6);
+        EndSection();
+    }
+
+    if (BeginSection("Environment", true)) {
+        ImGui::ColorEdit3("Ambient", glm::value_ptr(assets.environment.ambient));
+        ImGui::ColorEdit3("Sky Zenith", glm::value_ptr(assets.environment.sky_zenith));
+        ImGui::ColorEdit3("Sky Horizon", glm::value_ptr(assets.environment.sky_horizon));
+        ImGui::ColorEdit3("Sky Ground", glm::value_ptr(assets.environment.sky_ground));
+        
+        ImGui::Checkbox("Fog Enabled", &assets.environment.fog_enabled);
+        if (assets.environment.fog_enabled) {
+            ImGui::DragFloat("Fog Density", &assets.environment.fog_density, 0.001f);
+            ImGui::SliderInt("Fog Steps", &assets.environment.fog_steps, 4, 64);
+        }
+        EndSection();
+    }
+
+    if (BeginSection("Grid (Blender Style)", true)) {
+        ImGui::Checkbox("Enabled", &assets.environment.grid_enabled);
+        if (assets.environment.grid_enabled) {
+            ImGui::Checkbox("Auto-scale Grid", &assets.environment.grid_auto_scale);
+            if (!assets.environment.grid_auto_scale) {
+                ImGui::DragFloat("Spacing", &assets.environment.grid_spacing, 0.1f, 0.1f, 100.0f);
+            }
+            ImGui::SliderFloat("Opacity", &assets.environment.grid_opacity, 0.0f, 1.0f);
+            ImGui::DragFloat("Fade Distance", &assets.environment.grid_fade, 1.0f, 10.0f, 1000.0f);
+            ImGui::ColorEdit3("Grid Color", glm::value_ptr(assets.environment.grid_color));
+            ImGui::ColorEdit3("X Axis", glm::value_ptr(assets.environment.grid_axis_x));
+            ImGui::ColorEdit3("Z Axis", glm::value_ptr(assets.environment.grid_axis_z));
+        }
         EndSection();
     }
 
@@ -383,6 +553,63 @@ void DebugUI::DrawRenderer(UiState& ui, RenderSettings& settings, CameraControll
     }
 
     ImGui::End();
+}
+
+void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect) {
+    if (!ui.show_viewport || ui.selection == kNullEntity) return;
+
+    Registry& registry = world.Entities();
+    LocalTransform* local = registry.Get<LocalTransform>(ui.selection);
+    if (!local) return;
+
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist();
+    
+    ImVec2 vMin = ImGui::GetWindowContentRegionMin();
+    ImVec2 vMax = ImGui::GetWindowContentRegionMax();
+    vMin.x += ImGui::GetWindowPos().x;
+    vMin.y += ImGui::GetWindowPos().y;
+    vMax.x += ImGui::GetWindowPos().x;
+    vMax.y += ImGui::GetWindowPos().y;
+    ImGuizmo::SetRect(vMin.x, vMin.y, vMax.x - vMin.x, vMax.y - vMin.y);
+
+    const CameraState& cam = camera.Camera();
+    Mat4 view = cam.ViewMatrix();
+    Mat4 proj = cam.ProjectionMatrix(aspect);
+
+    Mat4 matrix = local->ToMatrix();
+
+    ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+    if (ui.gizmo_operation == 1) op = ImGuizmo::ROTATE;
+    if (ui.gizmo_operation == 2) op = ImGuizmo::SCALE;
+
+    ImGuizmo::MODE mode = ui.gizmo_space == 0 ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
+
+    float snap[3] = {0};
+    if (ui.snap_enabled) {
+        if (op == ImGuizmo::TRANSLATE) { snap[0] = ui.snap_position.x; snap[1] = ui.snap_position.y; snap[2] = ui.snap_position.z; }
+        else if (op == ImGuizmo::ROTATE) { snap[0] = snap[1] = snap[2] = ui.snap_rotation; }
+        else if (op == ImGuizmo::SCALE) { snap[0] = snap[1] = snap[2] = ui.snap_scale; }
+    }
+
+    if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj), op, mode, glm::value_ptr(matrix), nullptr, ui.snap_enabled ? snap : nullptr)) {
+        float translation[3], rotation[3], scale[3];
+        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), translation, rotation, scale);
+        
+        local->position = Vec3(translation[0], translation[1], translation[2]);
+        local->rotation = Quat(glm::radians(Vec3(rotation[0], rotation[1], rotation[2])));
+        local->scale = scale[0];
+        
+        if (!m_dragging) {
+            m_drag_start = *local;
+            m_dragging = true;
+        }
+    } else {
+        if (m_dragging) {
+            m_commands.Push(std::make_unique<TransformCommand>(registry, ui.selection, m_drag_start, *local, "Gizmo Edit"));
+            m_dragging = false;
+        }
+    }
 }
 
 void DebugUI::DrawStats(const RenderStats& stats, const FrameTime& time) {

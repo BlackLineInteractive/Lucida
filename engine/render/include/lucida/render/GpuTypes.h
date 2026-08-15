@@ -63,6 +63,10 @@ struct GPUMaterial {
 struct GPUSphere { float center[3]; float radius;   int mat_index; int pad1, pad2, pad3; };
 struct GPUPlane  { float normal[3]; float d_offset; int mat_index; int pad1, pad2, pad3; };
 struct GPUCube   { float center[3]; float pad1; float half_size[3]; int mat_index; };
+struct GPUCylinder { float center[3]; float radius; float height; int mat_index; int pad1, pad2; };
+struct GPUCone     { float center[3]; float radius; float height; int mat_index; int pad1, pad2; };
+struct GPUTorus    { float center[3]; float radius; float inner_radius; int mat_index; int pad1, pad2; };
+struct GPUDisk     { float center[3]; float radius; float normal[3]; int mat_index; int pad1; };
 struct GPULight  { float position[3]; float intensity; float color[3]; float radius; };
 
 // Build-time triangle. Split into the two structs below before upload.
@@ -155,8 +159,10 @@ struct GPUUniforms {
     float grid_color[3];  float pad11;
     float grid_axis_x[3]; float pad12;
     float grid_axis_z[3]; float pad13;
+    int   num_cylinders; int num_cones; int num_tori; int num_disks;
+    float grid_spacing; float pad14; float pad15; float pad16;
 };
-static_assert(sizeof(GPUUniforms) == 368);
+static_assert(sizeof(GPUUniforms) == 400);
 
 inline void SetVec3(float* dst, const Vec3& v) { dst[0] = v.x; dst[1] = v.y; dst[2] = v.z; }
 

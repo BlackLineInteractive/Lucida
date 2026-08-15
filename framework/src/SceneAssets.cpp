@@ -55,6 +55,10 @@ const char* PrimitiveTypeName(PrimitiveType type) {
     case PrimitiveType::Sphere: return "Sphere";
     case PrimitiveType::Box:    return "Box";
     case PrimitiveType::Plane:  return "Plane";
+    case PrimitiveType::Cylinder: return "Cylinder";
+    case PrimitiveType::Cone:   return "Cone";
+    case PrimitiveType::Torus:  return "Torus";
+    case PrimitiveType::Disk:   return "Disk";
     default:                    return "?";
     }
 }
@@ -84,6 +88,20 @@ void PublishScene(Registry& registry, const SceneAssets& assets, RenderScene& ou
         case PrimitiveType::Box:
             out.AddCube(position, shape.size * scale, material.index);
             break;
+        case PrimitiveType::Cylinder:
+            out.AddCylinder(position, shape.size.x * scale, shape.cylinder_height * scale, material.index);
+            break;
+        case PrimitiveType::Cone:
+            out.AddCone(position, shape.size.x * scale, shape.cylinder_height * scale, material.index);
+            break;
+        case PrimitiveType::Torus:
+            out.AddTorus(position, shape.size.x * scale, shape.inner_radius * scale, material.index);
+            break;
+        case PrimitiveType::Disk: {
+            const Vec3 normal = glm::normalize(Vec3(world.matrix * Vec4(shape.normal, 0.0f)));
+            out.AddDisk(position, shape.size.x * scale, normal, material.index);
+            break;
+        }
         case PrimitiveType::Plane: {
             // The plane's normal follows the entity's rotation; its offset is
             // the distance from the origin along that normal.
@@ -128,6 +146,8 @@ u64 SceneFingerprint(Registry& registry, const SceneAssets& assets) {
         MixVec3(seed, shape.size);
         MixVec3(seed, shape.normal);
         MixFloat(seed, shape.offset);
+        MixFloat(seed, shape.cylinder_height);
+        MixFloat(seed, shape.inner_radius);
         Mix(seed, u64(material.index));
         Mix(seed, u64(visibility.visible));
         for (int c = 0; c < 4; ++c) MixVec3(seed, Vec3(world.matrix[c]));
@@ -156,6 +176,7 @@ Entity CreatePrimitive(Registry& registry, PrimitiveType type, const Vec3& posit
     if (type == PrimitiveType::Sphere) shape.size = Vec3(1.0f);
     registry.Add<PrimitiveShape>(entity, shape);
     registry.Add<MaterialRef>(entity, MaterialRef{material});
+    registry.Add<SceneGraphNode>(entity);
 
     // Bounds are what makes it clickable, so they are set here rather than left
     // to whoever remembers.
@@ -169,6 +190,7 @@ Entity CreateLight(Registry& registry, const Vec3& position, const Vec3& color,
     const Entity entity = registry.Create(name.empty() ? "Light" : name);
     registry.Get<LocalTransform>(entity)->position = position;
     registry.Add<LightSource>(entity, LightSource{color, intensity, radius});
+    registry.Add<SceneGraphNode>(entity);
     registry.Add<LocalBounds>(entity, LocalBounds{Vec3(-0.25f), Vec3(0.25f)});
     return entity;
 }

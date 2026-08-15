@@ -46,6 +46,8 @@ struct SceneEnvironment {
     Vec3 grid_axis_z{0.30f, 0.48f, 0.85f};
     f32  grid_opacity = 0.75f;
     f32  grid_fade    = 220.0f;   // metres at which it has faded out entirely
+    bool grid_auto_scale = true;
+    f32  grid_spacing = 1.0f;
 };
 
 // Everything the tracer needs, in the layout the GPU reads. Kept as plain
@@ -61,6 +63,10 @@ struct RenderScene {
     std::vector<GPUSphere>   spheres;
     std::vector<GPUPlane>    planes;
     std::vector<GPUCube>     cubes;
+    std::vector<GPUCylinder> cylinders;
+    std::vector<GPUCone>     cones;
+    std::vector<GPUTorus>    tori;
+    std::vector<GPUDisk>     disks;
     std::vector<GPULight>    lights;
 
     SceneEnvironment environment;
@@ -119,6 +125,42 @@ struct RenderScene {
         cubes.push_back(c);
     }
 
+    void AddCylinder(const Vec3& center, f32 radius, f32 height, i32 material) {
+        GPUCylinder c{};
+        SetVec3(c.center, center);
+        c.radius = radius;
+        c.height = height;
+        c.mat_index = material;
+        cylinders.push_back(c);
+    }
+
+    void AddCone(const Vec3& center, f32 radius, f32 height, i32 material) {
+        GPUCone c{};
+        SetVec3(c.center, center);
+        c.radius = radius;
+        c.height = height;
+        c.mat_index = material;
+        cones.push_back(c);
+    }
+
+    void AddTorus(const Vec3& center, f32 radius, f32 inner_radius, i32 material) {
+        GPUTorus t{};
+        SetVec3(t.center, center);
+        t.radius = radius;
+        t.inner_radius = inner_radius;
+        t.mat_index = material;
+        tori.push_back(t);
+    }
+
+    void AddDisk(const Vec3& center, f32 radius, const Vec3& normal, i32 material) {
+        GPUDisk d{};
+        SetVec3(d.center, center);
+        d.radius = radius;
+        SetVec3(d.normal, normal);
+        d.mat_index = material;
+        disks.push_back(d);
+    }
+
     void AddLight(const Vec3& position, f32 intensity, const Vec3& color, f32 radius) {
         GPULight l{};
         SetVec3(l.position, position);
@@ -131,6 +173,7 @@ struct RenderScene {
     void Clear() {
         materials.clear(); material_names.clear();
         spheres.clear(); planes.clear(); cubes.clear(); lights.clear();
+        cylinders.clear(); cones.clear(); tori.clear(); disks.clear();
     }
 };
 

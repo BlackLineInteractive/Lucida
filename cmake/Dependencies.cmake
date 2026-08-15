@@ -105,6 +105,9 @@ set(LUCIDA_IFD_DIR "${lucida_imgui_fd_SOURCE_DIR}" CACHE INTERNAL "")
 lucida_fetch_headers(imanim URL "https://github.com/soufianekhiat/ImAnim/archive/refs/heads/main.tar.gz")
 set(LUCIDA_IMANIM_DIR "${lucida_imanim_SOURCE_DIR}" CACHE INTERNAL "")
 
+lucida_fetch_headers(imguizmo URL "https://github.com/CedricGuillemet/ImGuizmo/archive/refs/heads/master.tar.gz" INCLUDE "src")
+set(LUCIDA_IMGUIZMO_DIR "${lucida_imguizmo_SOURCE_DIR}" CACHE INTERNAL "")
+
 # --- stb single headers ------------------------------------------------------
 set(LUCIDA_STB_DIR "${LUCIDA_DEPS_DIR}/stb")
 file(MAKE_DIRECTORY "${LUCIDA_STB_DIR}")
@@ -260,9 +263,11 @@ add_library(lucida_imgui STATIC
     ${LUCIDA_IMGUI_DIR}/imgui_demo.cpp
 )
 target_sources(lucida_imgui PRIVATE ${LUCIDA_IMANIM_DIR}/im_anim.cpp)
+target_sources(lucida_imgui PRIVATE ${LUCIDA_IMGUIZMO_DIR}/src/ImGuizmo.cpp)
 target_include_directories(lucida_imgui SYSTEM PUBLIC
     ${LUCIDA_IMGUI_DIR}
     ${LUCIDA_IMGUI_DIR}/backends
     ${LUCIDA_IFD_DIR}
     ${LUCIDA_IMANIM_DIR}
+    ${LUCIDA_IMGUIZMO_DIR}/src
 )

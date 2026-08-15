@@ -403,6 +403,78 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
     return clamp(result, float3(0.0), float3(100.0));
 }
 
+// ---------------------------------------------------------------- ground grid
+//
+// The editor grid, drawn by the tracer rather than painted over the finished
+// image, so geometry occludes it correctly and it takes the same fog and
+// exposure as everything else.
+//
+// A compute kernel has no fwidth, so the pixel footprint is derived instead:
+// at distance t a pixel covers t * 2 * tan_half / screen_height world units.
+// That is what makes the lines a constant thickness on screen and what lets the
+// spacing step by decades without shimmering.
+struct GridSample { float3 color; float alpha; };
+
+GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
+    GridSample out;
+    out.color = float3(u.grid_color);
+    out.alpha = 0.0;
+
+    // Pick the decade whose lines are still far enough apart to read, and blend
+    // into the next one so nothing pops as the camera pulls back.
+    float decade = max(0.0, log10(footprint * 40.0));
+    float step0 = pow(10.0, floor(decade));
+    float step1 = step0 * 10.0;
+    float blend = fract(decade);
+
+    float half_width = footprint * 0.6;
+
+    // Distance to the nearest line of a given spacing, in world units.
+    float2 d0 = abs(fract(p.xz / step0 + 0.5) - 0.5) * step0;
+    float2 d1 = abs(fract(p.xz / step1 + 0.5) - 0.5) * step1;
+
+    float l0 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d0.x, d0.y));
+    float l1 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d1.x, d1.y));
+
+    // The coarser decade is always fully present; the finer one fades in.
+    out.alpha = max(l1, l0 * (1.0 - blend));
+
+    // Axes last so they win over the lines they sit on.
+    float ax = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.z));
+    float az = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.x));
+    if (ax > 0.01) { out.color = float3(u.grid_axis_x); out.alpha = max(out.alpha, ax); }
+    if (az > 0.01) { out.color = float3(u.grid_axis_z); out.alpha = max(out.alpha, az); }
+
+    return out;
+}
+
+// Composites the grid over an already-shaded pixel. `surface_t` is the distance
+// to whatever the ray hit, so the grid is hidden behind geometry rather than
+// drawn on top of it.
+float3 composite_grid(float3 color, float3 origin, float3 dir, float surface_t,
+                      float tan_half, constant Uniforms& u) {
+    if (u.grid_enabled == 0) return color;
+    if (abs(dir.y) < 1e-5) return color;
+
+    float t = -origin.y / dir.y;
+    if (t <= 0.0 || t >= surface_t) return color;
+
+    float3 p = origin + dir * t;
+
+    float footprint = t * 2.0 * tan_half / max(u.screen_height, 1.0);
+    GridSample g = sample_grid(p, footprint, u);
+    if (g.alpha <= 0.001) return color;
+
+    // Fade with distance so the horizon stays clean instead of turning into a
+    // solid band of aliased lines.
+    float fade = 1.0 - smoothstep(u.grid_fade * 0.35, u.grid_fade, t);
+    // And fade at grazing angles, where a pixel covers so much ground that every
+    // line inside it would average to a smear.
+    float grazing = smoothstep(0.0, 0.12, abs(dir.y));
+
+    return mix(color, g.color, g.alpha * fade * grazing * u.grid_opacity);
+}
+
 kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture(0)]],
                             texture2d_array<float, access::read> mesh_textures [[texture(1)]],
                             texture2d<float, access::write> outDepth [[texture(2)]],
@@ -512,74 +584,3 @@ kernel void present_kernel(texture2d<float, access::sample> src [[texture(0)]],
     dst.write(float4(src.sample(smp, uv).rgb, 1.0f), gid);
 }
 
-// ---------------------------------------------------------------- ground grid
-//
-// The editor grid, drawn by the tracer rather than painted over the finished
-// image, so geometry occludes it correctly and it takes the same fog and
-// exposure as everything else.
-//
-// A compute kernel has no fwidth, so the pixel footprint is derived instead:
-// at distance t a pixel covers t * 2 * tan_half / screen_height world units.
-// That is what makes the lines a constant thickness on screen and what lets the
-// spacing step by decades without shimmering.
-struct GridSample { float3 color; float alpha; };
-
-GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
-    GridSample out;
-    out.color = float3(u.grid_color);
-    out.alpha = 0.0;
-
-    // Pick the decade whose lines are still far enough apart to read, and blend
-    // into the next one so nothing pops as the camera pulls back.
-    float decade = max(0.0, log10(footprint * 40.0));
-    float step0 = pow(10.0, floor(decade));
-    float step1 = step0 * 10.0;
-    float blend = fract(decade);
-
-    float half_width = footprint * 0.6;
-
-    // Distance to the nearest line of a given spacing, in world units.
-    float2 d0 = abs(fract(p.xz / step0 + 0.5) - 0.5) * step0;
-    float2 d1 = abs(fract(p.xz / step1 + 0.5) - 0.5) * step1;
-
-    float l0 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d0.x, d0.y));
-    float l1 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d1.x, d1.y));
-
-    // The coarser decade is always fully present; the finer one fades in.
-    out.alpha = max(l1, l0 * (1.0 - blend));
-
-    // Axes last so they win over the lines they sit on.
-    float ax = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.z));
-    float az = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.x));
-    if (ax > 0.01) { out.color = float3(u.grid_axis_x); out.alpha = max(out.alpha, ax); }
-    if (az > 0.01) { out.color = float3(u.grid_axis_z); out.alpha = max(out.alpha, az); }
-
-    return out;
-}
-
-// Composites the grid over an already-shaded pixel. `surface_t` is the distance
-// to whatever the ray hit, so the grid is hidden behind geometry rather than
-// drawn on top of it.
-float3 composite_grid(float3 color, float3 origin, float3 dir, float surface_t,
-                      float tan_half, constant Uniforms& u) {
-    if (u.grid_enabled == 0) return color;
-    if (abs(dir.y) < 1e-5) return color;
-
-    float t = -origin.y / dir.y;
-    if (t <= 0.0 || t >= surface_t) return color;
-
-    float3 p = origin + dir * t;
-
-    float footprint = t * 2.0 * tan_half / max(u.screen_height, 1.0);
-    GridSample g = sample_grid(p, footprint, u);
-    if (g.alpha <= 0.001) return color;
-
-    // Fade with distance so the horizon stays clean instead of turning into a
-    // solid band of aliased lines.
-    float fade = 1.0 - smoothstep(u.grid_fade * 0.35, u.grid_fade, t);
-    // And fade at grazing angles, where a pixel covers so much ground that every
-    // line inside it would average to a smear.
-    float grazing = smoothstep(0.0, 0.12, abs(dir.y));
-
-    return mix(color, g.color, g.alpha * fade * grazing * u.grid_opacity);
-}

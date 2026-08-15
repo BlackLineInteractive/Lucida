@@ -109,11 +109,12 @@ scenes::BuiltIn ParseScene(const char* arg) {
         if (index >= 0 && index < int(scenes::BuiltIn::Count)) return scenes::BuiltIn(index);
     }
     const std::string name = arg;
+    if (name.find("empty") != std::string::npos) return scenes::BuiltIn::Empty;
     if (name.find("basic") != std::string::npos) return scenes::BuiltIn::BasicPrimitives;
     if (name.find("lab")   != std::string::npos) return scenes::BuiltIn::MaterialLab;
     if (name.find("water") != std::string::npos) return scenes::BuiltIn::WaterAndFog;
     LUCIDA_WARN(App, "unknown scene '%s', falling back to the default", arg);
-    return scenes::BuiltIn::WaterAndFog;
+    return scenes::BuiltIn::Empty;
 }
 
 class SandboxApp final : public IApplication {
@@ -276,7 +277,7 @@ public:
             (as_panel && m_ui_state.viewport_height > 0)
                 ? f32(m_ui_state.viewport_width) / f32(m_ui_state.viewport_height)
                 : (h > 0 ? f32(w) / f32(h) : 16.0f / 9.0f);
-        m_ui.Build(world, m_ui_state, settings, m_renderer->Stats(), m_camera, time,
+        m_ui.Build(world, m_assets, m_ui_state, settings, m_renderer->Stats(), m_camera, time,
                    as_panel ? m_renderer->ViewportTexture() : nullptr, aspect);
 
         m_renderer->ApplySettings(settings);
@@ -531,7 +532,7 @@ int main(int argc, char** argv) {
     const bool scene_is_file = scene_arg.size() > 5 &&
                                scene_arg.compare(scene_arg.size() - 5, 5, ".json") == 0;
     const scenes::BuiltIn start_scene =
-        scene_is_file ? scenes::BuiltIn::WaterAndFog : ParseScene(scene_arg.empty() ? "water"
+        scene_is_file ? scenes::BuiltIn::Empty : ParseScene(scene_arg.empty() ? "empty"
                                                                                     : scene_arg.c_str());
 
     // Tool mode: write a built-in out as an editable file and stop. This is how

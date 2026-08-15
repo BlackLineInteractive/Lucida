@@ -19,6 +19,10 @@ constant int MATFLAG_ALPHA_BLEND       = 1 << 2;
 struct Sphere { packed_float3 center; float radius; int mat_index; int pad1, pad2, pad3; };
 struct Plane { packed_float3 normal; float d_offset; int mat_index; int pad1, pad2, pad3; };
 struct Cube { packed_float3 center; float pad1; packed_float3 half_size; int mat_index; };
+struct Cylinder { packed_float3 center; float radius; float height; int mat_index; int pad1, pad2; };
+struct Cone { packed_float3 center; float radius; float height; int mat_index; int pad1, pad2; };
+struct Torus { packed_float3 center; float radius; float inner_radius; int mat_index; int pad1, pad2; };
+struct Disk { packed_float3 center; float radius; packed_float3 normal; int mat_index; int pad1; };
 struct Light { packed_float3 position; float intensity; packed_float3 color; float radius; };
 
 // Traversal reads only this: 48 bytes with the edges already subtracted.
@@ -87,6 +91,8 @@ struct Uniforms {
     packed_float3 grid_color;  float pad11;
     packed_float3 grid_axis_x; float pad12;
     packed_float3 grid_axis_z; float pad13;
+    int num_cylinders; int num_cones; int num_tori; int num_disks;
+    float grid_spacing; float pad14; float pad15; float pad16;
 };
 
 constant float EPSILON = 1e-4;
@@ -544,6 +550,114 @@ HitInfo intersect_cube(Ray ray, device const Cube& c) {
     return info;
 }
 
+HitInfo intersect_cylinder(Ray ray, device const Cylinder& c) {
+    HitInfo info; info.hit = false; info.t = INF; info.inst_id = -1;
+    float3 oc = ray.origin - c.center;
+    float a = ray.direction.x*ray.direction.x + ray.direction.z*ray.direction.z;
+    float b = 2.0 * (oc.x*ray.direction.x + oc.z*ray.direction.z);
+    float c_val = oc.x*oc.x + oc.z*oc.z - c.radius*c.radius;
+    float disc = b*b - 4.0*a*c_val;
+    if (disc < 0.0) return info;
+    float sqrtd = sqrt(disc);
+    float t0 = (-b - sqrtd) / (2.0*a);
+    float t1 = (-b + sqrtd) / (2.0*a);
+    float t = t0;
+    float y = oc.y + t*ray.direction.y;
+    if (t < EPSILON || abs(y) > c.height) {
+        t = t1;
+        y = oc.y + t*ray.direction.y;
+        if (t < EPSILON || abs(y) > c.height) return info;
+    }
+    info.hit = true; info.t = t;
+    info.point = ray.origin + ray.direction * t;
+    info.normal = normalize(float3(info.point.x - c.center.x, 0.0, info.point.z - c.center.z));
+    info.geo_normal = info.normal;
+    info.mat_index = c.mat_index;
+    info.obj_origin = c.center;
+    info.is_mesh = false;
+    info.uv = float2((atan2(info.normal.z, info.normal.x) + 3.14159)/(2.0*3.14159), y / (2.0*c.height) + 0.5);
+    return info;
+}
+
+HitInfo intersect_cone(Ray ray, device const Cone& c) {
+    HitInfo info; info.hit = false; info.t = INF; info.inst_id = -1;
+    float3 oc = ray.origin - c.center;
+    float k = c.radius / c.height; k = k*k;
+    float dy = oc.y - c.height;
+    float a = ray.direction.x*ray.direction.x + ray.direction.z*ray.direction.z - k*ray.direction.y*ray.direction.y;
+    float b = 2.0 * (oc.x*ray.direction.x + oc.z*ray.direction.z - k*dy*ray.direction.y);
+    float c_val = oc.x*oc.x + oc.z*oc.z - k*dy*dy;
+    float disc = b*b - 4.0*a*c_val;
+    if (disc < 0.0) return info;
+    float sqrtd = sqrt(disc);
+    float t0 = (-b - sqrtd) / (2.0*a);
+    float t1 = (-b + sqrtd) / (2.0*a);
+    float t = t0;
+    float y = oc.y + t*ray.direction.y;
+    if (t < EPSILON || y < -c.height || y > c.height) {
+        t = t1;
+        y = oc.y + t*ray.direction.y;
+        if (t < EPSILON || y < -c.height || y > c.height) return info;
+    }
+    info.hit = true; info.t = t;
+    info.point = ray.origin + ray.direction * t;
+    float r = sqrt((info.point.x - c.center.x)*(info.point.x - c.center.x) + (info.point.z - c.center.z)*(info.point.z - c.center.z));
+    info.normal = normalize(float3(info.point.x - c.center.x, r * (c.radius/c.height), info.point.z - c.center.z));
+    info.geo_normal = info.normal;
+    info.mat_index = c.mat_index;
+    info.obj_origin = c.center;
+    info.is_mesh = false;
+    info.uv = float2((atan2(info.normal.z, info.normal.x) + 3.14159)/(2.0*3.14159), (y+c.height) / (2.0*c.height));
+    return info;
+}
+
+HitInfo intersect_torus(Ray ray, device const Torus& tor) {
+    HitInfo info; info.hit = false; info.t = INF; info.inst_id = -1;
+    float t = 0.0;
+    for (int i=0; i<64; i++) {
+        float3 p = ray.origin + ray.direction * t - tor.center;
+        float2 q = float2(length(p.xz) - tor.radius, p.y);
+        float d = length(q) - tor.inner_radius;
+        if (d < 0.001) {
+            info.hit = true; info.t = t;
+            info.point = ray.origin + ray.direction * t;
+            float3 center_ring = tor.center + normalize(float3(p.x, 0.0, p.z)) * tor.radius;
+            info.normal = normalize(info.point - center_ring);
+            info.geo_normal = info.normal;
+            info.mat_index = tor.mat_index;
+            info.obj_origin = tor.center;
+            info.is_mesh = false;
+            info.uv = float2((atan2(p.z, p.x) + 3.14159)/(2.0*3.14159), (atan2(p.y, length(p.xz)-tor.radius) + 3.14159)/(2.0*3.14159));
+            return info;
+        }
+        t += d;
+        if (t > 100.0) break;
+    }
+    return info;
+}
+
+HitInfo intersect_disk(Ray ray, device const Disk& d) {
+    HitInfo info; info.hit = false; info.t = INF; info.inst_id = -1;
+    float denom = dot(d.normal, ray.direction);
+    if (abs(denom) > EPSILON) {
+        float t = dot(d.center - ray.origin, d.normal) / denom;
+        if (t > EPSILON) {
+            float3 p = ray.origin + ray.direction * t;
+            float3 v = p - d.center;
+            if (dot(v, v) <= d.radius * d.radius) {
+                info.hit = true; info.t = t;
+                info.point = p;
+                info.normal = d.normal; info.geo_normal = d.normal;
+                info.obj_origin = d.center;
+                info.mat_index = d.mat_index;
+                info.is_mesh = false;
+                info.uv = float2(0.5) + float2(v.x, v.z) / (2.0 * d.radius);
+            }
+        }
+    }
+    return info;
+}
+
 // Walks every instance: reject by its world AABB, then transform the ray into
 // the instance's local space and traverse that BLAS.
 //
@@ -552,9 +666,11 @@ HitInfo intersect_cube(Ray ray, device const Cube& c) {
 // space, so hits from different instances are directly comparable and the
 // closest-so-far distance can prune later instances without any conversion.
 HitInfo find_closest(Ray ray,
-                     device const Sphere*   spheres,
-                     device const Plane*    planes,
-                     device const Cube*     cubes,
+                     device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks,
+                     device const Cylinder* cylinders,
+                     device const Cone*     cones,
+                     device const Torus*    tori,
+                     device const Disk*     disks,
                      device const BVHNode*  bvh_nodes,
                      device const TriPos*   triangles,
                      device const TriAttr*  tri_attrs,
@@ -562,13 +678,13 @@ HitInfo find_closest(Ray ray,
                      constant Uniforms&     u) {
     HitInfo closest; closest.hit = false; closest.t = INF; closest.inst_id = -1;
 
-    // Analytic primitives are always traced. They used to be an `else` against
-    // the instance branch, so loading a mesh silently deleted every sphere and
-    // cube from the scene — the scene description said one thing and the image
-    // showed another. A handful of quadric intersections is nothing next to a
-    // BVH traversal, so there is no reason to make them exclusive.
     for (int i = 0; i < u.num_spheres; i++) { HitInfo h = intersect_sphere(ray, spheres[i]); if (h.hit && h.t < closest.t) closest = h; }
+    for (int i = 0; i < u.num_planes;  i++) { HitInfo h = intersect_plane(ray, planes[i]);   if (h.hit && h.t < closest.t) closest = h; }
     for (int i = 0; i < u.num_cubes;   i++) { HitInfo h = intersect_cube(ray, cubes[i]);     if (h.hit && h.t < closest.t) closest = h; }
+    for (int i = 0; i < u.num_cylinders; i++) { HitInfo h = intersect_cylinder(ray, cylinders[i]); if (h.hit && h.t < closest.t) closest = h; }
+    for (int i = 0; i < u.num_cones;   i++) { HitInfo h = intersect_cone(ray, cones[i]);     if (h.hit && h.t < closest.t) closest = h; }
+    for (int i = 0; i < u.num_tori;    i++) { HitInfo h = intersect_torus(ray, tori[i]);     if (h.hit && h.t < closest.t) closest = h; }
+    for (int i = 0; i < u.num_disks;   i++) { HitInfo h = intersect_disk(ray, disks[i]);     if (h.hit && h.t < closest.t) closest = h; }
 
     if (u.enable_triangles != 0) {
         float3 inv = 1.0f / ray.direction;
@@ -625,7 +741,7 @@ bool point_in_cube(float3 p, device const Cube& c) {
     return d.x <= c.half_size.x && d.y <= c.half_size.y && d.z <= c.half_size.z;
 }
 
-float calc_analytic_shadow(float3 p, float3 n, float3 geo_n, float hit_t, float3 lpos, float lrad, device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const BVHNode* bvh_nodes, device const TriPos* triangles,
+float calc_analytic_shadow(float3 p, float3 n, float3 geo_n, float hit_t, float3 lpos, float lrad, device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, device const BVHNode* bvh_nodes, device const TriPos* triangles,
                  device const TriAttr* tri_attrs,
                  device const Instance* instances, constant Uniforms& u) {
     float3 L = lpos - p;
@@ -819,7 +935,7 @@ float sun_shadow(float3 p, float3 geo_n, float t,
            ? 0.0 : 1.0;
 }
 
-float3 calc_gi(float3 p, float3 n, device const Material* materials, device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, constant Uniforms& u) {
+float3 calc_gi(float3 p, float3 n, device const Material* materials, device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, constant Uniforms& u) {
     float3 gi = float3(0.0);
     for (int i = 0; i < u.num_planes; i++) {
         if (planes[i].normal.y > 0.9) {
@@ -897,8 +1013,7 @@ float4 upsample_ao(texture2d<float, access::sample> aoTex,
     return (wsum < 1e-4) ? float4(0.0, 0.0, 0.0, 1.0) : sum / wsum;
 }
 
-float3 trace_ray(Ray ray, device const Material* materials, device const Sphere* spheres,
-                 device const Plane* planes, device const Cube* cubes, device const Light* lights,
+float3 trace_ray(Ray ray, device const Material* materials, device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, device const Light* lights,
                  device const BVHNode* bvh_nodes, device const TriPos* triangles,
                  device const TriAttr* tri_attrs,
                  device const Instance* instances,
@@ -945,7 +1060,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
             if (survive < 0.05f) continue;   // kill rays that contribute < 5%
         }
 
-        HitInfo hit = find_closest(cur, spheres, planes, cubes, bvh_nodes, triangles, tri_attrs, instances, u);
+        HitInfo hit = find_closest(cur, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
 
         if (first_iteration) {
             first_iteration = false;
@@ -1104,7 +1219,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
             float3 spec = float3(0.0);
             for (int i = 0; i < u.num_lights; i++) {
-                float sh = calc_analytic_shadow(hit.point, water_n, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, spheres, planes, cubes, bvh_nodes, triangles, tri_attrs, instances, u);
+                float sh = calc_analytic_shadow(hit.point, water_n, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
                 float3 to_light = lights[i].position - hit.point;
                 float dist = length(to_light);
                 float3 L = to_light / dist;
@@ -1142,7 +1257,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 float NdotL = max(0.0, dot(N, L));
                 if (NdotL <= 0.0) continue;   // shadow ray would be wasted
 
-                float sh = calc_analytic_shadow(hit.point, N, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, spheres, planes, cubes, bvh_nodes, triangles, tri_attrs, instances, u);
+                float sh = calc_analytic_shadow(hit.point, N, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
                 if (sh <= 0.0) continue;
 
                 float atten = lights[i].intensity / max(dist_sq, 0.01f);
@@ -1198,7 +1313,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
             } else {
                 ao = calc_analytic_ao(hit.point, N, spheres, cubes, u);
                 float3 sky_ambient = sky_color(N, u) * u.ambient_light * 0.5;
-                indirect = (sky_ambient + calc_gi(hit.point, N, materials, spheres, planes, cubes, u)) * ao;
+                indirect = (sky_ambient + calc_gi(hit.point, N, materials, spheres, planes, cubes, cylinders, cones, tori, disks, u)) * ao;
             }
 
             direct += indirect * diffuse_albedo;
@@ -1262,8 +1377,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 // Forward declarations: the mesh lighting block is defined above the fog
 // march but the fog needs the sun constants, which are file scope.
 float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
-                 device const Sphere* spheres, device const Plane* planes,
-                 device const Cube* cubes, device const Light* lights,
+                 device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, device const Light* lights,
                  device const BVHNode* bvh_nodes, device const TriPos* triangles,
                  device const TriAttr* tri_attrs,
                  device const Instance* instances,
@@ -1299,7 +1413,7 @@ float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
                 float  sh = calc_analytic_shadow(sample_p, float3(0.0, 1.0, 0.0),
                                                  float3(0.0, 1.0, 0.0), 0.0,
                                                  lights[l].position, lights[l].radius,
-                                                 spheres, planes, cubes,
+                                                 spheres, planes, cubes, cylinders, cones, tori, disks,
                                                  bvh_nodes, triangles, tri_attrs, instances, u);
                 float3 light_intensity = lights[l].color * lights[l].intensity / (dist * dist + 0.1);
                 float  l_cos = max(0.0, dot(dir, l_dir));
@@ -1330,12 +1444,11 @@ float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
 // frame; at half resolution that is a quarter of the rays, and the upsample
 // filter also smooths the banding that only six sample directions produce.
 float primary_distance(Ray ray,
-                       device const Sphere* spheres, device const Plane* planes,
-                       device const Cube* cubes, device const BVHNode* bvh_nodes,
+                       device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, device const BVHNode* bvh_nodes,
                        device const TriPos* triangles,
                  device const TriAttr* tri_attrs,
                  device const Instance* instances, constant Uniforms& u) {
-    HitInfo h = find_closest(ray, spheres, planes, cubes, bvh_nodes, triangles, tri_attrs, instances, u);
+    HitInfo h = find_closest(ray, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
     return h.hit ? h.t : 60.0f;
 }
 
@@ -1368,7 +1481,7 @@ kernel void fog_kernel(texture2d<float, access::write> outFog [[texture(0)]],
     Ray r = make_ray(u.camera_origin, dir);
 
     // One primary hit serves both the fog bound and the AO probe.
-    HitInfo ph = find_closest(r, spheres, planes, cubes, bvh_nodes, triangles, tri_attrs, instances, u);
+    HitInfo ph = find_closest(r, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
     float fd = ph.hit ? ph.t : 60.0f;
 
     // AO plus the normal it was computed for: the composite needs the normal to
@@ -1397,7 +1510,7 @@ kernel void fog_kernel(texture2d<float, access::write> outFog [[texture(0)]],
     if (u.enable_fog > 0) {
         float jitter = kBayer4[(gid.y & 3) * 4 + (gid.x & 3)];
         fog = march_fog(u.camera_origin, dir, fd, jitter,
-                        spheres, planes, cubes, lights, bvh_nodes, triangles, tri_attrs, instances, u);
+                        spheres, planes, cubes, cylinders, cones, tori, disks, lights, bvh_nodes, triangles, tri_attrs, instances, u);
     }
     outFog.write(fog, gid);
     // Depth of the fog texel, so the composite can reject taps that belong to a
@@ -1472,6 +1585,78 @@ float3 aces_approx(float3 v) {
     return clamp(t, 0.0f, 1.0f);
 }
 
+// ---------------------------------------------------------------- ground grid
+//
+// The editor grid, drawn by the tracer rather than painted over the finished
+// image, so geometry occludes it correctly and it takes the same fog and
+// exposure as everything else.
+//
+// A compute kernel has no fwidth, so the pixel footprint is derived instead:
+// at distance t a pixel covers t * 2 * tan_half / screen_height world units.
+// That is what makes the lines a constant thickness on screen and what lets the
+// spacing step by decades without shimmering.
+struct GridSample { float3 color; float alpha; };
+
+GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
+    GridSample out;
+    out.color = float3(u.grid_color);
+    out.alpha = 0.0;
+
+    // Pick the decade whose lines are still far enough apart to read, and blend
+    // into the next one so nothing pops as the camera pulls back.
+    float decade = max(0.0, log10(footprint * 40.0));
+    float step0 = pow(10.0, floor(decade));
+    float step1 = step0 * 10.0;
+    float blend = fract(decade);
+
+    float half_width = footprint * 0.6;
+
+    // Distance to the nearest line of a given spacing, in world units.
+    float2 d0 = abs(fract(p.xz / step0 + 0.5) - 0.5) * step0;
+    float2 d1 = abs(fract(p.xz / step1 + 0.5) - 0.5) * step1;
+
+    float l0 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d0.x, d0.y));
+    float l1 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d1.x, d1.y));
+
+    // The coarser decade is always fully present; the finer one fades in.
+    out.alpha = max(l1, l0 * (1.0 - blend));
+
+    // Axes last so they win over the lines they sit on.
+    float ax = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.z));
+    float az = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.x));
+    if (ax > 0.01) { out.color = float3(u.grid_axis_x); out.alpha = max(out.alpha, ax); }
+    if (az > 0.01) { out.color = float3(u.grid_axis_z); out.alpha = max(out.alpha, az); }
+
+    return out;
+}
+
+// Composites the grid over an already-shaded pixel. `surface_t` is the distance
+// to whatever the ray hit, so the grid is hidden behind geometry rather than
+// drawn on top of it.
+float3 composite_grid(float3 color, float3 origin, float3 dir, float surface_t,
+                      float tan_half, constant Uniforms& u) {
+    if (u.grid_enabled == 0) return color;
+    if (abs(dir.y) < 1e-5) return color;
+
+    float t = -origin.y / dir.y;
+    if (t <= 0.0 || t >= surface_t) return color;
+
+    float3 p = origin + dir * t;
+
+    float footprint = t * 2.0 * tan_half / max(u.screen_height, 1.0);
+    GridSample g = sample_grid(p, footprint, u);
+    if (g.alpha <= 0.001) return color;
+
+    // Fade with distance so the horizon stays clean instead of turning into a
+    // solid band of aliased lines.
+    float fade = 1.0 - smoothstep(u.grid_fade * 0.35, u.grid_fade, t);
+    // And fade at grazing angles, where a pixel covers so much ground that every
+    // line inside it would average to a smear.
+    float grazing = smoothstep(0.0, 0.12, abs(dir.y));
+
+    return mix(color, g.color, g.alpha * fade * grazing * u.grid_opacity);
+}
+
 kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture(0)]],
                             texture2d_array<float, access::sample> mesh_textures [[texture(1)]],
                             texture2d<float, access::write> outDepth [[texture(2)]],
@@ -1527,7 +1712,7 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
 
             float fd = 60.0;
             int   fi = -1;
-            color += trace_ray(r, materials, spheres, planes, cubes, lights,
+            color += trace_ray(r, materials, spheres, planes, cubes, cylinders, cones, tori, disks, lights,
                                bvh_nodes, triangles, tri_attrs, instances, mesh_mats, mesh_textures,
                                mesh_orm, aoTexture, giNormTexture, fogDepthTexture,
                                (float2(gid) + 0.5) / float2(u.screen_width, u.screen_height),
@@ -1557,7 +1742,7 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
                      + ((2.0 * (px.x + 0.5) / u.screen_width  - 1.0) * u.aspect_ratio * u.tan_half_fov) * u.camera_right
                      + ((2.0 * (py_inv + 0.5) / u.screen_height - 1.0) * u.tan_half_fov) * u.camera_up);
         Ray dr = make_ray(u.camera_origin, dir);
-        HitInfo h = find_closest(dr, spheres, planes, cubes, bvh_nodes, triangles, tri_attrs, instances, u);
+        HitInfo h = find_closest(dr, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
         float3 dbg = float3(0.0);
         if (h.hit) {
             Material m = h.is_mesh ? mesh_mats[h.mat_index] : materials[h.mat_index];
@@ -1674,74 +1859,3 @@ kernel void present_kernel(texture2d<float, access::sample> src [[texture(0)]],
     dst.write(float4(src.sample(smp, uv).rgb, 1.0f), gid);
 }
 
-// ---------------------------------------------------------------- ground grid
-//
-// The editor grid, drawn by the tracer rather than painted over the finished
-// image, so geometry occludes it correctly and it takes the same fog and
-// exposure as everything else.
-//
-// A compute kernel has no fwidth, so the pixel footprint is derived instead:
-// at distance t a pixel covers t * 2 * tan_half / screen_height world units.
-// That is what makes the lines a constant thickness on screen and what lets the
-// spacing step by decades without shimmering.
-struct GridSample { float3 color; float alpha; };
-
-GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
-    GridSample out;
-    out.color = float3(u.grid_color);
-    out.alpha = 0.0;
-
-    // Pick the decade whose lines are still far enough apart to read, and blend
-    // into the next one so nothing pops as the camera pulls back.
-    float decade = max(0.0, log10(footprint * 40.0));
-    float step0 = pow(10.0, floor(decade));
-    float step1 = step0 * 10.0;
-    float blend = fract(decade);
-
-    float half_width = footprint * 0.6;
-
-    // Distance to the nearest line of a given spacing, in world units.
-    float2 d0 = abs(fract(p.xz / step0 + 0.5) - 0.5) * step0;
-    float2 d1 = abs(fract(p.xz / step1 + 0.5) - 0.5) * step1;
-
-    float l0 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d0.x, d0.y));
-    float l1 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d1.x, d1.y));
-
-    // The coarser decade is always fully present; the finer one fades in.
-    out.alpha = max(l1, l0 * (1.0 - blend));
-
-    // Axes last so they win over the lines they sit on.
-    float ax = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.z));
-    float az = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.x));
-    if (ax > 0.01) { out.color = float3(u.grid_axis_x); out.alpha = max(out.alpha, ax); }
-    if (az > 0.01) { out.color = float3(u.grid_axis_z); out.alpha = max(out.alpha, az); }
-
-    return out;
-}
-
-// Composites the grid over an already-shaded pixel. `surface_t` is the distance
-// to whatever the ray hit, so the grid is hidden behind geometry rather than
-// drawn on top of it.
-float3 composite_grid(float3 color, float3 origin, float3 dir, float surface_t,
-                      float tan_half, constant Uniforms& u) {
-    if (u.grid_enabled == 0) return color;
-    if (abs(dir.y) < 1e-5) return color;
-
-    float t = -origin.y / dir.y;
-    if (t <= 0.0 || t >= surface_t) return color;
-
-    float3 p = origin + dir * t;
-
-    float footprint = t * 2.0 * tan_half / max(u.screen_height, 1.0);
-    GridSample g = sample_grid(p, footprint, u);
-    if (g.alpha <= 0.001) return color;
-
-    // Fade with distance so the horizon stays clean instead of turning into a
-    // solid band of aliased lines.
-    float fade = 1.0 - smoothstep(u.grid_fade * 0.35, u.grid_fade, t);
-    // And fade at grazing angles, where a pixel covers so much ground that every
-    // line inside it would average to a smear.
-    float grazing = smoothstep(0.0, 0.12, abs(dir.y));
-
-    return mix(color, g.color, g.alpha * fade * grazing * u.grid_opacity);
-}

@@ -30,7 +30,7 @@ struct LocalBounds {
 // An analytic primitive: geometry described by a handful of numbers rather than
 // by triangles. This is where the engine's cheapness comes from — a sphere is
 // twelve floats and an exact intersection, not a mesh to build a BVH over.
-enum class PrimitiveType : u8 { Sphere = 0, Box, Plane, Count };
+enum class PrimitiveType : u8 { Sphere = 0, Box, Plane, Cylinder, Cone, Torus, Disk, Count };
 
 struct PrimitiveShape {
     PrimitiveType type = PrimitiveType::Sphere;
@@ -41,11 +41,17 @@ struct PrimitiveShape {
     Vec3 size{0.5f};
     Vec3 normal{0.0f, 1.0f, 0.0f};
     f32  offset = 0.0f;
+    f32  cylinder_height = 1.0f;
+    f32  inner_radius = 0.25f; // For torus
 
     Vec3 HalfExtents() const {
         switch (type) {
         case PrimitiveType::Sphere: return Vec3(size.x);
         case PrimitiveType::Box:    return size;
+        case PrimitiveType::Cylinder: return Vec3(size.x, cylinder_height * 0.5f, size.x);
+        case PrimitiveType::Cone:   return Vec3(size.x, cylinder_height * 0.5f, size.x);
+        case PrimitiveType::Torus:  return Vec3(size.x + inner_radius, inner_radius, size.x + inner_radius);
+        case PrimitiveType::Disk:   return Vec3(size.x, 0.02f, size.x);
         // A plane is unbounded; give picking something finite to hit that still
         // reads as "the ground" rather than a wall in front of the camera.
         case PrimitiveType::Plane:  return Vec3(50.0f, 0.02f, 50.0f);
@@ -68,5 +74,9 @@ struct LightSource {
 
 // Marks the entity the viewport camera follows. Zero or one per world.
 struct CameraTag {};
+
+// Tag component to indicate this entity should appear in the Scene Graph hierarchy UI.
+// Parent/child relations themselves are handled by core's `Parent` component.
+struct SceneGraphNode {};
 
 } // namespace lucida

@@ -153,6 +153,10 @@ class MetalBackend final : public IRenderBackend {
   id<MTLBuffer> m_buf_planes = nil;
   id<MTLBuffer> m_buf_cubes = nil;
   id<MTLBuffer> m_buf_lights = nil;
+  id<MTLBuffer> m_buf_cylinders = nil;
+  id<MTLBuffer> m_buf_cones = nil;
+  id<MTLBuffer> m_buf_tori = nil;
+  id<MTLBuffer> m_buf_disks = nil;
 
   // Triple-buffered uniforms to avoid CPU/GPU races on in-flight frames
   static constexpr int kMaxFramesInFlight = 3;
@@ -609,11 +613,19 @@ public:
     m_buf_planes  = upload(scene.planes.data(),    scene.planes.size(),    sizeof(GPUPlane));
     m_buf_cubes   = upload(scene.cubes.data(),     scene.cubes.size(),     sizeof(GPUCube));
     m_buf_lights  = upload(scene.lights.data(),    scene.lights.size(),    sizeof(GPULight));
+    m_buf_cylinders = upload(scene.cylinders.data(), scene.cylinders.size(), sizeof(GPUCylinder));
+    m_buf_cones     = upload(scene.cones.data(),     scene.cones.size(),     sizeof(GPUCone));
+    m_buf_tori      = upload(scene.tori.data(),      scene.tori.size(),      sizeof(GPUTorus));
+    m_buf_disks     = upload(scene.disks.data(),     scene.disks.size(),     sizeof(GPUDisk));
 
     m_uniforms.num_spheres = int(scene.spheres.size());
     m_uniforms.num_planes  = int(scene.planes.size());
     m_uniforms.num_cubes   = int(scene.cubes.size());
     m_uniforms.num_lights  = int(scene.lights.size());
+    m_uniforms.num_cylinders = int(scene.cylinders.size());
+    m_uniforms.num_cones     = int(scene.cones.size());
+    m_uniforms.num_tori      = int(scene.tori.size());
+    m_uniforms.num_disks     = int(scene.disks.size());
 
     m_environment = scene.environment;
     m_model       = scene.model;
@@ -819,6 +831,11 @@ public:
     m_uniforms.num_bvh_nodes = m_num_bvh_nodes;
     m_uniforms.num_spheres = 0;
     m_uniforms.num_cubes = 0;
+    m_uniforms.num_planes = 0;
+    m_uniforms.num_cylinders = 0;
+    m_uniforms.num_cones = 0;
+    m_uniforms.num_tori = 0;
+    m_uniforms.num_disks = 0;
     // The demo point lights are sized for a three-sphere scene; a mesh is lit
     // by the directional sun and sky irradiance in the shader instead.
     m_uniforms.num_lights = 0;
@@ -975,6 +992,10 @@ public:
         // atIndex:4 reserved for octahedrons
         [ce setBuffer:m_buf_lights offset:0 atIndex:5];
         [ce setBuffer:uniforms_buf offset:0 atIndex:6];
+        [ce setBuffer:m_buf_cylinders offset:0 atIndex:12];
+        [ce setBuffer:m_buf_cones offset:0 atIndex:13];
+        [ce setBuffer:m_buf_tori offset:0 atIndex:14];
+        [ce setBuffer:m_buf_disks offset:0 atIndex:15];
         if (m_mesh_loaded && m_buf_triangles) {
           [ce setBuffer:m_buf_triangles offset:0 atIndex:7];
           [ce setBuffer:m_buf_bvh offset:0 atIndex:8];
