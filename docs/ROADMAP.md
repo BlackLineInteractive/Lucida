@@ -49,7 +49,7 @@ facade. Below is the choice and the reason, not a catalogue of what is available
 | Vulkan memory | **VMA** | hand-rolling `VkDeviceMemory` is two weeks and a pile of bugs VMA already fixed |
 | RHI | **our own, thin** | neither bgfx nor sokol_gfx exposes `VK_KHR_ray_query` or Metal intersection functions. A wrapper that hides exactly the feature this engine is built on is pointless. `IRenderBackend` already exists; it needs finishing, not replacing |
 | Textures | **stb_image** + **KTX-Software / Basis** | stb for import, KTX2+Basis to transcode into BCn/ASTC/ETC for the actual GPU |
-| Fonts | **msdf-atlas-gen** + **FreeType** | SDF atlas: crisp text at any scale from one texture |
+| Fonts | **msdf-atlas-gen** + **FreeType** | SDF atlas: crisp text at any scale from one texture. `stb_truetype` is the lighter fallback if FreeType's build ever becomes a burden, but it cannot produce multi-channel SDFs, which is the point |
 | Audio | **miniaudio** | single file, mixer, spatial audio, decoders |
 | Scripting | **Lua 5.4** + **sol2** | sol2 removes the manual Lua stack; bindings read as ordinary C++ |
 | Profiler | **Tracy** | per-frame zones, memory, threads, GPU, live |
@@ -64,6 +64,15 @@ one warm accent (C++ blue) that marks state — checkmarks, slider grabs, the ac
 selection. `framework/Theme.h` owns it, and no panel hardcodes a colour.
 
 Everything is fetched by `cmake/Dependencies.cmake`. Nothing lands in the repository.
+
+### Already fetched and in use
+
+`glm`, `bvh v2`, `Jolt`, `Dear ImGui` (docking branch), `ImAnim`, `ImGuiFileDialog`,
+`stb_image` / `stb_image_write`, `SDL2`, `Assimp`, `EnTT`, `nlohmann/json`.
+
+The rest of the table is scheduled against the milestone that needs it, so nothing is
+pulled in before there is code to use it. A dependency added early is a dependency
+whose version you have to maintain for months before it earns anything.
 
 ---
 
@@ -216,6 +225,10 @@ image, a menu bar, and four panels — Hierarchy (entities, with per-entity visi
 Inspector (name, transform, world position, mesh and vehicle components), Renderer
 (quality and camera), Statistics (frame, GPU, profiler slots). Opening a project starts
 in editor mode with the cursor free; without one the sandbox still starts as a game.
+
+Also landed: the **standard editor layout** — viewport in the centre, hierarchy left,
+inspector and renderer right, statistics along the bottom, built once with DockBuilder
+and restored from `imgui.ini` afterwards, with View > Reset layout to get it back.
 
 Also landed: the **viewport panel**. Everything now presents into a persistent texture
 which either goes to the window (game mode) or is handed to ImGui as a texture id and

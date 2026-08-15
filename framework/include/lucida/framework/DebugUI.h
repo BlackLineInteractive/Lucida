@@ -52,6 +52,7 @@ public:
                void* viewport_texture = nullptr, f32 viewport_aspect = 16.0f / 9.0f);
 
 private:
+    void BuildDefaultLayout(unsigned dockspace_id);
     void DrawMenuBar(UiState& ui);
     void DrawViewport(UiState& ui, void* texture, f32 aspect);
     void DrawHierarchy(World& world, UiState& ui);
@@ -59,7 +60,8 @@ private:
     void DrawRenderer(UiState& ui, RenderSettings& settings, CameraController& camera);
     void DrawStats(const RenderStats& stats, const FrameTime& time);
 
-    f32 m_fps_ema = 60.0f;
+    f32  m_fps_ema = 60.0f;
+    bool m_reset_layout = false;
 };
 
 } // namespace lucida

@@ -11,6 +11,7 @@
 
 #include "ImGuiFileDialog.h"
 #include "imgui.h"
+#include "imgui_internal.h"   // DockBuilder
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -68,10 +69,19 @@ void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
     const f32 fps = time.real_delta > 0.0f ? 1.0f / time.real_delta : 0.0f;
     m_fps_ema = m_fps_ema * 0.92f + fps * 0.08f;
 
-    // The central dock node stays transparent so the traced image shows through
-    // it. Until the renderer can hand ImGui a texture, that image is the
-    // viewport; a dockable viewport panel arrives with offscreen targets.
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+    // The layout every engine editor uses, because it works: viewport in the
+    // middle, the scene tree on the left, properties on the right, output along
+    // the bottom. Built once; after that ImGui restores it from imgui.ini, so a
+    // rearranged workspace survives a restart.
+    const ImGuiID dockspace_id = ImGui::GetID("LucidaDockSpace");
+    if (m_reset_layout || ImGui::DockBuilderGetNode(dockspace_id) == nullptr) {
+        BuildDefaultLayout(dockspace_id);
+        m_reset_layout = false;
+    }
+
+    // The central node stays transparent, so closing the viewport panel shows
+    // the traced image behind the docks rather than a blank hole.
+    ImGui::DockSpaceOverViewport(dockspace_id, ImGui::GetMainViewport(),
                                  ImGuiDockNodeFlags_PassthruCentralNode);
 
     DrawMenuBar(ui);
@@ -90,6 +100,28 @@ void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
     }
 
     ImGui::Render();
+}
+
+void DebugUI::BuildDefaultLayout(unsigned dockspace_id) {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    ImGui::DockBuilderRemoveNode(dockspace_id);
+    ImGui::DockBuilderAddNode(dockspace_id,
+                              ImGuiDockNodeFlags_DockSpace | ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
+
+    ImGuiID centre = dockspace_id;
+    const ImGuiID left   = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left,  0.18f, nullptr, &centre);
+    const ImGuiID right  = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.22f, nullptr, &centre);
+    const ImGuiID bottom = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down,  0.24f, nullptr, &centre);
+
+    ImGui::DockBuilderDockWindow("Hierarchy", left);
+    ImGui::DockBuilderDockWindow("Inspector", right);
+    ImGui::DockBuilderDockWindow("Renderer", right);
+    ImGui::DockBuilderDockWindow("Statistics", bottom);
+    ImGui::DockBuilderDockWindow("Viewport", centre);
+
+    ImGui::DockBuilderFinish(dockspace_id);
 }
 
 void DebugUI::DrawMenuBar(UiState& ui) {
@@ -114,6 +146,7 @@ void DebugUI::DrawMenuBar(UiState& ui) {
         ImGui::MenuItem("Renderer", nullptr, &ui.show_renderer);
         ImGui::MenuItem("Statistics", nullptr, &ui.show_stats);
         ImGui::Separator();
+        if (ImGui::MenuItem("Reset layout")) m_reset_layout = true;
         if (ImGui::MenuItem("Fullscreen", "F11")) ui.request_fullscreen = true;
         ImGui::EndMenu();
     }
