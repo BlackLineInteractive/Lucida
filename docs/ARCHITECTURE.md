@@ -223,6 +223,24 @@ The lesson is worth keeping: the offscreen readback used for verification never 
 the drawable, so `--bench --shot` produced correct images for a renderer that displayed
 nothing. A test that does not exercise the presentation path does not test presentation.
 
+### Fixed: render targets were never created at startup
+
+`Init` set the render size from the surface and then called `SyncLayerSize`, which only
+acts on a *change*. Having just written that exact size, it saw none and created
+nothing. The renderer traced into null textures for the whole session unless something
+later resized the window — which is why it usually worked: the application compared the
+drawable size against the config and called `Resize`. When a saved config already held
+the current window size, no resize happened and the window stayed black with `Rays 0`.
+
+A startup is not a resize. Targets are now created explicitly in `Init`.
+
+Two symptoms that looked like separate bugs came from this one: the black window, and
+UI panels from several frames stacked on top of each other. Nothing wrote the drawable,
+and the ImGui pass loaded it — so each frame's panels landed on a recycled drawable that
+still held an older frame. The load action now follows whether anything actually wrote
+the drawable this frame, rather than a mode flag, so that class of artefact cannot come
+back.
+
 ### Fixed: driver crash on the present blit
 
 Moving the presented image to the drawable with the whole-texture

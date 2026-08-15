@@ -489,7 +489,14 @@ public:
     m_layer.device = m_device;
     m_layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     m_layer.framebufferOnly = NO; // allow compute shader writes
+
+    // SyncLayerSize only reacts to a *change*, and Init has just set the size to
+    // what the surface reports — so it saw no change and created nothing. The
+    // renderer then traced into null textures for the whole session, which looked
+    // exactly like a black window. Targets are created here, unconditionally,
+    // because startup is not a resize.
     SyncLayerSize();
+    CreateRenderTargets();
 
     m_queue = [m_device newCommandQueue];
     m_rpdesc = [MTLRenderPassDescriptor new];
@@ -1010,6 +1017,12 @@ public:
       // has nothing to reconstruct, and it is not present at all on older
       // machines — so the copy below is the path that must always work, and the
       // scaler is the optimisation layered on top of it.
+      // Tracks whether anything wrote the drawable this frame. The ImGui pass
+      // keys its load action off this rather than off a mode flag: if nothing
+      // wrote, the drawable is a recycled one still holding an older frame, and
+      // loading it stacks several frames of UI on top of each other. Making that
+      // impossible by construction beats remembering to set a flag.
+      bool wrote_drawable = false;
       bool presented = false;
 
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 130000
@@ -1059,12 +1072,13 @@ public:
         [be dispatchThreads:MTLSizeMake(drawable.texture.width, drawable.texture.height, 1)
              threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
         [be endEncoding];
+        wrote_drawable = true;
       }
 
       // --- Render pass (ImGui overlay)
       m_rpdesc.colorAttachments[0].texture = drawable.texture;
       m_rpdesc.colorAttachments[0].loadAction =
-          m_viewport_as_panel ? MTLLoadActionClear : MTLLoadActionLoad;
+          wrote_drawable ? MTLLoadActionLoad : MTLLoadActionClear;
       m_rpdesc.colorAttachments[0].clearColor = MTLClearColorMake(0.02, 0.02, 0.03, 1.0);
       m_rpdesc.colorAttachments[0].storeAction = MTLStoreActionStore;
 

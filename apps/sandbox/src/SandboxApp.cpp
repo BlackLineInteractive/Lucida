@@ -177,7 +177,6 @@ public:
         const bool editing = m_project.IsOpen();
         m_ui_state.show_menu = editing;
         m_platform->SetMouseCaptured(!editing);
-        m_renderer->SetViewportAsPanel(editing);
         return true;
     }
 
@@ -255,9 +254,17 @@ public:
 
         m_renderer->OverlayNewFrame();   // acquires the drawable, starts ImGui-Metal
         m_platform->OverlayNewFrame();
+        // The image goes into a panel exactly when the editor is on screen, and
+        // straight to the window when it is not. Deciding this every frame is
+        // what makes toggling the menu mid-session behave: it used to be set once
+        // at startup, so pressing the key gave you panels floating over a
+        // presentation that knew nothing about them.
+        const bool as_panel = m_ui_state.show_menu && m_ui_state.show_viewport;
+        m_renderer->SetViewportAsPanel(as_panel);
+
         const f32 aspect = h > 0 ? f32(w) / f32(h) : 16.0f / 9.0f;
         m_ui.Build(world, m_ui_state, settings, m_renderer->Stats(), m_camera, time,
-                   m_project.IsOpen() ? m_renderer->ViewportTexture() : nullptr, aspect);
+                   as_panel ? m_renderer->ViewportTexture() : nullptr, aspect);
 
         m_renderer->ApplySettings(settings);
         if (m_ui_state.request_fullscreen) {
