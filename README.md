@@ -11,6 +11,21 @@ patterns inside those layers, **Data-Oriented Design** (Fabian) for memory layou
 * Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 * Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
 
+## Where it stands
+
+On a MacBook Pro 16" (i9-9880H, **AMD Radeon Pro 5500M 8 GB** — a mid-range mobile GPU
+with no ray tracing hardware, everything in compute):
+
+| Scene | Resolution | Path | Frame rate |
+| --- | --- | --- | --- |
+| Sponza 4K (~5.7 M triangles) | 1080×720 | full RT, unoptimised | **15–30 fps** |
+| Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 57.8 fps |
+
+The image is clean at the first frame: no noise, no ghosting, no denoiser softness.
+The path is deterministic Whitted-style tracing with analytic soft shadows and AO, not
+stochastic sampling, so there is nothing to denoise and nothing to accumulate across
+frames. Every optimisation on the roadmap has to keep that property.
+
 ---
 
 ## Build
@@ -28,10 +43,10 @@ cmake --build build -j
 ### Platforms
 
 | Platform | Architectures | Renderer | State |
-|---|---|---|---|
-| macOS 13+ | x86_64, arm64 | Metal + MetalFX | ✅ complete tracing path |
-| Linux (Debian/Ubuntu) | x86_64, arm64 | OpenGL 4.3 compute | ⏳ backend not yet ported to `IRenderBackend` |
-| Windows 10+ | x86_64, x86 | OpenGL 4.3 / Vulkan | ⏳ same |
+| --- | --- | --- | --- |
+| macOS 13+ | x86_64, arm64 | Metal + MetalFX | complete tracing path |
+| Linux (Debian/Ubuntu) | x86_64, arm64 | OpenGL 4.3 compute | backend not yet ported to `IRenderBackend` |
+| Windows 10+ | x86_64, x86 | OpenGL 4.3 / Vulkan | same |
 
 Core, runtime, resource, physics, input and framework build on all three. Exactly one
 render backend is production-ready today — Metal. The GL and Vulkan sources sit in
@@ -39,17 +54,20 @@ render backend is production-ready today — Metal. The GL and Vulkan sources si
 RayTracer_Unified and are not yet wired to the current interface (see roadmap M12–M13).
 
 **Debian / Ubuntu**
+
 ```bash
 sudo apt install build-essential cmake ninja-build libsdl2-dev libassimp-dev
 ```
 
 **Windows (MSVC)**
+
 ```bash
 cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config RelWithDebInfo
 ```
 
 **macOS universal (x86_64 + arm64)**
+
 ```bash
 cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
 ```
@@ -57,7 +75,7 @@ cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
 ### CMake options
 
 | Option | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `LUCIDA_RENDER_METAL` | ON on Apple | Metal backend |
 | `LUCIDA_RENDER_GL` | ON off Apple | OpenGL 4.3 compute |
 | `LUCIDA_RENDER_VULKAN` | OFF | Vulkan (stub) |
@@ -83,7 +101,7 @@ looking at a window.
 ### Controls
 
 | Keys | Action |
-|---|---|
+| --- | --- |
 | W A S D | move |
 | Shift | sprint |
 | Space / Ctrl | jump and crouch (walk) or up and down (fly) |

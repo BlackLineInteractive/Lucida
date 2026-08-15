@@ -91,8 +91,9 @@ RayBudget:  rays per pixel this frame is allowed to spend
 * One tracing kernel; a tier disables branches instead of swapping shaders
 * The ray budget adapts inside the frame: when the frame misses its target, drop
   effects by priority rather than resolution
-* **Done when:** the same scene holds 60 fps on Baseline and on Full, differing only
-  in which effects are present, and tiers switch without a reload
+* **Done when:** Sponza 4K at 1080×720 holds 60 fps on `Selective` against the
+  15–30 fps the full path gives today, tiers switch without a reload, and no tier
+  introduces noise, ghosting or denoiser softness
 
 ### M9 — Procedural material library (the differentiator)
 
