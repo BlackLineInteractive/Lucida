@@ -25,3 +25,4 @@ external/
 .vscode/
 .idea/
 imgui.ini
+config.txt

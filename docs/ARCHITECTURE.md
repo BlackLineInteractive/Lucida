@@ -4,7 +4,7 @@ This document fixes the **rules** the engine grows by. Anything that contradicts
 does not enter the tree. Every module is tied to a specific part of the sources:
 
 | Source | Short | Role here |
-|---|---|---|
+| --- | --- | --- |
 | Jason Gregory, *Game Engine Architecture* (3rd ed.) | **GEA** | runtime layering, which subsystems exist |
 | Robert Nystrom, *Game Programming Patterns* — gameprogrammingpatterns.com | **GPP** | patterns inside those layers |
 | Richard Fabian, *Data-Oriented Design* — dataorienteddesign.com/dodbook | **DOD** | memory layout, SoA, ECS |
@@ -78,7 +78,7 @@ The rule: **maths, BVH/SAH and physics are not rewritten.** Take the best availa
 wrap it, so the library stays replaceable.
 
 | Subsystem | Choice | Why |
-|---|---|---|
+| --- | --- | --- |
 | Vector maths | `glm` | de-facto standard, SIMD paths, GLSL semantics |
 | BVH + binned SAH | `bvh v2` (madmann91) | multithreaded build, proven tree quality |
 | Physics | `Jolt` (default), `Bullet` (option) | Jolt: multithreaded, cache-friendly, AAA lineage |
@@ -97,8 +97,9 @@ choice, is in [ROADMAP.md](ROADMAP.md).
 ## 3. Modules
 
 ### `engine/core` — GEA 1.6.4–1.6.5, DOD
+
 | Folder | Contents | Source |
-|---|---|---|
+| --- | --- | --- |
 | `platform/` | fixed-width types, platform detection, monotonic clock | GEA 1.6.4, 8.5 |
 | `memory/` | `LinearAllocator` with markers, `PoolAllocator`, `FrameArena` | GEA 6.2 |
 | `container/` | generational `Handle`, dense-storage `HandleTable` | DOD 2; GPP: Object Pool |
@@ -109,19 +110,24 @@ choice, is in [ROADMAP.md](ROADMAP.md).
 | `ecs/` | SoA entity storage, archetypes | DOD 4 — **not written yet** |
 
 ### `engine/runtime` — GPP ch.3
+
 Fixed-step simulation with render interpolation, `World`, systems, `Application`.
 
 ### `engine/render`
+
 Front end: camera, mesh data, instance list, the `IRenderBackend` interface.
 No graphics API appears here.
 
 ### `engine/physics`
+
 `IPhysicsBackend`, `BodyDesc`, `VehicleDesc` — a clean abstraction over Jolt/Bullet.
 
 ### `engine/resource` — GEA 6.2
+
 Mesh loading, texture array packing, BLAS construction.
 
 ### `framework`
+
 UI/UX shell: debug menus, statistics, file dialog, camera controller.
 
 ---
@@ -141,15 +147,16 @@ UI/UX shell: debug menus, statistics, file dialog, camera controller.
 ## 5. Status
 
 | Milestone | Contents | State |
-|---|---|---|
-| M0 | skeleton, CMake graph, this document | ✅ |
-| M1 | `core`: memory, containers, diagnostics, events | ✅ |
-| M2 | `runtime`: game loop, world, update method | ✅ |
-| M3 | SDL2 platform + framework UI | ✅ |
-| M4 | `render` + Metal tracing backend | ✅ |
-| M5 | `physics` + Jolt | ✅ |
-| M6 | sandbox builds and runs | ✅ |
-| M7+ | see [ROADMAP.md](ROADMAP.md) | ⏳ |
+| --- | --- | --- |
+| M0 | skeleton, CMake graph, this document |
+| M1 | `core`: memory, containers, diagnostics, events |
+| M2 | `runtime`: game loop, world, update method |
+| M3 | SDL2 platform + framework UI |
+| M4 | `render` + Metal tracing backend |
+| M5 | `physics` + Jolt |
+| M6 | sandbox builds and runs |
+| M7 | scene lifted out of the backend into `RenderScene` |
+| M7b+ | see [ROADMAP.md](ROADMAP.md) |
 
 Verified: `lucida_sandbox --bench 90 --shot f.png` gives 57.8 fps at 1971×1065 rays
 (Intel Mac, Metal) and writes the frame out.
@@ -161,21 +168,53 @@ Metal 3. Mid-range mobile GPU with no ray tracing hardware at all: everything be
 runs as compute.
 
 | Scene | Resolution | Path | Frame rate |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Sponza 4K (~5.7 M triangles, 4K textures) | 1080×720 | full RT, unoptimised | **15–30 fps** |
 | Primitives + water + fog (demo 0.3) | 1971×1065 | full RT | 57.8 fps |
 
-What matters as much as the number: the image is **clean at frame one** — no noise, no
-ghosting, no temporal smearing, no denoiser softness. The path is deterministic
-Whitted-style tracing with analytic soft shadows and AO rather than stochastic
-sampling, so there is nothing to denoise and nothing to accumulate over frames. That
-is the property M8 must not trade away when it adds quality tiers: a cheaper tier may
-drop an effect, but it may not introduce noise or ghosting to buy back frame time.
+What matters as much as the number: **this method cannot produce noise or ghosting.**
+Not "does not today" — cannot. Tracing is deterministic Whitted-style with analytic
+soft shadows and AO instead of stochastic sampling, so there is no variance to
+denoise and no history to accumulate. The image is final at frame one.
+
+That is a design constraint, not an observation: a cheaper tier in M8 may drop an
+effect, but it may never buy frame time with temporal accumulation or a denoiser.
+
+The one place ghosting could enter is the MetalFX temporal upscaler, a stage bolted on
+after tracing. It was doing exactly that; see the fix below.
+
+### Fixed in M7: torn ghosting on moving objects
+
+`shader_v03.metal` wrote motion vectors on the assumption stated in its own comment —
+"the scene is static, so all motion comes from the camera" — reprojecting the world hit
+point through `prev_view_proj` and nothing else. Any instance whose own transform
+changed since the previous frame reported camera motion only, so MetalFX resolved
+history from the wrong pixels and tore.
+
+Motion is now per instance. `GPUInstance` carries the transform it had in the previously
+rendered frame; the shader takes the hit point into instance-local space with the
+current `world_to_local`, pushes it back out with the previous `local_to_world`, then
+applies `prev_view_proj`. Static instances have both transforms equal, so the maths
+collapses to the camera-only case and nothing regresses.
+
+The previous transform advances once per *rendered frame* (`RollInstanceMotion`), not
+per `SetInstanceTransform` call — including on the frame an object stops, where prev has
+to catch up to current or a stationary object keeps smearing.
+
+### Two more assumptions M7 removed
+
+Both were invisible until the scene became data and something contradicted them:
+
+* The tracer traced analytic primitives **or** mesh instances, never both — spheres and
+  cubes sat in the `else` branch of the instance loop.
+* `AddMesh` zeroed the sphere, cube and light counts, so loading a model silently
+  deleted the primitives and unlit the world.
+
+A mesh is one more thing in a scene, not the scene. Both are gone, and the material lab
+now renders with a mesh standing in it.
 
 ### Debt taken on deliberately
 
-* Demo scenes still live inside the Metal backend and its kernels. Scene authoring
-  belongs in `engine/render`; this is the seam M7 cuts along.
 * `LoadMesh` survives beside `AddMesh`/`AddInstance` for compatibility and should go.
 * `IPhysicsBackend::CreateBody` is unimplemented in the Jolt backend: the ported world
   knows only a vehicle and static ground.

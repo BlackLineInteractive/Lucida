@@ -43,6 +43,7 @@ struct Instance {
     packed_float3 aabb_min; int node_base;
     packed_float3 aabb_max; int tri_base;
     int node_count; int mat_base; int flags; int pad0;
+    float4 p2w0, p2w1, p2w2;   // local -> world as of the previous frame
 };
 
 static inline float3 xform_point(float4 r0, float4 r1, float4 r2, float3 p) {
@@ -89,6 +90,10 @@ constant int DIFFUSE = 0, METAL = 1, GLASS = 2, EMISSIVE = 3, CHECKERBOARD = 4, 
 struct Ray { float3 origin; float3 direction; };
 struct HitInfo {
     bool hit; float t; float3 point, normal; int mat_index; float2 uv; bool is_mesh;
+    // Instance this hit belongs to, or -1 for world-space analytic geometry.
+    // Only the motion-vector pass reads it, but it has to be carried from the
+    // traversal loop, which is the only place that knows it.
+    int inst_id;
     // sqrt(uv_area / world_area) of the hit triangle: texture-space density used
     // to pick a mip level. 0 for analytic primitives, which are not textured.
     float uv_density;
@@ -223,6 +228,7 @@ TriHit intersect_bvh(Ray ray, device const BVHNode* nodes,
 HitInfo resolve_tri_hit(Ray ray, TriHit th, device const TriPos* tris,
                         device const TriAttr* attrs) {
     HitInfo info;
+    info.inst_id = -1;   // the caller overwrites this with its instance index
     device const TriPos&  tri = tris[th.idx];
     device const TriAttr& at  = attrs[th.idx];
     float w = 1.0f - th.u - th.v;
@@ -454,7 +460,7 @@ float hash21(float2 p) {
 
 
 HitInfo intersect_sphere(Ray ray, device const Sphere& s) {
-    HitInfo info; info.hit = false; info.t = INF;
+    HitInfo info; info.hit = false; info.t = INF; info.inst_id = -1;
     float3 oc = ray.origin - s.center;
     float a = dot(ray.direction, ray.direction);
     float b = 2.0 * dot(oc, ray.direction);
@@ -481,7 +487,7 @@ HitInfo intersect_sphere(Ray ray, device const Sphere& s) {
 }
 
 HitInfo intersect_plane(Ray ray, device const Plane& p) {
-    HitInfo info; info.hit = false; info.t = INF;
+    HitInfo info; info.hit = false; info.t = INF; info.inst_id = -1;
     float denom = dot(p.normal, ray.direction);
     if (abs(denom) > EPSILON) {
         float t = (p.d_offset - dot(ray.origin, p.normal)) / denom;
@@ -501,7 +507,7 @@ HitInfo intersect_plane(Ray ray, device const Plane& p) {
 }
 
 HitInfo intersect_cube(Ray ray, device const Cube& c) {
-    HitInfo info; info.hit = false; info.t = INF;
+    HitInfo info; info.hit = false; info.t = INF; info.inst_id = -1;
     float3 inv_dir = 1.0 / ray.direction;
     float3 t1 = (c.center - c.half_size - ray.origin) * inv_dir;
     float3 t2 = (c.center + c.half_size - ray.origin) * inv_dir;
@@ -543,12 +549,17 @@ HitInfo find_closest(Ray ray,
                      device const TriAttr*  tri_attrs,
                      device const Instance* instances,
                      constant Uniforms&     u) {
-    HitInfo closest; closest.hit = false; closest.t = INF;
+    HitInfo closest; closest.hit = false; closest.t = INF; closest.inst_id = -1;
 
-    if (u.enable_triangles == 0) {
-        for (int i = 0; i < u.num_spheres; i++) { HitInfo h = intersect_sphere(ray, spheres[i]); if (h.hit && h.t < closest.t) closest = h; }
-        for (int i = 0; i < u.num_cubes;   i++) { HitInfo h = intersect_cube(ray, cubes[i]);     if (h.hit && h.t < closest.t) closest = h; }
-    } else {
+    // Analytic primitives are always traced. They used to be an `else` against
+    // the instance branch, so loading a mesh silently deleted every sphere and
+    // cube from the scene — the scene description said one thing and the image
+    // showed another. A handful of quadric intersections is nothing next to a
+    // BVH traversal, so there is no reason to make them exclusive.
+    for (int i = 0; i < u.num_spheres; i++) { HitInfo h = intersect_sphere(ray, spheres[i]); if (h.hit && h.t < closest.t) closest = h; }
+    for (int i = 0; i < u.num_cubes;   i++) { HitInfo h = intersect_cube(ray, cubes[i]);     if (h.hit && h.t < closest.t) closest = h; }
+
+    if (u.enable_triangles != 0) {
         float3 inv = 1.0f / ray.direction;
         for (int ii = 0; ii < u.num_instances; ii++) {
             device const Instance& inst = instances[ii];
@@ -566,6 +577,7 @@ HitInfo find_closest(Ray ray,
             if (th.idx < 0 || th.t >= closest.t) continue;
 
             HitInfo h = resolve_tri_hit(lr, th, triangles, tri_attrs);
+            h.inst_id    = ii;
             h.point      = xform_point(inst.l2w0, inst.l2w1, inst.l2w2, h.point);
             h.normal     = normalize(xform_dir(inst.l2w0, inst.l2w1, inst.l2w2, h.normal));
             h.geo_normal = normalize(xform_dir(inst.l2w0, inst.l2w1, inst.l2w2, h.geo_normal));
@@ -902,12 +914,14 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                  texture2d<float, access::sample> giNormTex,
                  texture2d<float, access::sample> fogDepthTex,
                  float2 screen_uv,
-                 constant Uniforms& u, thread float& first_dist) {
+                 constant Uniforms& u, thread float& first_dist,
+                 thread int& first_inst) {
 
     // The primary hit distance (used by the fog term) is taken from the first
     // iteration of the loop below rather than from a second, identical
     // find_closest() call — that duplicate doubled the cost of every primary ray.
     first_dist = 60.0;
+    first_inst = -1;
     bool first_iteration = true;
 
     float3 result = float3(0.0);
@@ -940,7 +954,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
         if (first_iteration) {
             first_iteration = false;
-            if (hit.hit) first_dist = hit.t;
+            if (hit.hit) { first_dist = hit.t; first_inst = hit.inst_id; }
         }
 
         if (!hit.hit) {
@@ -1500,8 +1514,9 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
 
 
     float3 color      = float3(0.0);
-    float3 center_dir = float3(0.0);
-    float  center_fd  = 60.0;
+    float3 center_dir  = float3(0.0);
+    float  center_fd   = 60.0;
+    int    center_inst = -1;
     int    SAMPLES    = u.samples_per_pixel;
     if (SAMPLES < 1) SAMPLES = 1;
     if (SAMPLES > 4) SAMPLES = 4;
@@ -1516,12 +1531,13 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
             Ray r = make_ray(u.camera_origin, dir);
 
             float fd = 60.0;
+            int   fi = -1;
             color += trace_ray(r, materials, spheres, planes, cubes, lights,
                                bvh_nodes, triangles, tri_attrs, instances, mesh_mats, mesh_textures,
                                mesh_orm, aoTexture, giNormTexture, fogDepthTexture,
                                (float2(gid) + 0.5) / float2(u.screen_width, u.screen_height),
-                               u, fd);
-            if (dx == 0 && dy == 0) { center_dir = dir; center_fd = fd; }
+                               u, fd, fi);
+            if (dx == 0 && dy == 0) { center_dir = dir; center_fd = fd; center_inst = fi; }
         }
     }
     color /= float(SAMPLES * SAMPLES);
@@ -1619,9 +1635,21 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
     outDepth.write(float4(clamp(depth, 0.0f, 1.0f), 0.0, 0.0, 0.0), gid);
 
     // Motion vector: where this surface sat in the previous frame, in input
-    // pixels. The scene is static, so all motion comes from the camera.
+    // pixels.
+    //
+    // Camera reprojection alone answers that only for geometry that did not
+    // move. For an instance that did, the surface has to be carried back through
+    // its own transform first: world -> instance-local with the current inverse,
+    // then local -> world with the transform the instance had last frame. A
+    // static instance has both equal, so this reduces to the camera-only case.
     float3 world_p = u.camera_origin + center_dir * center_fd;
-    float4 prev_clip = u.prev_view_proj * float4(world_p, 1.0);
+    float3 prev_world_p = world_p;
+    if (center_inst >= 0 && center_inst < u.num_instances) {
+        device const Instance& inst = instances[center_inst];
+        float3 local = xform_point(inst.w2l0, inst.w2l1, inst.w2l2, world_p);
+        prev_world_p = xform_point(inst.p2w0, inst.p2w1, inst.p2w2, local);
+    }
+    float4 prev_clip = u.prev_view_proj * float4(prev_world_p, 1.0);
     float2 motion = float2(0.0);
     if (prev_clip.w > 1e-5) {
         float2 prev_ndc = prev_clip.xy / prev_clip.w;

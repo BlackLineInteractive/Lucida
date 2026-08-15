@@ -21,10 +21,15 @@ with no ray tracing hardware, everything in compute):
 | Sponza 4K (~5.7 M triangles) | 1080×720 | full RT, unoptimised | **15–30 fps** |
 | Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 57.8 fps |
 
-The image is clean at the first frame: no noise, no ghosting, no denoiser softness.
-The path is deterministic Whitted-style tracing with analytic soft shadows and AO, not
-stochastic sampling, so there is nothing to denoise and nothing to accumulate across
-frames. Every optimisation on the roadmap has to keep that property.
+This method **cannot** produce noise or ghosting — not "does not yet". Tracing is
+deterministic Whitted-style with analytic soft shadows and AO rather than stochastic
+sampling, so there is no variance to denoise and no history to accumulate. The image is
+final at frame one, and every optimisation on the roadmap has to keep it that way.
+
+(The torn ghosting that used to show on moving objects was never the tracer: the MetalFX
+upscaler was given motion vectors that described camera movement only. Motion is now
+computed per instance — see
+[ARCHITECTURE.md](docs/ARCHITECTURE.md#fixed-in-m7-torn-ghosting-on-moving-objects).)
 
 ---
 
@@ -89,6 +94,7 @@ cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
 ## Running
 
 ```bash
+./build/lucida_sandbox --scene lab             # basic | water | lab
 ./build/lucida_sandbox --mesh model.glb        # load a model at startup
 ./build/lucida_sandbox --bench 90              # 90 frames, print timings
 ./build/lucida_sandbox --bench 90 --shot f.png # same, plus a frame capture

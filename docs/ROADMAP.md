@@ -25,7 +25,7 @@ Reference machine: MacBook Pro 16", i9-9880H, **AMD Radeon Pro 5500M 8 GB** — 
 mid-range mobile GPU with no ray tracing hardware, everything in compute.
 
 | Scene | Resolution | Path | Frame rate |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Sponza 4K (~5.7 M tris) | 1080×720 | full RT, unoptimised | **15–30 fps** |
 | Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 57.8 fps |
 
@@ -42,7 +42,7 @@ Same rule as [ARCHITECTURE.md](ARCHITECTURE.md) §2: take what exists, hide it b
 facade. Below is the choice and the reason, not a catalogue of what is available.
 
 | Area | Choice | Why this one |
-|---|---|---|
+| --- | --- | --- |
 | ECS | **EnTT** | header-only, sparse sets that match our SoA layout, no runtime of its own. Flecs gives hierarchies and queries out of the box but brings its own world model — more than this profile needs |
 | Job system | **enkiTS** | ~2k lines, task-parallel, exactly the shape of "update N systems". Taskflow's dependency graph is heavier; revisit if a real graph appears |
 | Shaders | **slang** (primary) + **SPIRV-Cross** | one source → SPIR-V, MSL, HLSL, and slang understands ray tracing constructs the GLSL→SPIR-V path does not expose. `glslang`/`shaderc` stay as the fallback for GLSL sources |
@@ -64,18 +64,30 @@ Everything is fetched by `cmake/Dependencies.cmake`. Nothing lands in the reposi
 
 ## Milestones
 
-### M7 — Get the scene out of the shader ⬅ next
+### M7 — Get the scene out of the shader
 
-The demo scenes are currently baked into `shader_v02/v03.metal` and
-`MetalBackend::SetupScene`. While that holds, a second backend, an editor and
-procedural materials are all blocked.
+The demo scenes were baked into `MetalBackend::SetupScene`. While that held, a second
+backend, an editor and procedural materials were all blocked.
 
-* `engine/render/Scene.h`: `RenderScene` in SoA — primitives, materials, lights, instances
-* The shader reads **buffers only**: no `if (version == 2)`, no scene constants
-* `SceneBuilder` in `framework` assembles demo scenes from application code
-* `IRenderBackend::SubmitScene(const RenderScene&)` replaces `SetDemoScene(int)`
-* **Done when:** both demo scenes are built from `apps/sandbox` and no scene literal
-  remains in any `.metal` file
+Two assumptions fell out of the change, both invisible until a scene could contradict
+them: the tracer traced analytic primitives *or* mesh instances but never both, and
+`AddMesh` zeroed the sphere, cube and light counts. A mesh is one more thing in a
+scene, not the scene.
+
+* **Done:** `engine/render/Scene.h` holds `RenderScene`; `framework/SceneLibrary` builds
+  the three built-in scenes; `IRenderBackend::SubmitScene` replaced `SetDemoScene`; the
+  backend keeps no scene of its own and `--scene basic|water|lab` picks one at launch
+
+### M7b — Scene as an asset ⬅ next
+
+A scene that exists only as C++ in `apps/sandbox` is a demo. An engine loads a scene
+it did not compile.
+
+* `RenderScene` serialises to and from JSON (nlohmann, pulled forward from M18)
+* `SceneLoader` in `engine/resource`: entities, transforms, material references,
+  light setup, mesh paths
+* `lucida_sandbox --scene demo.json` — no rebuild to change the world
+* **Done when:** a scene can be edited in a text editor and reloaded at runtime
 
 ### M8 — Selective ray tracing: quality tiers
 
@@ -181,11 +193,20 @@ Not for Bullet's sake, but to prove the physics abstraction is one. Finish
 
 ```
 M7 (scene out of shader)
- ├── M8 (quality tiers) ──── M9 (procedural materials) ── M15 (editor)
- ├── M12 (shader pipeline) ─ M13 (Vulkan + VMA)
- └── M10 (ECS) ── M11 (jobs) ── M14 (resources) ── M16 (audio) ── M17 (scripting)
+ ├── M7b (scene as an asset) ── M10 (ECS) ── M15 (editor) ── M17 (scripting)
+ ├── M8 (quality tiers) ─────── M9 (procedural materials)
+ ├── M12 (shader pipeline) ──── M13 (Vulkan + VMA)
+ └── M11 (jobs) ── M14 (resources) ── M16 (audio)
 M18 (tooling) — in parallel, any time
 M19 (Bullet) — after M10
 ```
 
-M7 and M8 are the critical path: without them this stays one demo rather than an engine.
+Two different goals run through this list, and they are worth keeping apart:
+
+* **What makes it an engine** — M7, M7b, M10, M15, M17. Someone other than the author
+  can build a world in it without touching C++.
+* **What makes it worth choosing** — M8, M9. Ray-traced graphics on hardware that has
+  no ray tracing units.
+
+The engine half comes first. A renderer nobody can author content for is a demo,
+however fast it runs.

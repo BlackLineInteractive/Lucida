@@ -5,6 +5,7 @@
 // The framework layer is where tools live: nothing below it links ImGui.
 
 #include "lucida/framework/CameraController.h"
+#include "lucida/framework/SceneLibrary.h"
 #include "lucida/render/RenderBackend.h"
 
 #include <string>
@@ -15,7 +16,8 @@ struct UiState {
     bool show_menu     = true;
     bool request_quit  = false;
     bool request_fullscreen = false;
-    i32  demo_scene    = 1;
+    scenes::BuiltIn scene = scenes::BuiltIn::WaterAndFog;
+    bool request_scene_reload = false;
     std::string pending_model_path;   // non-empty when the user picked a file
 };
 

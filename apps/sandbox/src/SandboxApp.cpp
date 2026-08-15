@@ -10,6 +10,7 @@
 #include "lucida/core/diag/Profiler.h"
 #include "lucida/framework/CameraController.h"
 #include "lucida/framework/DebugUI.h"
+#include "lucida/framework/SceneLibrary.h"
 #include "lucida/resource/ModelLoader.h"
 #include "lucida/runtime/Engine.h"
 
@@ -91,11 +92,27 @@ struct BenchOptions {
     std::string screenshot_path;
 };
 
+// Accepts an index or a name, so both `--scene 2` and `--scene lab` work.
+scenes::BuiltIn ParseScene(const char* arg) {
+    if (arg[0] >= '0' && arg[0] <= '9') {
+        const int index = std::atoi(arg);
+        if (index >= 0 && index < int(scenes::BuiltIn::Count)) return scenes::BuiltIn(index);
+    }
+    const std::string name = arg;
+    if (name.find("basic") != std::string::npos) return scenes::BuiltIn::BasicPrimitives;
+    if (name.find("lab")   != std::string::npos) return scenes::BuiltIn::MaterialLab;
+    if (name.find("water") != std::string::npos) return scenes::BuiltIn::WaterAndFog;
+    LUCIDA_WARN(App, "unknown scene '%s', falling back to the default", arg);
+    return scenes::BuiltIn::WaterAndFog;
+}
+
 class SandboxApp final : public IApplication {
 public:
     SandboxApp(Config config, std::string config_path, BenchOptions bench)
         : m_config(std::move(config)), m_config_path(std::move(config_path)),
           m_bench(std::move(bench)) {}
+
+    void SetStartScene(scenes::BuiltIn which) { m_ui_state.scene = which; }
 
     bool Finished() const { return m_finished; }
 
@@ -117,7 +134,7 @@ public:
         m_platform->OverlayInit();
         m_renderer->OverlayInit();
 
-        m_renderer->SetDemoScene(m_ui_state.demo_scene);
+        LoadScene(m_ui_state.scene);
         m_renderer->ApplySettings(m_config.render);
         m_camera.SetMode(m_config.walk_mode ? CameraMode::Walk : CameraMode::Fly);
 
@@ -209,6 +226,10 @@ public:
             m_platform->ToggleFullscreen();
             m_ui_state.request_fullscreen = false;
         }
+        if (m_ui_state.request_scene_reload) {
+            LoadScene(m_ui_state.scene);
+            m_ui_state.request_scene_reload = false;
+        }
         if (!m_ui_state.pending_model_path.empty()) {
             LoadModelFile(m_ui_state.pending_model_path);
             m_ui_state.pending_model_path.clear();
@@ -220,6 +241,16 @@ public:
     }
 
 private:
+    // Builds a scene and hands it over. Note the split: the backend takes the
+    // geometry, the application takes the spawn point — placing a camera is not
+    // the renderer's job.
+    void LoadScene(scenes::BuiltIn which) {
+        const RenderScene scene = scenes::Build(which);
+        m_renderer->SubmitScene(scene);
+        m_camera.Camera() = scene.spawn;
+        m_scene_spheres = scene.spheres;
+    }
+
     void RunBenchFrame(const FrameTime& time) {
         m_bench_times.push_back(time.real_delta * 1000.0f);
         if (i32(m_bench_times.size()) < m_bench.frames) return;
@@ -286,6 +317,10 @@ private:
     InstanceHandle m_car_instance;
     f32            m_car_scale = 1.0f;
 
+    // Kept for gameplay collision against the analytic scene, which is the
+    // application's business rather than the renderer's.
+    std::vector<GPUSphere> m_scene_spheres;
+
     BenchOptions     m_bench;
     std::vector<f32> m_bench_times;
     bool             m_finished = false;
@@ -300,11 +335,13 @@ int main(int argc, char** argv) {
     std::string config_path = "config.txt";
     std::string model_override;
     BenchOptions bench;
+    scenes::BuiltIn start_scene = scenes::BuiltIn::WaterAndFog;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)      config_path = argv[++i];
         else if (std::strcmp(argv[i], "--mesh") == 0 && i + 1 < argc)   model_override = argv[++i];
         else if (std::strcmp(argv[i], "--bench") == 0 && i + 1 < argc)  bench.frames = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--shot") == 0 && i + 1 < argc)   bench.screenshot_path = argv[++i];
+        else if (std::strcmp(argv[i], "--scene") == 0 && i + 1 < argc)  start_scene = ParseScene(argv[++i]);
         else if (std::strcmp(argv[i], "--verbose") == 0)                LogSetLevel(LogLevel::Debug);
     }
 
@@ -319,6 +356,7 @@ int main(int argc, char** argv) {
     if (!engine.Init(engine_config)) return 1;
 
     SandboxApp app(config, config_path, bench);
+    app.SetStartScene(start_scene);
     const int result = engine.Run(app);
     engine.Shutdown();
     return result;

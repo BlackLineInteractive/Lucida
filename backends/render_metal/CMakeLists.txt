@@ -26,9 +26,23 @@ endif()
 
 # Kernels are compiled from source at startup, so they must sit next to the
 # binary rather than inside it.
-add_custom_command(TARGET lucida_render_metal POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:lucida_render_metal>/shaders
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_CURRENT_SOURCE_DIR}/shaders
-            ${CMAKE_BINARY_DIR}/shaders
-    COMMENT "Staging Metal kernels")
+#
+# Staged per file with an explicit DEPENDS rather than as a POST_BUILD step on
+# the library: POST_BUILD only fires when the library itself relinks, so editing
+# a .metal file alone left the stale copy in place and the change silently did
+# not take effect.
+file(GLOB LUCIDA_METAL_KERNELS ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.metal)
+set(LUCIDA_STAGED_KERNELS "")
+foreach(kernel ${LUCIDA_METAL_KERNELS})
+    get_filename_component(kernel_name ${kernel} NAME)
+    set(staged ${CMAKE_BINARY_DIR}/shaders/${kernel_name})
+    add_custom_command(
+        OUTPUT  ${staged}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${kernel} ${staged}
+        DEPENDS ${kernel}
+        COMMENT "Staging ${kernel_name}")
+    list(APPEND LUCIDA_STAGED_KERNELS ${staged})
+endforeach()
+
+add_custom_target(lucida_metal_kernels DEPENDS ${LUCIDA_STAGED_KERNELS})
+add_dependencies(lucida_render_metal lucida_metal_kernels)

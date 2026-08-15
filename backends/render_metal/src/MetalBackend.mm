@@ -15,6 +15,7 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <fstream>
@@ -181,15 +182,14 @@ class MetalBackend final : public IRenderBackend {
 #endif
 
   // State
-  int m_version = 1;
+  ShadingModel m_model = ShadingModel::WhittedGI;
+  SceneEnvironment m_environment;
   bool m_fog = true;
   bool m_jitter = false;
   int m_samples = 1;
   bool m_mesh_loaded = false;
   float m_render_scale = 0.5f;
   bool m_vsync = true;
-  float m_fog_density = 0.022f;
-  int m_fog_steps = 16;
   int m_render_w = 0; // drawable (output) size
   int m_render_h = 0;
   int m_ray_w = 0; // internal ray-tracing resolution
@@ -214,7 +214,6 @@ class MetalBackend final : public IRenderBackend {
   Vec3 m_cam_pos = {0, 0.0, 2.0};
   double m_yaw = -M_PI / 2.0;
   double m_pitch = 0.0;
-  std::vector<GPUSphere> m_scene_spheres;
 
   // ---- Two-level acceleration structure.
   // Every mesh's BLAS is appended to shared CPU-side pools and re-uploaded when
@@ -233,8 +232,30 @@ class MetalBackend final : public IRenderBackend {
   std::vector<GPUMaterial> m_pool_mats;
   std::vector<GPUInstance> m_instances;
   std::vector<int>         m_instance_mesh;   // which slot each instance uses
+  // local->world as of the previously rendered frame. Kept beside the instances
+  // rather than inside them because it advances once per *frame*, while
+  // SetInstanceTransform may be called any number of times in between.
+  std::vector<std::array<float, 12>> m_instance_last_l2w;
   id<MTLBuffer>            m_buf_instances = nil;
   bool                     m_instances_dirty = true;
+
+  // Advances every instance's previous transform by one frame. Runs before the
+  // upload, so what the GPU sees is exactly "where this was when it was last
+  // drawn" — including the frame an object stops, where prev must catch up to
+  // current or the upscaler keeps smearing a stationary object.
+  void RollInstanceMotion() {
+    for (size_t i = 0; i < m_instances.size(); i++) {
+      GPUInstance &gi = m_instances[i];
+      float *last = m_instance_last_l2w[i].data();
+      constexpr size_t kBytes = sizeof(float) * 12;
+
+      if (memcmp(gi.prev_local_to_world, last, kBytes) != 0) {
+        memcpy(gi.prev_local_to_world, last, kBytes);
+        m_instances_dirty = true;
+      }
+      memcpy(last, gi.local_to_world, kBytes);
+    }
+  }
 
   // Fills an instance's transforms and world AABB from a local->world matrix.
   void WriteInstance(GPUInstance &gi, const MeshSlot &slot, const glm::mat4 &l2w) {
@@ -316,161 +337,6 @@ class MetalBackend final : public IRenderBackend {
     [cmd commit];
     [cmd waitUntilCompleted];
     return dst;
-  }
-
-  // ------------------------------------------------- scene setup
-  void SetupScene(int version) {
-    // Materials
-    std::vector<GPUMaterial> mats;
-    auto addm = [&](const Material &m) -> int {
-      GPUMaterial gm{};
-      SetVec3(gm.albedo, m.albedo);
-      gm.roughness = float(m.roughness);
-      SetVec3(gm.emission, m.emission);
-      gm.metallic = float(m.metallic);
-      SetVec3(gm.albedo2, m.albedo2);
-      gm.refractive_index = float(m.refractive_index);
-      gm.type = int(m.type);
-      mats.push_back(gm);
-      return int(mats.size()) - 1;
-    };
-    auto addproc = [&](const Material &m, int proc) -> int {
-      int idx = addm(m);
-      mats[idx].proc_id = proc;
-      return idx;
-    };
-
-    int i_floor = addm(Material(CHECKERBOARD, {0.8, 0.8, 0.8}, {0, 0, 0}, 0.8,
-                                0.0, 1.0, {0.2, 0.2, 0.2}));
-    int i_chrome =
-        addm(Material(METAL, {0.9, 0.9, 0.95}, {0, 0, 0}, 0.05, 1.0));
-    int i_glass =
-        addm(Material(GLASS, {0.98, 0.99, 1.0}, {0, 0, 0}, 0.0, 0.0, 1.5));
-    int i_red = addm(Material(DIFFUSE, {0.8, 0.15, 0.1}, {0, 0, 0}, 0.9, 0.0));
-    int i_blue = addm(Material(EMISSIVE, {0, 0, 0}, {0.3, 0.5, 2.0}, 1.0, 0.0));
-    int i_water =
-        addm(Material(WATER, {0.0, 0.3, 0.4}, {0, 0, 0}, 0.0, 0.0, 1.33));
-
-    // ---- Demo 0.4: material lab.
-    // A row of plinths, each carrying a sphere with a different procedural
-    // surface, so the tracer's behaviour across the whole material axis —
-    // conductor to dielectric, mirror to fully rough, opaque to refractive —
-    // is visible side by side in a single frame instead of one scene at a time.
-    if (version == 2) {
-      struct Stand { MaterialType type; Vec3 albedo; double rough, metal, ri; int proc; };
-      const Stand stands[] = {
-        { METAL,   {0.95, 0.96, 0.98}, 0.02, 1.0, 1.5,  PROC_NONE },       // polished chrome
-        { METAL,   {0.95, 0.96, 0.98}, 0.25, 1.0, 1.5,  PROC_BRUSHED },    // brushed steel
-        { METAL,   {1.00, 0.77, 0.34}, 0.10, 1.0, 1.5,  PROC_NONE },       // gold
-        { METAL,   {0.95, 0.64, 0.54}, 0.20, 1.0, 1.5,  PROC_PATINA },     // copper, oxidising
-        { METAL,   {0.56, 0.57, 0.58}, 0.30, 1.0, 1.5,  PROC_RUST },       // iron turning to rust
-        { METAL,   {0.94, 0.78, 0.38}, 0.50, 1.0, 1.5,  PROC_ROUGH_RAMP }, // roughness sweep
-        { METAL,   {0.75, 0.62, 0.18}, 0.30, 1.0, 1.5,  PROC_HEX },        // hex-cell inlay
-        { GLASS,   {0.98, 0.99, 1.00}, 0.00, 0.0, 1.52, PROC_NONE },       // clear glass
-        { GLASS,   {0.85, 0.93, 0.98}, 0.35, 0.0, 1.33, PROC_NONE },       // frosted / low IOR
-        { WATER,   {0.00, 0.30, 0.40}, 0.00, 0.0, 1.33, PROC_NONE },       // water
-        { DIFFUSE, {0.86, 0.85, 0.82}, 0.10, 0.0, 1.5,  PROC_MARBLE },     // polished marble
-        { DIFFUSE, {0.45, 0.26, 0.12}, 0.45, 0.0, 1.5,  PROC_WOOD },       // wood
-        { DIFFUSE, {0.18, 0.45, 0.55}, 0.30, 0.0, 1.5,  PROC_TILES },      // glazed tiles
-        { DIFFUSE, {0.52, 0.51, 0.49}, 0.85, 0.0, 1.5,  PROC_CONCRETE },   // concrete
-        { DIFFUSE, {0.80, 0.12, 0.10}, 0.12, 0.0, 1.5,  PROC_NONE },       // smooth plastic
-        { DIFFUSE, {0.05, 0.05, 0.06}, 0.95, 0.0, 1.5,  PROC_NONE },       // matte rubber
-        { EMISSIVE,{0.00, 0.00, 0.00}, 1.00, 0.0, 1.5,  PROC_NONE },       // emitter
-        { CHECKERBOARD, {0.9, 0.9, 0.9}, 0.35, 0.0, 1.5, PROC_NONE },      // reference checker
-      };
-      const int kStands = int(sizeof(stands) / sizeof(stands[0]));
-
-      int i_plinth = addm(Material(DIFFUSE, {0.30, 0.30, 0.32}, {0,0,0}, 0.7, 0.0));
-
-      std::vector<GPUSphere> lab_spheres;
-      std::vector<GPUCube>   lab_cubes;
-      const float spacing = 2.4f, radius = 0.75f;
-      const float plinth_h = 0.55f, floor_y = -1.0f;
-      const float x0 = -0.5f * (kStands - 1) * spacing;
-
-      for (int i = 0; i < kStands; i++) {
-        const Stand &st = stands[i];
-        Vec3 emission = (st.type == EMISSIVE) ? Vec3(1.6f, 1.35f, 0.9f) : Vec3(0.0f);
-        int mi = addproc(Material(st.type, st.albedo, emission,
-                                  st.rough, st.metal, st.ri), st.proc);
-
-        float x = x0 + i * spacing;
-        float top = floor_y + 2.0f * plinth_h;
-        lab_cubes.push_back({{x, floor_y + plinth_h, -6.0f}, 0,
-                             {0.85f, plinth_h, 0.85f}, i_plinth});
-        lab_spheres.push_back({{x, top + radius, -6.0f}, radius, mi, 0, 0, 0});
-      }
-
-      std::vector<GPUPlane> lab_planes = {{{0, 1, 0}, floor_y, i_floor, 0, 0, 0}};
-      std::vector<GPULight> lab_lights = {
-          {{-6.0f, 9.0f, 1.0f}, 90.0f, {1.0f, 0.96f, 0.90f}, 1.5f},
-          {{ 7.0f, 5.0f, 1.0f}, 45.0f, {0.65f, 0.78f, 1.00f}, 2.5f}};
-
-      auto mk = [&](const void *d, size_t n, size_t sz) -> id<MTLBuffer> {
-        return MakePrivateBuffer(n ? d : nullptr, std::max(n * sz, sz));
-      };
-      m_buf_mats    = mk(mats.data(),         mats.size(),         sizeof(GPUMaterial));
-      m_scene_spheres = lab_spheres;
-      m_buf_spheres = mk(lab_spheres.data(),  lab_spheres.size(),  sizeof(GPUSphere));
-      m_buf_planes  = mk(lab_planes.data(),   lab_planes.size(),   sizeof(GPUPlane));
-      m_buf_cubes   = mk(lab_cubes.data(),    lab_cubes.size(),    sizeof(GPUCube));
-      m_buf_lights  = mk(lab_lights.data(),   lab_lights.size(),   sizeof(GPULight));
-
-      m_uniforms.num_spheres = int(lab_spheres.size());
-      m_uniforms.num_planes  = int(lab_planes.size());
-      m_uniforms.num_cubes   = int(lab_cubes.size());
-      m_uniforms.num_lights  = int(lab_lights.size());
-      m_uniforms.enable_triangles = 0;
-      m_mesh_loaded = false;
-      m_num_triangles = 0;
-      m_total_rays = m_ray_w * m_ray_h * 4 * 7;
-
-      // Framed so the whole row is in shot from a standing eye height.
-      // Far enough back that all of the row fits in a 60-degree frame.
-      m_cam_pos = Vec3(0.0f, 2.2f, 15.0f);
-      m_yaw = -M_PI / 2.0;
-      m_pitch = -0.05;
-      return;
-    }
-
-    std::vector<GPUPlane> planes;
-    if (version == 1)
-      planes = {{{0, 1, 0}, -1.0f, i_floor, 0, 0, 0},
-                {{0, 1, 0}, -0.85f, i_water, 0, 0, 0}};
-    else
-      planes = {{{0, 1, 0}, -1.0f, i_floor, 0, 0, 0}};
-
-    std::vector<GPUSphere> spheres = {
-        {{-2.0f, 0.0f, -5.0f}, 1.0f, i_chrome, 0, 0, 0},
-        {{0.0f, 0.2f, -4.5f}, 1.2f, i_glass, 0, 0, 0},
-        {{1.5f, 0.5f, -3.5f}, 0.3f, i_blue, 0, 0, 0}};
-    std::vector<GPUCube> cubes = {
-        {{1.5f, -0.5f, -6.0f}, 0, {0.5f, 0.5f, 0.5f}, i_red}};
-    std::vector<GPULight> lights = {
-        {{-5.0f, 8.0f, -2.0f}, 50.0f, {1.0f, 0.95f, 0.9f}, 2.0f},
-        {{1.5f, 0.5f, -3.5f}, 15.0f, {0.3f, 0.5f, 1.0f}, 0.2f}};
-
-    auto mkbuf = [&](const void *data, size_t n, size_t sz) -> id<MTLBuffer> {
-      size_t bytes = std::max(n * sz, sz);
-      return MakePrivateBuffer((n == 0) ? nullptr : data, bytes);
-    };
-
-    m_buf_mats = mkbuf(mats.data(), mats.size(), sizeof(GPUMaterial));
-    m_scene_spheres = spheres;
-    m_buf_spheres = mkbuf(spheres.data(), spheres.size(), sizeof(GPUSphere));
-    m_buf_planes = mkbuf(planes.data(), planes.size(), sizeof(GPUPlane));
-    m_buf_cubes = mkbuf(cubes.data(), cubes.size(), sizeof(GPUCube));
-    m_buf_lights = mkbuf(lights.data(), lights.size(), sizeof(GPULight));
-
-    m_uniforms.num_spheres = int(spheres.size());
-    m_uniforms.num_planes = int(planes.size());
-    m_uniforms.num_cubes = int(cubes.size());
-    m_uniforms.num_lights = int(lights.size());
-    m_uniforms.enable_triangles = 0;
-    m_mesh_loaded = false;
-    m_num_triangles = 0;
-
-    m_total_rays = m_render_w * m_render_h * 4 * 7;
   }
 
   // Compiles one shader file into a library, cached so a file holding several
@@ -694,11 +560,37 @@ public:
     return s;
   }
 
-  void SetDemoScene(int version) override {
-    m_version = version;
-    SetupScene(version);
+  void SubmitScene(const RenderScene &scene) override {
+    auto upload = [&](const void *data, size_t count, size_t stride) -> id<MTLBuffer> {
+      // Never hand Metal a zero-length buffer: an empty list still needs a
+      // bound slot, and the count in the uniforms is what stops the shader.
+      return MakePrivateBuffer(count ? data : nullptr, std::max(count * stride, stride));
+    };
+
+    m_buf_mats    = upload(scene.materials.data(), scene.materials.size(), sizeof(GPUMaterial));
+    m_buf_spheres = upload(scene.spheres.data(),   scene.spheres.size(),   sizeof(GPUSphere));
+    m_buf_planes  = upload(scene.planes.data(),    scene.planes.size(),    sizeof(GPUPlane));
+    m_buf_cubes   = upload(scene.cubes.data(),     scene.cubes.size(),     sizeof(GPUCube));
+    m_buf_lights  = upload(scene.lights.data(),    scene.lights.size(),    sizeof(GPULight));
+
+    m_uniforms.num_spheres = int(scene.spheres.size());
+    m_uniforms.num_planes  = int(scene.planes.size());
+    m_uniforms.num_cubes   = int(scene.cubes.size());
+    m_uniforms.num_lights  = int(scene.lights.size());
+
+    m_environment = scene.environment;
+    m_model       = scene.model;
+    m_fog         = scene.environment.fog_enabled;   // settings may override later
+
+    // Analytic-only scene: meshes are submitted separately and turn this back on.
+    m_uniforms.enable_triangles = m_mesh_loaded ? 1 : 0;
+    m_total_rays = m_ray_w * m_ray_h * 4 * 7;
+
     m_reset_history = true;
     m_have_prev_vp = false;
+    LUCIDA_INFO(Render, "scene '%s': %zu spheres, %zu planes, %zu cubes, %zu lights",
+                scene.name.c_str(), scene.spheres.size(), scene.planes.size(),
+                scene.cubes.size(), scene.lights.size());
   }
 
   // ------------------------------------------------- Mesh loading
@@ -813,9 +705,10 @@ public:
     m_uniforms.enable_triangles = 1;
     m_uniforms.num_triangles = m_num_triangles;
     m_uniforms.num_bvh_nodes = m_num_bvh_nodes;
-    m_uniforms.num_spheres = 0;
-    m_uniforms.num_cubes = 0;
-    m_uniforms.num_lights = 0;
+    // Deliberately leaves the analytic counts alone. Adding a mesh used to zero
+    // spheres, cubes and lights, on the assumption that a mesh replaces the
+    // scene — so loading a model silently unlit the world and deleted its
+    // primitives. A mesh is one more thing in the scene, not the scene.
     m_reset_history = true;
     m_have_prev_vp = false;
 
@@ -830,6 +723,14 @@ public:
     if (!mesh.IsValid() || mesh.index >= m_mesh_slots.size()) return InstanceHandle{};
     GPUInstance gi{};
     WriteInstance(gi, m_mesh_slots[mesh.index], l2w);
+    // A new instance has no history: seed prev with its current transform so it
+    // does not appear to have flown in from the origin on its first frame.
+    memcpy(gi.prev_local_to_world, gi.local_to_world, sizeof(gi.local_to_world));
+
+    std::array<float, 12> last{};
+    memcpy(last.data(), gi.local_to_world, sizeof(gi.local_to_world));
+    m_instance_last_l2w.push_back(last);
+
     m_instances.push_back(gi);
     m_instance_mesh.push_back(int(mesh.index));
     m_instances_dirty = true;
@@ -846,6 +747,7 @@ public:
   void ClearInstances() override {
     m_instances.clear();
     m_instance_mesh.clear();
+    m_instance_last_l2w.clear();
     m_instances_dirty = true;
   }
 
@@ -979,13 +881,13 @@ public:
       m_uniforms.fog_height = float(m_fog_h);
       m_uniforms.jitter_x = jx;
       m_uniforms.jitter_y = jy;
-      m_uniforms.fog_density = m_fog_density;
-      m_uniforms.fog_steps = m_fog_steps;
+      m_uniforms.fog_density = m_environment.fog_density;
+      m_uniforms.fog_steps = m_environment.fog_steps;
       m_uniforms.frame_index = int(m_frame_counter & 0x7fffffff);
       m_uniforms.mesh_tex_dim = float(m_mesh_tex_dim);
       m_uniforms.orm_tex_dim = float(m_orm_tex_dim);
       m_uniforms.mesh_mat_count = m_num_mesh_mats;
-      SetVec3(m_uniforms.ambient_light, {0.3, 0.4, 0.6});
+      SetVec3(m_uniforms.ambient_light, m_environment.ambient);
       SetVec3(m_uniforms.camera_origin, m_cam_pos);
       SetVec3(m_uniforms.camera_forward, fwd);
       SetVec3(m_uniforms.camera_right, right);
@@ -1012,6 +914,7 @@ public:
 
       // Instance transforms change every frame for anything that moves; the
       // BLAS pools do not.
+      RollInstanceMotion();
       if (m_instances_dirty)
         UploadInstances();
 
@@ -1040,7 +943,7 @@ public:
       // of the frame; marching it separately at reduced resolution is what
       // buys the frame rate back.
       // Always run: this pass produces AO/GI as well as fog.
-      bool fog_active = m_version != 0 && m_pipeline_fog;
+      bool fog_active = m_model == ShadingModel::WhittedGI && m_pipeline_fog;
       if (fog_active) {
         id<MTLComputeCommandEncoder> fe = [cmd computeCommandEncoder];
         [fe setComputePipelineState:m_pipeline_fog];
@@ -1060,7 +963,7 @@ public:
       // v02 is the legacy Demo 0.2 kernel only; every later demo runs the
       // current shader. Testing for ==1 sent Demo 0.4 down the old path, where
       // none of the procedural material code exists.
-      [ce setComputePipelineState:(m_version == 0 ? m_pipeline02
+      [ce setComputePipelineState:(m_model == ShadingModel::Whitted ? m_pipeline02
                                                   : m_pipeline03)];
       [ce setTexture:m_tex_gbuffer atIndex:0];
       if (m_tex_mesh_arrays) {

@@ -99,13 +99,20 @@ static_assert(sizeof(GPUTriAttr) == 80);
 // a matrix write instead of a BVH rebuild.
 // Transforms are 3x4 affine, row-major: rows 0..2 are axes, column 3 translation.
 struct GPUInstance {
-    float world_to_local[12];
-    float local_to_world[12];
-    float aabb_min[3]; int node_base;
-    float aabb_max[3]; int tri_base;
-    int   node_count; int mat_base; int flags; int pad0;
+    float world_to_local[12];   //   0
+    float local_to_world[12];   //  48
+    float aabb_min[3]; int node_base;   //  96
+    float aabb_max[3]; int tri_base;    // 112
+    int   node_count; int mat_base; int flags; int pad0;   // 128
+
+    // The transform this instance had in the previously rendered frame.
+    // Temporal upscaling needs to know where a surface *was*, and reprojecting
+    // through the camera alone answers that only for geometry that did not move
+    // — which is why moving objects used to tear. Equal to local_to_world for
+    // anything static, so the shader maths collapses to the camera-only case.
+    float prev_local_to_world[12];      // 144
 };
-static_assert(sizeof(GPUInstance) == 144);
+static_assert(sizeof(GPUInstance) == 192);
 
 struct GPUBVHNode {
     float aabb_min[3]; int left_or_tri;      // leaf: index into the triangle buffer

@@ -3,6 +3,8 @@
 
 add_library(lucida_framework STATIC
     src/CameraController.cpp
+    src/SceneLibrary.cpp
+    src/Theme.cpp
     src/DebugUI.cpp
     ${LUCIDA_IFD_DIR}/ImGuiFileDialog.cpp
 )

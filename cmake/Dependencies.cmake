@@ -81,6 +81,12 @@ set(LUCIDA_IMGUI_DIR "${lucida_imgui_src_SOURCE_DIR}" CACHE INTERNAL "")
 lucida_fetch_headers(imgui_fd URL "https://github.com/aiekick/ImGuiFileDialog/archive/refs/tags/v0.6.7.tar.gz")
 set(LUCIDA_IFD_DIR "${lucida_imgui_fd_SOURCE_DIR}" CACHE INTERNAL "")
 
+# ImAnim (Soufiane KHIAT, MIT) — tweening for ImGui. Widgets that answer the
+# pointer instead of snapping; the easing and colour-space blending are already
+# solved here, so we do not write our own.
+lucida_fetch_headers(imanim URL "https://github.com/soufianekhiat/ImAnim/archive/refs/heads/main.tar.gz")
+set(LUCIDA_IMANIM_DIR "${lucida_imanim_SOURCE_DIR}" CACHE INTERNAL "")
+
 # --- stb single headers ------------------------------------------------------
 set(LUCIDA_STB_DIR "${LUCIDA_DEPS_DIR}/stb")
 file(MAKE_DIRECTORY "${LUCIDA_STB_DIR}")
@@ -218,8 +224,10 @@ add_library(lucida_imgui STATIC
     ${LUCIDA_IMGUI_DIR}/imgui_widgets.cpp
     ${LUCIDA_IMGUI_DIR}/imgui_demo.cpp
 )
+target_sources(lucida_imgui PRIVATE ${LUCIDA_IMANIM_DIR}/im_anim.cpp)
 target_include_directories(lucida_imgui SYSTEM PUBLIC
     ${LUCIDA_IMGUI_DIR}
     ${LUCIDA_IMGUI_DIR}/backends
     ${LUCIDA_IFD_DIR}
+    ${LUCIDA_IMANIM_DIR}
 )

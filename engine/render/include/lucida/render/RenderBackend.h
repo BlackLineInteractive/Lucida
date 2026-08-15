@@ -9,6 +9,7 @@
 #include "lucida/core/platform/Time.h"
 #include "lucida/render/Camera.h"
 #include "lucida/render/MeshData.h"
+#include "lucida/render/Scene.h"
 
 #include <cstdint>
 #include <vector>
@@ -79,9 +80,10 @@ public:
     virtual void ClearInstances() = 0;
     virtual void ClearMeshes() = 0;
 
-    // Built-in demo scenes carried over from the ray tracer. Scene authoring
-    // belongs above the backend; this is the seam where that will be cut.
-    virtual void SetDemoScene(i32 version) = 0;
+    // Replaces whatever scene the backend held. Analytic geometry, materials,
+    // lights and environment arrive together; meshes come separately through
+    // AddMesh/AddInstance because they are uploaded once and reused.
+    virtual void SubmitScene(const RenderScene& scene) = 0;
     virtual void SetMeshOrigin(const Vec3& origin) = 0;
 
     // Last traced frame as 8-bit RGBA, for screenshots and headless checks.
