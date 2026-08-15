@@ -13,6 +13,11 @@
   <img alt="Renderer" src="https://img.shields.io/badge/renderer-Metal%20ray%20tracing-orange.svg">
 </p>
 
+<p align="center">
+  <a href="https://t.me/blacklineinteractive">Telegram</a> ·
+  <a href="https://youtube.com/@blacklineinteractive">YouTube</a>
+</p>
+
 ---
 
 A modular real-time ray tracing engine, aimed narrowly at **procedural materials and
@@ -196,3 +201,16 @@ in [THIRD-PARTY.md](THIRD-PARTY.md).
 ```
 Copyright (C) 2026 BlackLine Interactive
 ```
+
+---
+
+## Follow the work
+
+Development notes, builds and breakdowns:
+
+* Telegram — <https://t.me/blacklineinteractive>
+* YouTube — <https://youtube.com/@blacklineinteractive>
+
+Issues and pull requests are welcome. If you are opening a pull request, read
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first — the dependency rules there are
+enforced by CMake, and a change that breaks them will not link.
