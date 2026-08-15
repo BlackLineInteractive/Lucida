@@ -74,6 +74,12 @@ lucida_fetch_headers(glm URL "https://github.com/g-truc/glm/archive/refs/tags/1.
 lucida_fetch_headers(bvh URL "https://github.com/madmann91/bvh/archive/refs/heads/master.tar.gz"
                           INCLUDE "src")
 
+# --- ECS ---------------------------------------------------------------------
+# EnTT over Flecs: header-only sparse sets that match our SoA layout, with no
+# runtime or world model of its own (ROADMAP.md, dependency table).
+lucida_fetch_headers(entt URL "https://github.com/skypjack/entt/archive/refs/tags/v3.13.2.tar.gz"
+                          INCLUDE "single_include")
+
 # --- UI ----------------------------------------------------------------------
 lucida_fetch_headers(imgui_src URL "https://github.com/ocornut/imgui/archive/refs/tags/v1.90.8.tar.gz")
 set(LUCIDA_IMGUI_DIR "${lucida_imgui_src_SOURCE_DIR}" CACHE INTERNAL "")

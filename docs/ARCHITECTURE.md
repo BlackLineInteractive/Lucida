@@ -11,12 +11,12 @@ does not enter the tree. Every module is tied to a specific part of the sources:
 
 Chapters actually leaned on, by the books' real table of contents:
 
-* **GPP ch.3 Sequencing** — Game Loop, Update Method, Double Buffer → `engine/runtime`
-* **GPP ch.5 Decoupling** — Component, Event Queue, Service Locator → `engine/core`
+* **GPP ch.3 Sequencing** — Game Loop, Update Method, Double Buffer  `engine/runtime`
+* **GPP ch.5 Decoupling** — Component, Event Queue, Service Locator  `engine/core`
 * **GPP ch.6 Optimization** — Data Locality, Object Pool, Spatial Partition, Dirty Flag
-* **DOD ch.2 Relational Databases** — normalisation, primary keys → handles, not pointers
+* **DOD ch.2 Relational Databases** — normalisation, primary keys  handles, not pointers
 * **DOD ch.4 Component Based Objects** — components instead of hierarchies
-* **DOD ch.8 Optimisations** — SoA over AoS → the `GPUTriPos` / `GPUTriAttr` split
+* **DOD ch.8 Optimisations** — SoA over AoS  the `GPUTriPos` / `GPUTriAttr` split
 * **DOD ch.9 Helping the Compiler** — cache behaviour, aliasing, branch prediction
 
 Where the engine is going: [ROADMAP.md](ROADMAP.md).
@@ -30,32 +30,32 @@ Bottom to top. **Dependencies point down only.** An upper layer knows the lower 
 never the reverse.
 
 ```
-                         ┌──────────────────────────┐
-     apps/               │  sandbox, benchmark      │  game / tool
-                         └────────────┬─────────────┘
-                                      │
-                         ┌────────────┴─────────────┐
-     framework/          │  UI/UX, editor shell,    │  GEA 1.6.15 (game-specific)
-                         │  debug menus, gizmos     │  GPP: Command, State
-                         └────────────┬─────────────┘
-                                      │
-   ┌──────────┬───────────┬───────────┼───────────┬─────────────┐
-   │ runtime  │  render   │  physics  │ resource  │   input     │  GEA 1.6.9–1.6.14
-   │ game loop│ front end │ interface │ manager   │  HID layer  │
-   │ world    │ IRenderB. │           │           │             │
-   └────┬─────┴─────┬─────┴─────┬─────┴─────┬─────┴──────┬──────┘
-        │           │           │           │            │
-        └───────────┴───────────┴─────┬─────┴────────────┘
-                                      │
-                         ┌────────────┴─────────────┐
-     engine/core/        │ memory, containers, math │  GEA 1.6.5 (core systems)
-                         │ diag, events, services   │  GEA 1.6.4 (platform layer)
-                         │ ecs, platform            │  DOD 1–4
-                         └──────────────────────────┘
+
+     apps/                 sandbox, benchmark        game / tool
+
+
+
+     framework/            UI/UX, editor shell,      GEA 1.6.15 (game-specific)
+                           debug menus, gizmos       GPP: Command, State
+
+
+
+    runtime    render     physics   resource     input       GEA 1.6.9–1.6.14
+    game loop front end  interface  manager     HID layer
+    world     IRenderB.
+
+
+
+
+
+     engine/core/         memory, containers, math   GEA 1.6.5 (core systems)
+                          diag, events, services     GEA 1.6.4 (platform layer)
+                          ecs, platform              DOD 1–4
+
 
      backends/           implementations: render_metal, render_vulkan, render_gl,
                          physics_jolt, physics_bullet, platform_sdl2
-                         ↑ each depends on its own engine module and nothing else
+                          each depends on its own engine module and nothing else
 ```
 
 ### The hard rule
@@ -149,15 +149,16 @@ UI/UX shell: debug menus, statistics, file dialog, camera controller.
 
 | Milestone | Contents | State |
 | --- | --- | --- |
-| M0 | skeleton, CMake graph, this document |
-| M1 | `core`: memory, containers, diagnostics, events |
-| M2 | `runtime`: game loop, world, update method |
-| M3 | SDL2 platform + framework UI |
-| M4 | `render` + Metal tracing backend |
-| M5 | `physics` + Jolt |
-| M6 | sandbox builds and runs |
-| M7 | scene lifted out of the backend into `RenderScene` |
-| M7b+ | see [ROADMAP.md](ROADMAP.md) |
+| M0 | skeleton, CMake graph, this document | done |
+| M1 | `core`: memory, containers, diagnostics, events | done |
+| M2 | `runtime`: game loop, world, update method | done |
+| M3 | SDL2 platform + framework UI | done |
+| M4 | `render` + Metal tracing backend | done |
+| M5 | `physics` + Jolt | done |
+| M6 | sandbox builds and runs | done |
+| M7 | scene lifted out of the backend into `RenderScene` | done |
+| M7b | scene serialised to JSON, loadable at runtime | done |
+| M10+ | see [ROADMAP.md](ROADMAP.md) | next |
 
 Verified: `lucida_sandbox --bench 90 --shot f.png` gives 57.8 fps at 1971×1065 rays
 (Intel Mac, Metal) and writes the frame out.

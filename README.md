@@ -124,20 +124,20 @@ looking at a window.
 
 ```
 Lucida/
-├── cmake/Dependencies.cmake   third-party fetching
-├── engine/
-│   ├── core/       memory, containers, maths, logging, events, services
-│   ├── runtime/    fixed-step game loop, world, systems
-│   ├── render/     camera, mesh data, IRenderBackend interface
-│   ├── resource/   model import, texture arrays, BLAS construction
-│   ├── physics/    IPhysicsBackend
-│   └── input/      HID layer: actions, not scancodes
-├── backends/
-│   ├── render_metal/    Metal + MetalFX
-│   ├── platform_sdl2/   window, input, surface
-│   └── physics_jolt/    Jolt
-├── framework/      UI/UX: ImGui shell, camera controller
-└── apps/sandbox/   the demo that binds concrete backends together
+ cmake/Dependencies.cmake   third-party fetching
+ engine/
+    core/       memory, containers, maths, logging, events, services
+    runtime/    fixed-step game loop, world, systems
+    render/     camera, mesh data, IRenderBackend interface
+    resource/   model import, texture arrays, BLAS construction
+    physics/    IPhysicsBackend
+    input/      HID layer: actions, not scancodes
+ backends/
+    render_metal/    Metal + MetalFX
+    platform_sdl2/   window, input, surface
+    physics_jolt/    Jolt
+ framework/      UI/UX: ImGui shell, camera controller
+ apps/sandbox/   the demo that binds concrete backends together
 ```
 
 The rule that holds it together: **a module sees only what its

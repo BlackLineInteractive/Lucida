@@ -45,7 +45,7 @@ facade. Below is the choice and the reason, not a catalogue of what is available
 | --- | --- | --- |
 | ECS | **EnTT** | header-only, sparse sets that match our SoA layout, no runtime of its own. Flecs gives hierarchies and queries out of the box but brings its own world model — more than this profile needs |
 | Job system | **enkiTS** | ~2k lines, task-parallel, exactly the shape of "update N systems". Taskflow's dependency graph is heavier; revisit if a real graph appears |
-| Shaders | **slang** (primary) + **SPIRV-Cross** | one source → SPIR-V, MSL, HLSL, and slang understands ray tracing constructs the GLSL→SPIR-V path does not expose. `glslang`/`shaderc` stay as the fallback for GLSL sources |
+| Shaders | **slang** (primary) + **SPIRV-Cross** | one source  SPIR-V, MSL, HLSL, and slang understands ray tracing constructs the GLSLSPIR-V path does not expose. `glslang`/`shaderc` stay as the fallback for GLSL sources |
 | Vulkan memory | **VMA** | hand-rolling `VkDeviceMemory` is two weeks and a pile of bugs VMA already fixed |
 | RHI | **our own, thin** | neither bgfx nor sokol_gfx exposes `VK_KHR_ray_query` or Metal intersection functions. A wrapper that hides exactly the feature this engine is built on is pointless. `IRenderBackend` already exists; it needs finishing, not replacing |
 | Textures | **stb_image** + **KTX-Software / Basis** | stb for import, KTX2+Basis to transcode into BCn/ASTC/ETC for the actual GPU |
@@ -64,6 +64,49 @@ one warm accent (C++ blue) that marks state — checkmarks, slider grabs, the ac
 selection. `framework/Theme.h` owns it, and no panel hardcodes a colour.
 
 Everything is fetched by `cmake/Dependencies.cmake`. Nothing lands in the repository.
+
+---
+
+## Priority: become an engine first
+
+The bar is not feature parity with Godot — that is fifteen years and hundreds of
+contributors. The bar is the line that separates an engine from a renderer:
+
+> **Someone who is not the author can open Lucida, build a level, press Play, and ship
+> it — without touching C++.**
+
+Everything is ordered against that sentence. The graphics work that makes Lucida worth
+choosing (M8, M9) is real and stays on the list, but a renderer nobody can author
+content for is a demo however fast it runs.
+
+### The engine track, in dependency order
+
+| # | Milestone | Why it is where it is |
+|---|---|---|
+| E1 | **M10 — ECS (EnTT)** | No scene tree, no inspector and no selection without entities. Blocks everything below |
+| E2 | **M20 — Project structure** | A game is a folder, not a `config.txt`: scenes, assets, settings, recent projects |
+| E3 | **M21 — Editor shell** | Docked viewport, scene tree, inspector, gizmo. What makes it feel like an engine |
+| E4 | **M22 — Play mode** | Edit and Play with state restore. Iteration stops needing a rebuild |
+| E5 | **M17 — Lua scripting** | Behaviour without a compiler. After this, C++ is optional for a game |
+| E6 | **M23 — Build and ship** | Export a runnable game. Until this exists nothing made in the editor can leave it |
+
+Only then does the graphics track (M8 selective tracing, M9 procedural materials)
+resume — and it resumes on top of an editor that can show it off.
+
+### What catching up honestly means
+
+Godot's real advantages, in the order they matter, and what the equivalent costs here:
+
+* **You can ship a game with it.** E6. Non-negotiable and usually underestimated.
+* **The editor is the product.** E3 and E4. Most of a mature engine's code is editor.
+* **Scripting with hot reload.** E5.
+* **An asset pipeline that accepts what artists export.** Partly done — Assimp handles
+  glTF/FBX/OBJ today; the gap is import settings and a reimport step (M14).
+* **Docs and examples.** Cheap to start, expensive to postpone.
+
+Lucida is not going to beat Godot at breadth. It can beat it at one thing: ray traced
+graphics on hardware Godot would have to fake them on. That is the whole strategy —
+match the workflow, win on the image.
 
 ---
 
@@ -97,7 +140,9 @@ it did not compile.
 * Still to come with M10: entities and mesh references in the file. Today it carries
   analytic geometry, materials, lights, environment and the spawn point.
 
-### M8 — Selective ray tracing: quality tiers ⬅ next
+### M8 — Selective ray tracing: quality tiers
+
+*Deferred until the engine track lands. See the priority section above.*
 
 The point of the engine. A material declares which effects deserve a ray.
 
@@ -124,13 +169,57 @@ RayBudget:  rays per pixel this frame is allowed to spend
 * **Done when:** a Sponza-scale scene renders with no raster textures at all and
   stays under 200 MB of VRAM
 
-### M10 — ECS on EnTT
+### M10 — ECS on EnTT [next, E1]
 
 * `engine/core/ecs`: a facade over EnTT (registry, views, groups) — application code
   never includes `entt.hpp` directly
 * `ISystem` implementations iterate views instead of hand-rolled arrays
 * Move the vehicle, the camera and render instances onto components
 * **Done when:** `World` holds no entity container of its own
+
+### M20 — Project structure (E2)
+
+A game is a folder, not a config file next to the binary.
+
+```
+MyGame/
+ project.json      name, version, startup scene, render defaults
+ scenes/           .json scenes (M7b format)
+ assets/           models, textures — imported, cached beside the source
+ scripts/          Lua (E5)
+```
+
+* `Project` in `engine/resource`: open, save, recent list, path resolution
+* Asset paths in scene files become project-relative, so a project is movable
+* `lucida_sandbox --project MyGame`, and the recent list on the start screen
+* **Done when:** a project folder can be zipped, moved to another machine, and opened
+
+### M21 — Editor shell (E3)
+
+* **ImGui docking branch** — the current single-window build cannot lay out an editor.
+  A dependency change, not a UI tweak
+* Panels: docked viewport, scene tree, inspector, asset browser, console
+* Selection: clicking in the viewport picks an entity through a ray query — the tracer
+  already answers exactly that question
+* **ImGuizmo** for translate/rotate/scale, with snapping and local/world space
+* Undo/redo as a command stack (GPP: Command). Every edit goes through it or it does
+  not exist
+* **Done when:** an object can be selected, moved with a gizmo, edited in the
+  inspector, and the change survives a save and reload
+
+### M22 — Play mode (E4)
+
+* Edit and Play toggle. Entering Play snapshots the world; leaving restores it exactly
+* Physics, scripts and gameplay systems run only in Play
+* Pause, step one frame, and a camera that can detach from the game camera
+* **Done when:** pressing Play twice in a row leaves the scene byte-identical
+
+### M23 — Build and ship (E6)
+
+* Export a project to a standalone runnable: binary, packed assets, no editor
+* Asset packing into one archive with the scene graph and scripts
+* Platform targets follow the CMake matrix that already exists
+* **Done when:** a built game runs on a machine with no Lucida checkout
 
 ### M11 — Job system on enkiTS
 
@@ -163,12 +252,14 @@ RayBudget:  rays per pixel this frame is allowed to spend
 * Cache of prepared assets next to the source
 * **Done when:** a second launch with a large model starts from cache in under a second
 
-### M15 — Text and editor shell
+### M15 — SDF text and in-world UI
 
-* **msdf-atlas-gen** + FreeType → SDF atlas, crisp text at any DPI
-* **ImGuizmo** (transforms), **ImPlot** (frame plots),
-  **nativefiledialog-extended** replacing ImGuiFileDialog
-* **Done when:** an object can be dragged with a gizmo and the result appears in frame
+The editor chrome moved to M21; what is left here is text that is not ImGui's.
+
+* **msdf-atlas-gen** + FreeType  SDF atlas: crisp glyphs at any scale from one texture
+* In-world labels, HUD and game UI — what a shipped game needs and ImGui should not do
+* **ImPlot** for frame-time plots, **nativefiledialog-extended** replacing ImGuiFileDialog
+* **Done when:** a game built from Lucida can draw its own text without linking ImGui
 
 ### M16 — Audio
 
@@ -200,13 +291,18 @@ Not for Bullet's sake, but to prove the physics abstraction is one. Finish
 ## Order and dependencies
 
 ```
-M7 (scene out of shader)
- ├── M7b (scene as an asset) ── M10 (ECS) ── M15 (editor) ── M17 (scripting)
- ├── M8 (quality tiers) ─────── M9 (procedural materials)
- ├── M12 (shader pipeline) ──── M13 (Vulkan + VMA)
- └── M11 (jobs) ── M14 (resources) ── M16 (audio)
-M18 (tooling) — in parallel, any time
-M19 (Bullet) — after M10
+M7 done  M7b done  M10 (ECS)  M20 (project)  M21 (editor)  M22 (play)  M23 (ship)
+
+                                                       M17 (scripting)
+                           M19 (Bullet)
+
+Graphics track, resumes once the editor can show it:
+  M8 (quality tiers)  M9 (procedural materials)
+  M12 (shader pipeline)  M13 (Vulkan + VMA)
+
+Supporting, any time:
+  M11 (jobs)  M14 (resources)  M16 (audio)  M15 (SDF text)
+  M18 (tooling)
 ```
 
 Two different goals run through this list, and they are worth keeping apart:
