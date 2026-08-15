@@ -13,6 +13,7 @@
 #include "lucida/core/diag/Profiler.h"
 #include "lucida/framework/CameraController.h"
 #include "lucida/framework/DebugUI.h"
+#include "lucida/framework/SceneAssets.h"
 #include "lucida/framework/SceneLibrary.h"
 #include "lucida/framework/Systems.h"
 #include "lucida/physics/Components.h"
@@ -151,7 +152,7 @@ public:
         m_platform->OverlayInit();
         m_renderer->OverlayInit();
 
-        LoadScene(m_ui_state.scene);
+        LoadScene(world, m_ui_state.scene);
         m_renderer->ApplySettings(m_config.render);
         m_camera.SetMode(m_config.walk_mode ? CameraMode::Walk : CameraMode::Fly);
 
@@ -284,9 +285,10 @@ public:
             m_ui_state.request_fullscreen = false;
         }
         if (m_ui_state.request_scene_reload) {
-            LoadScene(m_ui_state.scene);
+            LoadScene(world, m_ui_state.scene);
             m_ui_state.request_scene_reload = false;
         }
+        Republish(world);
         if (!m_ui_state.pending_model_path.empty()) {
             LoadModelFile(world, m_ui_state.pending_model_path);
             m_ui_state.pending_model_path.clear();
@@ -301,23 +303,83 @@ private:
     // Builds a scene and hands it over. Note the split: the backend takes the
     // geometry, the application takes the spawn point — placing a camera is not
     // the renderer's job.
-    void LoadScene(scenes::BuiltIn which) {
-        RenderScene scene;
-        if (!m_scene_path.empty() && LoadSceneFile(m_project.Resolve(m_scene_path), scene)) {
-            Submit(scene);
-            return;
+    void LoadScene(World& world, scenes::BuiltIn which) {
+        Registry& entities = world.Entities();
+
+        // A scene load replaces the world. Entities that belong to the previous
+        // scene go with it; the car and anything else the app owns is recreated
+        // by whoever owns it.
+        entities.Clear();
+        m_car = kNullEntity;
+        m_ui_state.selection = kNullEntity;
+
+        RenderScene loaded;
+        if (!m_scene_path.empty() && LoadSceneFile(m_project.Resolve(m_scene_path), loaded)) {
+            // A scene file still carries raw arrays; turn them back into entities
+            // so the editor can touch them. This is the seam where the file
+            // format will grow entities of its own.
+            m_assets = SceneAssets{};
+            m_assets.name           = loaded.name;
+            m_assets.materials      = loaded.materials;
+            m_assets.material_names = loaded.material_names;
+            m_assets.environment    = loaded.environment;
+            m_assets.model          = loaded.model;
+            m_assets.spawn          = loaded.spawn;
+            Adopt(entities, loaded);
+        } else {
+            if (!m_scene_path.empty()) {
+                LUCIDA_WARN(App, "falling back to the built-in scene");
+                m_scene_path.clear();
+            }
+            m_assets = scenes::Build(which, entities);
         }
-        if (!m_scene_path.empty()) {
-            LUCIDA_WARN(App, "falling back to the built-in scene");
-            m_scene_path.clear();
-        }
-        Submit(scenes::Build(which));
+
+        UpdateWorldTransforms(entities);
+        m_camera.Camera() = m_assets.spawn;
+        m_fingerprint = 0;   // force a publish on the next frame
+        Republish(world);
     }
 
-    void Submit(const RenderScene& scene) {
+    // Rebuilds the backend's view of the world, but only when something the
+    // backend can see has actually changed. Uploading buffers every frame would
+    // make a still scene cost as much as a moving one.
+    void Republish(World& world) {
+        Registry& entities = world.Entities();
+        const u64 fingerprint = SceneFingerprint(entities, m_assets);
+        if (fingerprint == m_fingerprint) return;
+        m_fingerprint = fingerprint;
+
+        RenderScene scene;
+        PublishScene(entities, m_assets, scene);
         m_renderer->SubmitScene(scene);
-        m_camera.Camera() = scene.spawn;
         m_scene_spheres = scene.spheres;
+    }
+
+    void Adopt(Registry& entities, const RenderScene& scene) {
+        for (const GPUSphere& s : scene.spheres) {
+            const Entity e = CreatePrimitive(entities, PrimitiveType::Sphere,
+                                             Vec3(s.center[0], s.center[1], s.center[2]),
+                                             s.mat_index);
+            entities.Get<LocalTransform>(e)->scale = s.radius;
+        }
+        for (const GPUCube& c : scene.cubes) {
+            const Entity e = CreatePrimitive(entities, PrimitiveType::Box,
+                                             Vec3(c.center[0], c.center[1], c.center[2]),
+                                             c.mat_index);
+            const Vec3 half(c.half_size[0], c.half_size[1], c.half_size[2]);
+            entities.Get<PrimitiveShape>(e)->size = half;
+            entities.Add<LocalBounds>(e, LocalBounds{-half, half});
+        }
+        for (const GPUPlane& p : scene.planes) {
+            const Vec3 normal(p.normal[0], p.normal[1], p.normal[2]);
+            const Entity e = CreatePrimitive(entities, PrimitiveType::Plane,
+                                             normal * p.d_offset, p.mat_index);
+            entities.Get<PrimitiveShape>(e)->normal = normal;
+        }
+        for (const GPULight& l : scene.lights) {
+            CreateLight(entities, Vec3(l.position[0], l.position[1], l.position[2]),
+                        Vec3(l.color[0], l.color[1], l.color[2]), l.intensity, l.radius);
+        }
     }
 
     void RunBenchFrame(const FrameTime& time) {
@@ -400,6 +462,8 @@ private:
     // application's business rather than the renderer's.
     std::vector<GPUSphere> m_scene_spheres;
 
+    SceneAssets      m_assets;
+    u64              m_fingerprint = 0;
     Project          m_project;
     std::string      m_scene_path;
     BenchOptions     m_bench;
@@ -473,7 +537,14 @@ int main(int argc, char** argv) {
     // Tool mode: write a built-in out as an editable file and stop. This is how
     // you get a starting point to edit rather than authoring JSON from nothing.
     if (!export_path.empty()) {
-        const RenderScene scene = scenes::Build(start_scene);
+        // Exporting needs a world to build the scene in, even without a window:
+        // the scene lives as entities now, and the file is a view of them.
+        Registry entities;
+        const SceneAssets assets = scenes::Build(start_scene, entities);
+        UpdateWorldTransforms(entities);
+
+        RenderScene scene;
+        PublishScene(entities, assets, scene);
         return SaveScene(scene, export_path) ? 0 : 1;
     }
 

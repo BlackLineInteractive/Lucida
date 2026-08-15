@@ -925,6 +925,15 @@ public:
       m_uniforms.orm_tex_dim = float(m_orm_tex_dim);
       m_uniforms.mesh_mat_count = m_num_mesh_mats;
       SetVec3(m_uniforms.ambient_light, m_environment.ambient);
+      SetVec3(m_uniforms.sky_zenith, m_environment.sky_zenith);
+      SetVec3(m_uniforms.sky_horizon, m_environment.sky_horizon);
+      SetVec3(m_uniforms.sky_ground, m_environment.sky_ground);
+      SetVec3(m_uniforms.grid_color, m_environment.grid_color);
+      SetVec3(m_uniforms.grid_axis_x, m_environment.grid_axis_x);
+      SetVec3(m_uniforms.grid_axis_z, m_environment.grid_axis_z);
+      m_uniforms.grid_enabled = m_environment.grid_enabled ? 1 : 0;
+      m_uniforms.grid_opacity = m_environment.grid_opacity;
+      m_uniforms.grid_fade    = m_environment.grid_fade;
       SetVec3(m_uniforms.camera_origin, m_cam_pos);
       SetVec3(m_uniforms.camera_forward, fwd);
       SetVec3(m_uniforms.camera_right, right);

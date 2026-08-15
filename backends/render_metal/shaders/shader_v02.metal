@@ -442,7 +442,11 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
         }
     }
     color /= float(SAMPLES * SAMPLES);
-    
+
+    // Grid before fog and tone mapping, so it sits in the scene rather than on
+    // the screen.
+    color = composite_grid(color, u.camera_origin, center_dir, center_fd, u.tan_half_fov, u);
+
     if (u.enable_fog > 0) {
         int steps = 16;
         float max_dist = min(center_fd, 60.0);
