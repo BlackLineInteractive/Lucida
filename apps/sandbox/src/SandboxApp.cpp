@@ -251,7 +251,7 @@ public:
 
         m_renderer->OverlayNewFrame();   // acquires the drawable, starts ImGui-Metal
         m_platform->OverlayNewFrame();
-        m_ui.Build(m_ui_state, settings, m_renderer->Stats(), m_camera, time);
+        m_ui.Build(world, m_ui_state, settings, m_renderer->Stats(), m_camera, time);
 
         m_renderer->ApplySettings(settings);
         if (m_ui_state.request_fullscreen) {
