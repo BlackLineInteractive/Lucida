@@ -16,6 +16,7 @@ void World::Shutdown() {
         (*it)->OnDetach(*this);   // reverse order: later systems may depend on earlier
     }
     m_systems.clear();
+    m_entities.Clear();
     m_arena.Shutdown();
 }
 
@@ -25,7 +26,12 @@ void World::Attach(std::unique_ptr<ISystem> system) {
     m_systems.push_back(std::move(system));
 }
 
-void World::BeginFrame() { m_arena.Flip(); }
+void World::BeginFrame() {
+    m_arena.Flip();
+    // World transforms are derived state: refresh them once, at a defined point,
+    // before any system reads a world position.
+    UpdateWorldTransforms(m_entities);
+}
 
 void World::RunPhase(UpdatePhase phase, const FrameTime& time) {
     for (auto& system : m_systems) {

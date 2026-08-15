@@ -108,7 +108,7 @@ choice, is in [ROADMAP.md](ROADMAP.md).
 | `diag/` | `LUCIDA_ASSERT`/`VERIFY`, channelled log, scoped profiler | GEA 3.3.3, 3.5 |
 | `event/` | fixed-capacity `EventQueue` | GPP ch.5 |
 | `service/` | `Locator<T>` | GPP ch.5 |
-| `ecs/` | SoA entity storage, archetypes | DOD 4 — **not written yet** |
+| `ecs/` | `Registry` facade over EnTT, transform hierarchy | DOD 4; GPP ch.5 |
 
 ### `engine/runtime` — GPP ch.3
 
@@ -158,7 +158,8 @@ UI/UX shell: debug menus, statistics, file dialog, camera controller.
 | M6 | sandbox builds and runs | done |
 | M7 | scene lifted out of the backend into `RenderScene` | done |
 | M7b | scene serialised to JSON, loadable at runtime | done |
-| M10+ | see [ROADMAP.md](ROADMAP.md) | next |
+| M10 | ECS on EnTT; physics and render sync as systems | done |
+| M20+ | editor track, see [ROADMAP.md](ROADMAP.md) | next |
 
 Verified: `lucida_sandbox --bench 90 --shot f.png` gives 57.8 fps at 1971×1065 rays
 (Intel Mac, Metal) and writes the frame out.

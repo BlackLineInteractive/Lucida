@@ -14,6 +14,9 @@
 #include "lucida/framework/CameraController.h"
 #include "lucida/framework/DebugUI.h"
 #include "lucida/framework/SceneLibrary.h"
+#include "lucida/framework/Systems.h"
+#include "lucida/physics/Components.h"
+#include "lucida/render/Components.h"
 #include "lucida/resource/ModelLoader.h"
 #include "lucida/resource/SceneSerializer.h"
 #include "lucida/runtime/Engine.h"
@@ -124,7 +127,7 @@ public:
 
     bool Finished() const { return m_finished; }
 
-    bool OnInit(World&) override {
+    bool OnInit(World& world) override {
         m_platform = CreatePlatformSDL2();
         WindowDesc window;
         window.title      = "Lucida Sandbox";
@@ -148,11 +151,19 @@ public:
 
         m_physics = CreateJoltBackend();
         if (m_physics->Init()) {
-            VehicleDesc car;
-            m_vehicle = m_physics->CreateVehicle(car);
-        }
+            // The car is an entity now, not three members of this class. Its
+            // pose is written by the physics system and read by the render
+            // system; nothing here has to keep them in step.
+            m_car = world.Entities().Create("Mustang Boss 302");
+            Vehicle vehicle;
+            vehicle.handle = m_physics->CreateVehicle(VehicleDesc{});
+            world.Entities().Add<Vehicle>(m_car, vehicle);
 
-        if (!m_config.model_path.empty()) LoadModelFile(m_config.model_path);
+            world.AddSystem<PhysicsSystem>(*m_physics);
+        }
+        world.AddSystem<RenderSyncSystem>(*m_renderer);
+
+        if (!m_config.model_path.empty()) LoadModelFile(world, m_config.model_path);
 
         m_platform->SetMouseCaptured(true);
         m_ui_state.show_menu = false;
@@ -192,22 +203,12 @@ public:
 
     void OnFixedUpdate(World&, const FrameTime& time) override {
         LUCIDA_PROFILE("fixed");
+        // Everything else this frame is a system: stepping physics and pushing
+        // transforms belongs to them, not to the application.
         m_camera.FixedUpdate(m_input, time.delta);
-
-        if (m_physics && m_vehicle.IsValid()) {
-            m_physics->Step(time.delta);
-            const VehicleState state = m_physics->GetVehicleState(m_vehicle);
-            if (m_car_instance.IsValid()) {
-                Transform t;
-                t.position = state.position;
-                t.rotation = state.rotation;
-                t.scale    = m_car_scale;
-                m_renderer->SetInstanceTransform(m_car_instance, t.ToMatrix());
-            }
-        }
     }
 
-    void OnRender(World&, const FrameTime& time) override {
+    void OnRender(World& world, const FrameTime& time) override {
         LUCIDA_PROFILE("render");
 
         // Mouse look belongs to the frame, not the tick: the delta already
@@ -239,7 +240,7 @@ public:
             m_ui_state.request_scene_reload = false;
         }
         if (!m_ui_state.pending_model_path.empty()) {
-            LoadModelFile(m_ui_state.pending_model_path);
+            LoadModelFile(world, m_ui_state.pending_model_path);
             m_ui_state.pending_model_path.clear();
         }
 
@@ -302,7 +303,7 @@ private:
         m_ui_state.request_quit = true;
     }
 
-    void LoadModelFile(const std::string& path) {
+    void LoadModelFile(World& world, const std::string& path) {
         LUCIDA_INFO(App, "loading %s", path.c_str());
         MeshData mesh = LoadModel(path, 2.0f);
         if (!mesh.valid) {
@@ -312,13 +313,21 @@ private:
         const MeshHandle handle = m_renderer->AddMesh(mesh);
         if (!handle.IsValid()) return;
 
-        m_car_scale = m_config.model_scale * 0.01f;
-        Transform t;
-        t.position = m_config.model_pos;
-        t.scale    = m_car_scale;
-        m_car_instance = m_renderer->AddInstance(handle, t.ToMatrix());
+        Registry& entities = world.Entities();
+        if (!entities.Valid(m_car)) m_car = entities.Create("model");
+
+        LocalTransform& local = *entities.Get<LocalTransform>(m_car);
+        local.position = m_config.model_pos;
+        local.scale    = m_config.model_scale * 0.01f;
+
+        MeshInstance instance;
+        instance.mesh     = handle;
+        instance.instance = m_renderer->AddInstance(handle, local.ToMatrix());
+        entities.Add<MeshInstance>(m_car, instance);
+
         m_renderer->SetMeshOrigin(m_config.model_pos);
         m_config.model_path = path;
+        LUCIDA_INFO(App, "world holds %zu entities", entities.Count());
     }
 
     Config      m_config;
@@ -333,9 +342,7 @@ private:
     UiState          m_ui_state;
     InputState       m_input;
 
-    VehicleHandle  m_vehicle;
-    InstanceHandle m_car_instance;
-    f32            m_car_scale = 1.0f;
+    Entity m_car = kNullEntity;
 
     // Kept for gameplay collision against the analytic scene, which is the
     // application's business rather than the renderer's.

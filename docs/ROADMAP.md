@@ -169,15 +169,22 @@ RayBudget:  rays per pixel this frame is allowed to spend
 * **Done when:** a Sponza-scale scene renders with no raster textures at all and
   stays under 200 MB of VRAM
 
-### M10 — ECS on EnTT [next, E1]
+### M10 — ECS on EnTT (done)
 
-* `engine/core/ecs`: a facade over EnTT (registry, views, groups) — application code
-  never includes `entt.hpp` directly
-* `ISystem` implementations iterate views instead of hand-rolled arrays
-* Move the vehicle, the camera and render instances onto components
-* **Done when:** `World` holds no entity container of its own
+* `engine/core/ecs/Registry.h`: facade over EnTT. `lucida::Entity`, `lucida::Registry`,
+  and the components every world has — `Name`, `LocalTransform`, `WorldTransform`,
+  `Parent`, `Visibility`. Application code includes this, never `<entt/entt.hpp>`
+* Hierarchy is a component, not a node pointer. World transforms are derived once per
+  frame in `World::BeginFrame` rather than stored twice and drifting
+* `PhysicsSystem` writes vehicle poses onto entities; `RenderSyncSystem` pushes world
+  transforms to the backend. The application no longer steps physics by hand
+* `World` owns the registry and no list of its own
 
-### M20 — Project structure (E2)
+Still open, deliberately: the camera stays in `CameraController` until M21 needs to
+select it in the viewport, and scene files do not yet carry entities — that arrives
+with the editor, which is what will create them.
+
+### M20 — Project structure [next, E2]
 
 A game is a folder, not a config file next to the binary.
 
