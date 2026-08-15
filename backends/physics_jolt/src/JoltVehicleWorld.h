@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Internal to the Jolt backend: the wheeled-vehicle world carried over from
 // RayTracer_Unified. Nothing outside this directory includes it.

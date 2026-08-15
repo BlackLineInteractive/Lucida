@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Render backend interface (GEA 1.6.11, low-level renderer boundary).
 //

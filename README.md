@@ -141,3 +141,19 @@ Lucida/
 The rule that holds it together: **a module sees only what its
 `target_link_libraries` lists.** No `engine/*` file includes SDL2, Metal, Jolt or
 ImGui — choosing backends is the application's job.
+
+---
+
+## Licence
+
+Lucida Engine is free software under the **GNU General Public License v3.0 or later** —
+see [LICENSE](LICENSE). You may use, study, modify and redistribute it; derived works
+that you distribute must carry the same freedoms.
+
+Every dependency is permissively licensed (MIT, BSD-3, Zlib) and fetched at configure
+time rather than vendored. The full list, with licences and GPL compatibility notes, is
+in [THIRD-PARTY.md](THIRD-PARTY.md).
+
+```
+Copyright (C) 2026 BlackLine Interactive
+```

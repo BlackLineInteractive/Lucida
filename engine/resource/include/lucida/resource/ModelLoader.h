@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Resource loading (GEA 6.2): file on disk -> MeshData the GPU can take.
 // Assimp handles the formats, bvh v2 builds the acceleration structure; this

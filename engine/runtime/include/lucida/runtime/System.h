@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Update Method (GPP ch.3), applied per system rather than per object.
 //

@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Engine startup, main loop, shutdown (GEA 5.5).
 //

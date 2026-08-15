@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Single home for the stb implementations. Defining these in a header-using
 // translation unit twice is a duplicate-symbol link error waiting to happen.
 #define STB_IMAGE_WRITE_IMPLEMENTATION

@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Math facade over glm. Nothing here reimplements glm — it names the types the
 // engine uses and adds the few aggregates glm does not ship (AABB, Ray).

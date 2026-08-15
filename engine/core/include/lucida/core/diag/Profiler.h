@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Scoped CPU timing (GEA 3.5 / 15.6). Samples accumulate per named slot and are
 // read once a frame; no strings are formatted in the hot path.

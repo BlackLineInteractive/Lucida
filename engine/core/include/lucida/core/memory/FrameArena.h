@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Per-frame scratch memory. Double buffered so data produced this frame can be
 // read next frame while the other half fills (GPP: Double Buffer).

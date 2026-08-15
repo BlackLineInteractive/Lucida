@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Debug and tuning UI. Immediate mode, so there is no widget state to keep in
 // sync — the panel reads the live structs and writes them back.

@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Metal ray tracing backend. Ported from RayTracer_Unified; the tracing,
 // fog and upscale paths are unchanged. What was cut is everything that did not
 // belong in a renderer: the SDL window, the keyboard, and the player

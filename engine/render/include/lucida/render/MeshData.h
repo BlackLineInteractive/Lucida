@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Mesh as the GPU wants it: already split, already packed, already accelerated.
 // Produced by lucida::resource, consumed by a render backend.

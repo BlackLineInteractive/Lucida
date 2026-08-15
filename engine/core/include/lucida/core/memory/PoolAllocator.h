@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Pool allocator (GEA 6.2.1.2). Fixed-size blocks, O(1) alloc and free.
 // Free blocks hold the free list inline, so the pool costs no side table.

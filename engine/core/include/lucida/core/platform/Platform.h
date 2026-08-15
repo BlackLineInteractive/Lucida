@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Platform Independence Layer (GEA 1.6.4).
 // Every platform/compiler #ifdef in the engine lives here. Porting means

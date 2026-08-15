@@ -20,6 +20,7 @@ Chapters actually leaned on, by the books' real table of contents:
 * **DOD ch.9 Helping the Compiler** — cache behaviour, aliasing, branch prediction
 
 Where the engine is going: [ROADMAP.md](ROADMAP.md).
+Licence: GPL-3.0-or-later, see [LICENSE](../LICENSE) and [THIRD-PARTY.md](../THIRD-PARTY.md).
 
 ---
 

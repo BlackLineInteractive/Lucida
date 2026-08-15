@@ -57,6 +57,11 @@ facade. Below is the choice and the reason, not a catalogue of what is available
 | Config / saves | **nlohmann/json** | ergonomics beat throughput for a file read once per launch. `yyjson` if the profiler ever disagrees |
 | File dialogs | **nativefiledialog-extended** | a native picker instead of an ImGui imitation |
 | Editor | **ImGui** + **ImGuizmo** + **ImPlot** + **ImNodes** | transform gizmos, frame-time plots, node graph for materials |
+| UI motion | **ImAnim** (Soufiane KHIAT, MIT) | easing presets, colour-space-aware blending and tween caching already solved; controls answer the pointer instead of snapping |
+
+The editor theme is carried over from Climax Game Engine Toolkit: cool neutral chrome,
+one warm accent (C++ blue) that marks state — checkmarks, slider grabs, the active tab,
+selection. `framework/Theme.h` owns it, and no panel hardcodes a colour.
 
 Everything is fetched by `cmake/Dependencies.cmake`. Nothing lands in the repository.
 

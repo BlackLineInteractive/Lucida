@@ -103,6 +103,23 @@ endforeach()
 add_library(lucida_stb INTERFACE)
 target_include_directories(lucida_stb SYSTEM INTERFACE "${LUCIDA_STB_DIR}")
 
+# --- nlohmann/json ------------------------------------------------------------
+# Single header, so no archive: scenes, config and saves are read once per launch
+# and ergonomics beat throughput there (ROADMAP.md, dependency table).
+set(LUCIDA_JSON_DIR "${LUCIDA_DEPS_DIR}/nlohmann_json")
+if(NOT EXISTS "${LUCIDA_JSON_DIR}/nlohmann/json.hpp")
+    file(MAKE_DIRECTORY "${LUCIDA_JSON_DIR}/nlohmann")
+    file(DOWNLOAD
+        "https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp"
+        "${LUCIDA_JSON_DIR}/nlohmann/json.hpp" STATUS dl)
+    list(GET dl 0 code)
+    if(NOT code EQUAL 0)
+        message(FATAL_ERROR "[deps] nlohmann/json: download failed (${dl})")
+    endif()
+endif()
+add_library(lucida_json INTERFACE)
+target_include_directories(lucida_json SYSTEM INTERFACE "${LUCIDA_JSON_DIR}")
+
 # --- SDL2 --------------------------------------------------------------------
 set(LUCIDA_SDL2_TARGET "" CACHE INTERNAL "")
 if(LUCIDA_PREFER_SYSTEM_DEPS)

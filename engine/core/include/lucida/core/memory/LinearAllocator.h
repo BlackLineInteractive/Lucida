@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Stack allocator (GEA 6.2.1). Bump pointer; individual blocks are never freed,
 // the stack rewinds to a marker instead. No fragmentation, no free-list search.

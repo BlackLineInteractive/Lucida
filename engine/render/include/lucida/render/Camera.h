@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Camera state, plain data. Whoever moves it (player controller, cutscene,
 // benchmark script) lives outside the renderer — the renderer only reads it.

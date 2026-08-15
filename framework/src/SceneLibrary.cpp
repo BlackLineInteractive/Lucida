@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "lucida/framework/SceneLibrary.h"
 
 namespace lucida::scenes {
@@ -14,12 +17,17 @@ struct CommonMaterials {
 CommonMaterials AddCommonMaterials(RenderScene& scene) {
     CommonMaterials m{};
     m.floor   = scene.AddMaterial(Material(CHECKERBOARD, {0.8f, 0.8f, 0.8f}, {0, 0, 0},
-                                           0.8, 0.0, 1.0, {0.2f, 0.2f, 0.2f}));
-    m.chrome  = scene.AddMaterial(Material(METAL, {0.9f, 0.9f, 0.95f}, {0, 0, 0}, 0.05, 1.0));
-    m.glass   = scene.AddMaterial(Material(GLASS, {0.98f, 0.99f, 1.0f}, {0, 0, 0}, 0.0, 0.0, 1.5));
-    m.red     = scene.AddMaterial(Material(DIFFUSE, {0.8f, 0.15f, 0.1f}, {0, 0, 0}, 0.9, 0.0));
-    m.emitter = scene.AddMaterial(Material(EMISSIVE, {0, 0, 0}, {0.3f, 0.5f, 2.0f}, 1.0, 0.0));
-    m.water   = scene.AddMaterial(Material(WATER, {0.0f, 0.3f, 0.4f}, {0, 0, 0}, 0.0, 0.0, 1.33));
+                                           0.8, 0.0, 1.0, {0.2f, 0.2f, 0.2f}), PROC_NONE, "floor");
+    m.chrome  = scene.AddMaterial(Material(METAL, {0.9f, 0.9f, 0.95f}, {0, 0, 0}, 0.05, 1.0),
+                                  PROC_NONE, "chrome");
+    m.glass   = scene.AddMaterial(Material(GLASS, {0.98f, 0.99f, 1.0f}, {0, 0, 0}, 0.0, 0.0, 1.5),
+                                  PROC_NONE, "glass");
+    m.red     = scene.AddMaterial(Material(DIFFUSE, {0.8f, 0.15f, 0.1f}, {0, 0, 0}, 0.9, 0.0),
+                                  PROC_NONE, "red_plastic");
+    m.emitter = scene.AddMaterial(Material(EMISSIVE, {0, 0, 0}, {0.3f, 0.5f, 2.0f}, 1.0, 0.0),
+                                  PROC_NONE, "blue_emitter");
+    m.water   = scene.AddMaterial(Material(WATER, {0.0f, 0.3f, 0.4f}, {0, 0, 0}, 0.0, 0.0, 1.33),
+                                  PROC_NONE, "water");
     return m;
 }
 
@@ -80,7 +88,8 @@ RenderScene MaterialLab() {
     scene.name  = "material lab";
     scene.model = ShadingModel::WhittedGI;
 
-    struct Stand { MaterialType type; Vec3 albedo; double rough, metal, ri; i32 proc; };
+    struct Stand { MaterialType type; Vec3 albedo; double rough, metal, ri; i32 proc;
+                   const char* name; };
     static constexpr Stand kStands[] = {
         { METAL,   {0.95f, 0.96f, 0.98f}, 0.02, 1.0, 1.50, PROC_NONE },       // polished chrome
         { METAL,   {0.95f, 0.96f, 0.98f}, 0.25, 1.0, 1.50, PROC_BRUSHED },    // brushed steel
@@ -104,9 +113,10 @@ RenderScene MaterialLab() {
     constexpr i32 kCount = i32(sizeof(kStands) / sizeof(kStands[0]));
 
     const i32 floor_mat  = scene.AddMaterial(Material(CHECKERBOARD, {0.8f, 0.8f, 0.8f}, {0, 0, 0},
-                                                      0.8, 0.0, 1.0, {0.2f, 0.2f, 0.2f}));
+                                                      0.8, 0.0, 1.0, {0.2f, 0.2f, 0.2f}),
+                                             PROC_NONE, "floor");
     const i32 plinth_mat = scene.AddMaterial(Material(DIFFUSE, {0.30f, 0.30f, 0.32f}, {0, 0, 0},
-                                                      0.7, 0.0));
+                                                      0.7, 0.0), PROC_NONE, "plinth");
     scene.AddPlane({0, 1, 0}, kFloorY, floor_mat);
 
     constexpr f32 kSpacing = 2.4f, kRadius = 0.75f, kPlinthHalfHeight = 0.55f;
@@ -117,7 +127,7 @@ RenderScene MaterialLab() {
         const Vec3 emission = (stand.type == EMISSIVE) ? Vec3(1.6f, 1.35f, 0.9f) : Vec3(0.0f);
         const i32 mat = scene.AddMaterial(
             Material(stand.type, stand.albedo, emission, stand.rough, stand.metal, stand.ri),
-            stand.proc);
+            stand.proc, stand.name);
 
         const f32 x = x0 + f32(i) * kSpacing;
         const f32 top = kFloorY + 2.0f * kPlinthHalfHeight;

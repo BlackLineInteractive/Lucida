@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Channelled logging (GEA 3.5). printf-style: no <iostream>, no per-call allocation.
 

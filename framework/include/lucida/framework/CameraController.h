@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Player camera. This logic used to live inside the Metal renderer, which is
 // why it is called out here: movement, gravity and collision are gameplay, and

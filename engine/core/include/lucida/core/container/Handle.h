@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Handles instead of pointers (DOD ch.2: identifiers are the primary key).
 // index addresses the slot, generation invalidates stale handles when a slot

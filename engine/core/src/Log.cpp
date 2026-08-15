@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "lucida/core/diag/Log.h"
 #include "lucida/core/diag/Assert.h"
 

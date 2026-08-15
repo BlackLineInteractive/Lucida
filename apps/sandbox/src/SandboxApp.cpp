@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Sandbox: the app that binds concrete backends together.
 //
 // This is the only file that names Metal, SDL2 and Jolt at the same time. The

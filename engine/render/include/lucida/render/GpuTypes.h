@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // GPU-side data layout. Every struct here has a mirror in the shaders, so the
 // padding is load-bearing: rows are 16 bytes and the static_asserts fail the

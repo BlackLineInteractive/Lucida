@@ -1,3 +1,6 @@
+// Lucida Engine
+// Copyright (C) 2026 BlackLine Interactive
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 // Scene description, as data.
 //
@@ -36,6 +39,10 @@ struct RenderScene {
     std::string name = "untitled";
 
     std::vector<GPUMaterial> materials;
+    // Authoring-only, never uploaded. A hand-edited scene file references
+    // materials by name; without these, inserting one material at the top of a
+    // file would silently repaint everything below it.
+    std::vector<std::string> material_names;
     std::vector<GPUSphere>   spheres;
     std::vector<GPUPlane>    planes;
     std::vector<GPUCube>     cubes;
@@ -48,7 +55,8 @@ struct RenderScene {
     // it to its camera controller, because moving a camera is not a render job.
     CameraState spawn;
 
-    i32 AddMaterial(const Material& m, i32 procedural = PROC_NONE) {
+    i32 AddMaterial(const Material& m, i32 procedural = PROC_NONE,
+                    const std::string& name = {}) {
         GPUMaterial gm{};
         SetVec3(gm.albedo, m.albedo);
         SetVec3(gm.emission, m.emission);
@@ -59,7 +67,17 @@ struct RenderScene {
         gm.type             = i32(m.type);
         gm.proc_id          = procedural;
         materials.push_back(gm);
+        material_names.push_back(name.empty()
+                                     ? "material_" + std::to_string(materials.size() - 1)
+                                     : name);
         return i32(materials.size()) - 1;
+    }
+
+    i32 FindMaterial(const std::string& name) const {
+        for (usize i = 0; i < material_names.size(); ++i) {
+            if (material_names[i] == name) return i32(i);
+        }
+        return -1;
     }
 
     void AddSphere(const Vec3& center, f32 radius, i32 material) {
@@ -96,7 +114,8 @@ struct RenderScene {
     }
 
     void Clear() {
-        materials.clear(); spheres.clear(); planes.clear(); cubes.clear(); lights.clear();
+        materials.clear(); material_names.clear();
+        spheres.clear(); planes.clear(); cubes.clear(); lights.clear();
     }
 };
 
