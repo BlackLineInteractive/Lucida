@@ -16,6 +16,23 @@ Every decision below follows from that:
   else is approximated cheaply.
 * **One image across hardware tiers.** One shader, several quality tiers — not
   separate renderers for weak and strong machines.
+* **No noise, no ghosting, ever.** Cheaper tiers drop effects; they never buy frame
+  time with temporal accumulation artefacts or denoiser mush.
+
+### Where we start from
+
+Reference machine: MacBook Pro 16", i9-9880H, **AMD Radeon Pro 5500M 8 GB** — a
+mid-range mobile GPU with no ray tracing hardware, everything in compute.
+
+| Scene | Resolution | Path | Frame rate |
+|---|---|---|---|
+| Sponza 4K (~5.7 M tris) | 1080×720 | full RT, unoptimised | **15–30 fps** |
+| Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 57.8 fps |
+
+Sponza at 15–30 fps is the number the roadmap exists to move. It is also already
+clean: no noise, no ghosting, no denoiser softness, because the path is deterministic
+rather than stochastic. The optimisation work below has to raise the frame rate
+**without** spending that property.
 
 ---
 

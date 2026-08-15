@@ -34,7 +34,7 @@ struct HitInfo { bool hit; float t; float3 point, normal; int mat_index; float2 
 
 Ray make_ray(float3 o, float3 d) { return {o, normalize(d)}; }
 
-// --- ПЕРЕТИНИ ---
+// --- intersections ---
 HitInfo intersect_sphere(Ray ray, device const Sphere& s) {
     HitInfo info; info.hit = false; info.t = INF;
     float3 oc = ray.origin - s.center;
@@ -111,7 +111,7 @@ HitInfo find_closest(Ray ray, device const Sphere* spheres, device const Plane* 
     return closest;
 }
 
-// --- АНАЛІТИЧНА БАЗА ДЛЯ ТІНЕЙ ТА AO ---
+// --- analytic basis for shadows and AO ---
 float cone_sphere_occlusion(float3 cone_o, float3 cone_d, float cone_angle, float3 s_center, float s_radius) {
     float3 L = s_center - cone_o;
     float dist = length(L);
