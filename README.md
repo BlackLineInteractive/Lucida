@@ -30,6 +30,7 @@ patterns inside those layers, **Data-Oriented Design** (Fabian) for memory layou
 
 * Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 * Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
+* Frame and memory budgets, and where a small engine beats a large one: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
 
 ## Where it stands
 

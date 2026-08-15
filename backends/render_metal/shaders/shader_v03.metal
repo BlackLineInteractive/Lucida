@@ -1662,3 +1662,18 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
     }
     outMotion.write(float4(motion, 0.0, 0.0), gid);
 }
+
+// Copies the traced image to the drawable.
+//
+// Without this the only path to the screen was MetalFX, so a machine without it
+// — or a render scale of 1:1, where a temporal *upscaler* has nothing to
+// upscale — presented a black window while the tracer worked perfectly into an
+// offscreen texture. Linear sampling covers the upscale when the scaler is off.
+kernel void present_kernel(texture2d<float, access::sample> src [[texture(0)]],
+                           texture2d<float, access::write>  dst [[texture(1)]],
+                           uint2 gid [[thread_position_in_grid]]) {
+    if (gid.x >= dst.get_width() || gid.y >= dst.get_height()) return;
+    constexpr sampler smp(coord::normalized, filter::linear, address::clamp_to_edge);
+    const float2 uv = (float2(gid) + 0.5f) / float2(dst.get_width(), dst.get_height());
+    dst.write(float4(src.sample(smp, uv).rgb, 1.0f), gid);
+}

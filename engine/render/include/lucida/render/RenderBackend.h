@@ -89,6 +89,14 @@ public:
     virtual void SubmitScene(const RenderScene& scene) = 0;
     virtual void SetMeshOrigin(const Vec3& origin) = 0;
 
+    // Editor mode: the image goes into a dockable panel instead of straight to
+    // the window, and the backend leaves the window to the UI.
+    virtual void SetViewportAsPanel(bool enabled) = 0;
+
+    // The presented image as an opaque handle the UI layer can draw. Backend
+    // specific (an MTLTexture here); only the UI ever touches it.
+    virtual void* ViewportTexture() const = 0;
+
     // Last traced frame as 8-bit RGBA, for screenshots and headless checks.
     virtual bool ReadbackFrame(std::vector<u8>& rgba, i32& width, i32& height) = 0;
 };

@@ -20,6 +20,7 @@ Chapters actually leaned on, by the books' real table of contents:
 * **DOD ch.9 Helping the Compiler** — cache behaviour, aliasing, branch prediction
 
 Where the engine is going: [ROADMAP.md](ROADMAP.md).
+What it must cost: [PERFORMANCE.md](PERFORMANCE.md).
 Licence: GPL-3.0-or-later, see [LICENSE](../LICENSE) and [THIRD-PARTY.md](../THIRD-PARTY.md).
 
 ---
@@ -204,6 +205,23 @@ collapses to the camera-only case and nothing regresses.
 The previous transform advances once per *rendered frame* (`RollInstanceMotion`), not
 per `SetInstanceTransform` call — including on the frame an object stops, where prev has
 to catch up to current or a stationary object keeps smearing.
+
+### Fixed: black window whenever MetalFX was not upscaling
+
+The only path from the traced image to the screen was `MTLFXTemporalScaler`. When the
+render scale was 1:1 the scaler had nothing to upscale and wrote nothing; the ImGui
+overlay then drew onto a recycled drawable with `MTLLoadActionLoad`, so the window
+showed black with several frames of stale panels smeared over each other. The same hole
+meant any machine without MetalFX presented a black window while the tracer worked
+perfectly into an offscreen texture.
+
+`present_kernel` now copies the traced image to the drawable, and MetalFX became what it
+should always have been: an optimisation layered on top of a path that always works,
+engaged only when it is genuinely upscaling.
+
+The lesson is worth keeping: the offscreen readback used for verification never touched
+the drawable, so `--bench --shot` produced correct images for a renderer that displayed
+nothing. A test that does not exercise the presentation path does not test presentation.
 
 ### Two more assumptions M7 removed
 

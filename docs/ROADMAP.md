@@ -166,7 +166,9 @@ RayBudget:  rays per pixel this frame is allowed to spend
   Perlin/Simplex/Worley/FBM noise, domain warping, triplanar projection
 * A material is data, not a `switch` in the shader: a node graph compiled to code
 * Node editor on **ImNodes** with live preview
-* **Done when:** a Sponza-scale scene renders with no raster textures at all and
+* Procedural is the default, not a replacement: conventional texture maps stay
+  first-class and mix with procedural layers in the same material
+* **Done when:** a Sponza-scale scene can be dressed with no raster textures at all and
   stays under 200 MB of VRAM
 
 ### M10 — ECS on EnTT (done)

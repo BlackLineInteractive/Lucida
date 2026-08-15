@@ -145,6 +145,7 @@ class MetalBackend final : public IRenderBackend {
   id<MTLComputePipelineState> m_pipeline02 = nil;
   id<MTLComputePipelineState> m_pipeline03 = nil;
   id<MTLComputePipelineState> m_pipeline_fog = nil;
+  id<MTLComputePipelineState> m_pipeline_present = nil;
 
   // Scene GPU buffers (primitives)
   id<MTLBuffer> m_buf_mats = nil;
@@ -170,6 +171,11 @@ class MetalBackend final : public IRenderBackend {
   id<CAMetalDrawable> m_drawable = nil;
 
   // Render targets for Multi-pass & MetalFX
+  // What the screen shows, at output resolution. Everything presents into this
+  // and it goes to the drawable from here, so a readback of it is a readback of
+  // the image the user is looking at — the previous arrangement let the tracer
+  // pass verification while the window stayed black.
+  id<MTLTexture> m_tex_present = nil;  // BGRA8 (output res)
   id<MTLTexture> m_tex_gbuffer = nil; // RGBA16F (ray-res color)
   id<MTLTexture> m_tex_depth = nil;   // R32F  (ray-res depth)
   id<MTLTexture> m_tex_motion = nil;  // RG16F (ray-res motion)
@@ -193,6 +199,7 @@ class MetalBackend final : public IRenderBackend {
   bool m_mesh_loaded = false;
   float m_render_scale = 0.5f;
   bool m_vsync = true;
+  bool m_viewport_as_panel = false;
   int m_render_w = 0; // drawable (output) size
   int m_render_h = 0;
   int m_ray_w = 0; // internal ray-tracing resolution
@@ -419,6 +426,7 @@ class MetalBackend final : public IRenderBackend {
       return [m_device newTextureWithDescriptor:desc];
     };
 
+    m_tex_present = mktex(m_layer.pixelFormat, m_render_w, m_render_h);
     m_tex_gbuffer = mktex(MTLPixelFormatRGBA16Float, m_ray_w, m_ray_h);
     m_tex_depth = mktex(MTLPixelFormatR32Float, m_ray_w, m_ray_h);
     m_tex_motion = mktex(MTLPixelFormatRG16Float, m_ray_w, m_ray_h);
@@ -504,6 +512,13 @@ public:
                                  "raytrace_kernel", &err);
     if (!m_pipeline03) {
       LUCIDA_ERROR(Render, "shader v03: %s",
+                   err ? [[err localizedDescription] UTF8String] : "?");
+      return false;
+    }
+    m_pipeline_present = CompileKernel("shaders/shader_v03.metal",
+                                       "present_kernel", &err);
+    if (!m_pipeline_present) {
+      LUCIDA_ERROR(Render, "present kernel: %s",
                    err ? [[err localizedDescription] UTF8String] : "?");
       return false;
     }
@@ -991,13 +1006,19 @@ public:
           threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
       [ce endEncoding];
 
+      // MetalFX only earns its cost when it is actually upscaling. At 1:1 it
+      // has nothing to reconstruct, and it is not present at all on older
+      // machines — so the copy below is the path that must always work, and the
+      // scaler is the optimisation layered on top of it.
+      bool presented = false;
+
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 130000
       if (@available(macOS 13.0, *)) {
-        if (m_temporal_scaler) {
+        if (m_temporal_scaler && m_render_scale < 0.99f) {
           m_temporal_scaler.colorTexture = m_tex_gbuffer;
           m_temporal_scaler.depthTexture = m_tex_depth;
           m_temporal_scaler.motionTexture = m_tex_motion;
-          m_temporal_scaler.outputTexture = drawable.texture;
+          m_temporal_scaler.outputTexture = m_tex_present;
           // The scaler needs the same sub-pixel offset the rays used,
           // negated, to place the samples correctly in the history.
           m_temporal_scaler.jitterOffsetX = -jx;
@@ -1006,27 +1027,34 @@ public:
           m_temporal_scaler.reset = m_reset_history ? YES : NO;
           [m_temporal_scaler encodeToCommandBuffer:cmd];
           m_reset_history = false;
+          presented = true;
         }
       }
 #endif
 
-      // Temporary diagnostic: is anything actually writing the drawable?
-      if ((m_frame_counter % 60) == 1) {
-        LUCIDA_INFO(Render, "frame %llu: scaler=%s rays=%dx%d out=%dx%d drawable=%s imgui_lists=%d",
-                    (unsigned long long)m_frame_counter,
-#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 130000
-                    m_temporal_scaler ? "yes" : "NO",
-#else
-                    "unavailable",
-#endif
-                    m_ray_w, m_ray_h, m_render_w, m_render_h,
-                    drawable ? "yes" : "NO",
-                    ImGui::GetDrawData() ? ImGui::GetDrawData()->CmdListsCount : -1);
+      if (!presented) {
+        id<MTLComputeCommandEncoder> pe = [cmd computeCommandEncoder];
+        [pe setComputePipelineState:m_pipeline_present];
+        [pe setTexture:m_tex_gbuffer atIndex:0];
+        [pe setTexture:m_tex_present atIndex:1];
+        [pe dispatchThreads:MTLSizeMake(m_render_w, m_render_h, 1)
+            threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
+        [pe endEncoding];
+      }
+
+      // The editor draws the image inside a dockable panel instead, so the
+      // drawable starts clear and carries only the UI.
+      if (!m_viewport_as_panel) {
+        id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+        [blit copyFromTexture:m_tex_present toTexture:drawable.texture];
+        [blit endEncoding];
       }
 
       // --- Render pass (ImGui overlay)
       m_rpdesc.colorAttachments[0].texture = drawable.texture;
-      m_rpdesc.colorAttachments[0].loadAction = MTLLoadActionLoad;
+      m_rpdesc.colorAttachments[0].loadAction =
+          m_viewport_as_panel ? MTLLoadActionClear : MTLLoadActionLoad;
+      m_rpdesc.colorAttachments[0].clearColor = MTLClearColorMake(0.02, 0.02, 0.03, 1.0);
       m_rpdesc.colorAttachments[0].storeAction = MTLStoreActionStore;
 
       id<MTLRenderCommandEncoder> re =
@@ -1099,6 +1127,9 @@ public:
   }
 
   // ------------------------------------------------- Stats
+  void SetViewportAsPanel(bool enabled) override { m_viewport_as_panel = enabled; }
+  void* ViewportTexture() const override { return (__bridge void *)m_tex_present; }
+
   RenderStats Stats() const override {
     RenderStats s;
     s.cpu_frame_ms = 0.0f;
