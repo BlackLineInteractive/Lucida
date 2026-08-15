@@ -25,6 +25,7 @@
 #include <stb_image_write.h>
 
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -388,6 +389,8 @@ int main(int argc, char** argv) {
     BenchOptions bench;
     std::string scene_arg;
     std::string export_path;
+    std::string project_dir;
+    std::string new_project_dir;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)      config_path = argv[++i];
         else if (std::strcmp(argv[i], "--mesh") == 0 && i + 1 < argc)   model_override = argv[++i];
@@ -395,7 +398,15 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--shot") == 0 && i + 1 < argc)   bench.screenshot_path = argv[++i];
         else if (std::strcmp(argv[i], "--scene") == 0 && i + 1 < argc)  scene_arg = argv[++i];
         else if (std::strcmp(argv[i], "--export-scene") == 0 && i + 1 < argc) export_path = argv[++i];
+        else if (std::strcmp(argv[i], "--project") == 0 && i + 1 < argc)     project_dir = argv[++i];
+        else if (std::strcmp(argv[i], "--new-project") == 0 && i + 1 < argc) new_project_dir = argv[++i];
         else if (std::strcmp(argv[i], "--verbose") == 0)                LogSetLevel(LogLevel::Debug);
+    }
+
+    // Tool mode: scaffold a project folder and stop.
+    if (!new_project_dir.empty()) {
+        const std::string name = std::filesystem::path(new_project_dir).filename().string();
+        return Project::Create(new_project_dir, name.empty() ? "Untitled" : name) ? 0 : 1;
     }
 
     // A --scene argument is either a file or the name of a built-in.
@@ -412,7 +423,29 @@ int main(int argc, char** argv) {
         return SaveScene(scene, export_path) ? 0 : 1;
     }
 
-    Config config = LoadConfig(config_path);
+    // A project supplies what config.txt used to: window, render defaults, the
+    // scene to open. Command-line arguments still win over both.
+    Project project;
+    Config config;
+    if (!project_dir.empty()) {
+        if (!project.Open(project_dir)) return 1;
+
+        RecentProjects recents;
+        recents.Load();
+        recents.Add(project.Root());
+        recents.Save();
+
+        const ProjectSettings& settings = project.Settings();
+        config.width      = settings.window_width;
+        config.height     = settings.window_height;
+        config.fullscreen = settings.fullscreen;
+        config.walk_mode  = settings.walk_mode;
+        config.render     = settings.render;
+        config.model_path = settings.startup_model;
+        if (scene_arg.empty()) scene_arg = settings.startup_scene;
+    } else {
+        config = LoadConfig(config_path);
+    }
     if (!model_override.empty()) config.model_path = model_override;
 
     EngineConfig engine_config;
@@ -423,6 +456,7 @@ int main(int argc, char** argv) {
     if (!engine.Init(engine_config)) return 1;
 
     SandboxApp app(config, config_path, bench);
+    app.SetProject(std::move(project));
     app.SetStartScene(start_scene);
     if (scene_is_file) app.SetSceneFile(scene_arg);
     const int result = engine.Run(app);
