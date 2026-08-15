@@ -1,4 +1,19 @@
-# Lucida Engine
+<p align="center">
+  <img src="assets/lucida.jpg" alt="Lucida Engine" width="100%">
+</p>
+
+<p align="center">
+  <em>lucida</em> — the brightest star in a constellation.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="Licence: GPL-3.0-or-later" src="https://img.shields.io/badge/licence-GPL--3.0--or--later-blue.svg"></a>
+  <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-blue.svg">
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
+  <img alt="Renderer" src="https://img.shields.io/badge/renderer-Metal%20ray%20tracing-orange.svg">
+</p>
+
+---
 
 A modular real-time ray tracing engine, aimed narrowly at **procedural materials and
 selective ray tracing** — spending rays only where they are visible so ray-traced games

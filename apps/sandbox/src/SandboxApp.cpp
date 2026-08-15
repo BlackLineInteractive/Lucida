@@ -18,6 +18,7 @@
 #include "lucida/physics/Components.h"
 #include "lucida/render/Components.h"
 #include "lucida/resource/ModelLoader.h"
+#include "lucida/resource/Project.h"
 #include "lucida/resource/SceneSerializer.h"
 #include "lucida/runtime/Engine.h"
 
@@ -125,6 +126,10 @@ public:
     // built-ins are only a starting point.
     void SetSceneFile(std::string path) { m_scene_path = std::move(path); }
 
+    // Opened before the engine starts, so window size and render defaults come
+    // from the project rather than from a file next to the binary.
+    void SetProject(Project project) { m_project = std::move(project); }
+
     bool Finished() const { return m_finished; }
 
     bool OnInit(World& world) override {
@@ -163,7 +168,8 @@ public:
         }
         world.AddSystem<RenderSyncSystem>(*m_renderer);
 
-        if (!m_config.model_path.empty()) LoadModelFile(world, m_config.model_path);
+        if (!m_config.model_path.empty())
+            LoadModelFile(world, m_project.Resolve(m_config.model_path));
 
         m_platform->SetMouseCaptured(true);
         m_ui_state.show_menu = false;
@@ -173,7 +179,23 @@ public:
     void OnShutdown(World&) override {
         m_config.render = m_renderer->Settings();
         m_config.walk_mode = m_camera.Mode() == CameraMode::Walk;
-        SaveConfig(m_config_path, m_config);
+
+        // With a project open, the project is the settings file. config.txt only
+        // exists for the no-project case, and should not shadow it.
+        if (m_project.IsOpen()) {
+            ProjectSettings& settings = m_project.Settings();
+            settings.window_width  = m_config.width;
+            settings.window_height = m_config.height;
+            settings.fullscreen    = m_config.fullscreen;
+            settings.walk_mode     = m_config.walk_mode;
+            settings.render        = m_config.render;
+            settings.startup_model = m_project.MakeRelative(m_config.model_path);
+            if (!m_scene_path.empty())
+                settings.startup_scene = m_project.MakeRelative(m_scene_path);
+            m_project.Save();
+        } else {
+            SaveConfig(m_config_path, m_config);
+        }
 
         if (m_physics) m_physics->Shutdown();
         m_renderer->OverlayShutdown();
@@ -255,7 +277,7 @@ private:
     // the renderer's job.
     void LoadScene(scenes::BuiltIn which) {
         RenderScene scene;
-        if (!m_scene_path.empty() && LoadSceneFile(m_scene_path, scene)) {
+        if (!m_scene_path.empty() && LoadSceneFile(m_project.Resolve(m_scene_path), scene)) {
             Submit(scene);
             return;
         }
@@ -326,7 +348,7 @@ private:
         entities.Add<MeshInstance>(m_car, instance);
 
         m_renderer->SetMeshOrigin(m_config.model_pos);
-        m_config.model_path = path;
+        m_config.model_path = m_project.MakeRelative(path);
         LUCIDA_INFO(App, "world holds %zu entities", entities.Count());
     }
 
@@ -348,6 +370,7 @@ private:
     // application's business rather than the renderer's.
     std::vector<GPUSphere> m_scene_spheres;
 
+    Project          m_project;
     std::string      m_scene_path;
     BenchOptions     m_bench;
     std::vector<f32> m_bench_times;
