@@ -95,6 +95,8 @@ cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
 
 ```bash
 ./build/lucida_sandbox --scene lab             # basic | water | lab
+./build/lucida_sandbox --scene world.json      # or a scene file
+./build/lucida_sandbox --scene lab --export-scene world.json  # write one out to edit
 ./build/lucida_sandbox --mesh model.glb        # load a model at startup
 ./build/lucida_sandbox --bench 90              # 90 frames, print timings
 ./build/lucida_sandbox --bench 90 --shot f.png # same, plus a frame capture

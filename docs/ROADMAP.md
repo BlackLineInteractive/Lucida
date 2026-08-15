@@ -83,18 +83,21 @@ scene, not the scene.
   the three built-in scenes; `IRenderBackend::SubmitScene` replaced `SetDemoScene`; the
   backend keeps no scene of its own and `--scene basic|water|lab` picks one at launch
 
-### M7b — Scene as an asset ⬅ next
+### M7b — Scene as an asset
 
 A scene that exists only as C++ in `apps/sandbox` is a demo. An engine loads a scene
 it did not compile.
 
-* `RenderScene` serialises to and from JSON (nlohmann, pulled forward from M18)
-* `SceneLoader` in `engine/resource`: entities, transforms, material references,
-  light setup, mesh paths
-* `lucida_sandbox --scene demo.json` — no rebuild to change the world
-* **Done when:** a scene can be edited in a text editor and reloaded at runtime
+* **Done:** `engine/resource/SceneSerializer` reads and writes `RenderScene` as JSON.
+  Enums are names (`"glass"`, not `2`), materials are referenced by name so inserting
+  one at the top of a file does not repaint everything below it, vectors stay on one
+  line, and floats print as the shortest decimal that reads back identically.
+* `--export-scene out.json` writes a built-in out as a starting point;
+  `--scene out.json` loads it. No rebuild to change the world.
+* Still to come with M10: entities and mesh references in the file. Today it carries
+  analytic geometry, materials, lights, environment and the spawn point.
 
-### M8 — Selective ray tracing: quality tiers
+### M8 — Selective ray tracing: quality tiers ⬅ next
 
 The point of the engine. A material declares which effects deserve a ray.
 
