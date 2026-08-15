@@ -137,6 +137,24 @@ if(assimp_FOUND)
     else()
         set(LUCIDA_ASSIMP_TARGET assimp CACHE INTERNAL "")
     endif()
+
+    # Homebrew's assimp config hard-codes the libz.tbd of whichever SDK it was
+    # built against; after an Xcode update that path is gone and the link fails
+    # on a dependency the project never asked for. Point it at plain -lz.
+    get_target_property(_assimp_links ${LUCIDA_ASSIMP_TARGET} INTERFACE_LINK_LIBRARIES)
+    if(_assimp_links)
+        set(_fixed "")
+        foreach(lib IN LISTS _assimp_links)
+            if(lib MATCHES "libz\\.tbd")
+                list(APPEND _fixed z)
+            else()
+                list(APPEND _fixed "${lib}")
+            endif()
+        endforeach()
+        list(REMOVE_DUPLICATES _fixed)
+        set_target_properties(${LUCIDA_ASSIMP_TARGET} PROPERTIES
+            INTERFACE_LINK_LIBRARIES "${_fixed}")
+    endif()
 else()
     message(STATUS "[deps] assimp: building from source (this takes a while)")
     set(ASSIMP_BUILD_TESTS        OFF CACHE BOOL "" FORCE)

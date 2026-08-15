@@ -37,6 +37,19 @@ enum MaterialFlags {
     MATFLAG_ALPHA_BLEND       = 1 << 2,
 };
 
+// CPU-side material, used when authoring the built-in scenes. Converted to
+// GPUMaterial on upload; doubles here because scene setup is not a hot path.
+struct Material {
+    Vec3   albedo, emission, albedo2;
+    double roughness, metallic, refractive_index;
+    MaterialType type;
+
+    Material(MaterialType t = DIFFUSE, Vec3 alb = Vec3(0.8f), Vec3 emiss = Vec3(0.0f),
+             double rough = 0.5, double metal = 0.0, double ri = 1.5, Vec3 alb2 = Vec3(0.1f))
+        : albedo(alb), emission(emiss), albedo2(alb2), roughness(rough), metallic(metal),
+          refractive_index(ri), type(t) {}
+};
+
 struct GPUMaterial {
     float albedo[3];       float roughness;
     float emission[3];     float metallic;

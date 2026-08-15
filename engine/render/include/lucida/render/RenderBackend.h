@@ -48,7 +48,12 @@ struct RenderStats {
 class IOverlayHost {
 public:
     virtual ~IOverlayHost() = default;
+
+    // Called after the UI module has created the ImGui context, never before:
+    // the graphics backend writes into that context.
+    virtual void OverlayInit() = 0;
     virtual void OverlayNewFrame() = 0;
+    virtual void OverlayShutdown() = 0;
 };
 
 class IRenderBackend : public IOverlayHost {

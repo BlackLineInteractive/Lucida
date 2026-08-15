@@ -187,6 +187,7 @@ class MetalBackend final : public IRenderBackend {
   int m_samples = 1;
   bool m_mesh_loaded = false;
   float m_render_scale = 0.5f;
+  bool m_vsync = true;
   float m_fog_density = 0.022f;
   int m_fog_steps = 16;
   int m_render_w = 0; // drawable (output) size
@@ -254,8 +255,8 @@ class MetalBackend final : public IRenderBackend {
     }
     // A hair of padding so a ray grazing the surface is never culled by rounding.
     const float eps = 1e-3f;
-    set_vec3(gi.aabb_min, mn - Vec3(eps));
-    set_vec3(gi.aabb_max, mx + Vec3(eps));
+    SetVec3(gi.aabb_min, mn - Vec3(eps));
+    SetVec3(gi.aabb_max, mx + Vec3(eps));
     gi.node_base  = slot.node_base;
     gi.tri_base   = slot.tri_base;
     gi.node_count = slot.node_count;
@@ -323,11 +324,11 @@ class MetalBackend final : public IRenderBackend {
     std::vector<GPUMaterial> mats;
     auto addm = [&](const Material &m) -> int {
       GPUMaterial gm{};
-      set_vec3(gm.albedo, m.albedo);
+      SetVec3(gm.albedo, m.albedo);
       gm.roughness = float(m.roughness);
-      set_vec3(gm.emission, m.emission);
+      SetVec3(gm.emission, m.emission);
       gm.metallic = float(m.metallic);
-      set_vec3(gm.albedo2, m.albedo2);
+      SetVec3(gm.albedo2, m.albedo2);
       gm.refractive_index = float(m.refractive_index);
       gm.type = int(m.type);
       mats.push_back(gm);
@@ -501,8 +502,7 @@ class MetalBackend final : public IRenderBackend {
     id<MTLFunction> fn =
         [lib newFunctionWithName:[NSString stringWithUTF8String:fn_name]];
     if (!fn) {
-      std::cerr << "[Metal] " << fn_name << " not found in " << path
-                << std::endl;
+      LUCIDA_ERROR(Render, "kernel '%s' not found in %s", fn_name, path.c_str());
       return nil;
     }
     return [m_device newComputePipelineStateWithFunction:fn error:err];
@@ -584,9 +584,8 @@ class MetalBackend final : public IRenderBackend {
       m_temporal_scaler.depthReversed = NO;
     }
 #endif
-    std::cout << "[Metal] Targets: output " << m_render_w << "x" << m_render_h
-              << "  rays " << m_ray_w << "x" << m_ray_h << "  fog " << m_fog_w
-              << "x" << m_fog_h << std::endl;
+    LUCIDA_INFO(Render, "targets: output %dx%d  rays %dx%d  fog %dx%d",
+                m_render_w, m_render_h, m_ray_w, m_ray_h, m_fog_w, m_fog_h);
   }
 
 public:
@@ -621,28 +620,25 @@ public:
     m_uniforms.max_depth = 7;
 
     NSError *err = nil;
-    m_pipeline02 = CompileKernel("src/backends/Metal/shader_v02.metal",
+    m_pipeline02 = CompileKernel("shaders/shader_v02.metal",
                                  "raytrace_kernel", &err);
     if (!m_pipeline02) {
-      std::cerr << "[Metal] Shader v02: "
-                << (err ? [[err localizedDescription] UTF8String] : "?")
-                << std::endl;
+      LUCIDA_ERROR(Render, "shader v02: %s",
+                   err ? [[err localizedDescription] UTF8String] : "?");
       return false;
     }
-    m_pipeline03 = CompileKernel("src/backends/Metal/shader_v03.metal",
+    m_pipeline03 = CompileKernel("shaders/shader_v03.metal",
                                  "raytrace_kernel", &err);
     if (!m_pipeline03) {
-      std::cerr << "[Metal] Shader v03: "
-                << (err ? [[err localizedDescription] UTF8String] : "?")
-                << std::endl;
+      LUCIDA_ERROR(Render, "shader v03: %s",
+                   err ? [[err localizedDescription] UTF8String] : "?");
       return false;
     }
-    m_pipeline_fog = CompileKernel("src/backends/Metal/shader_v03.metal",
+    m_pipeline_fog = CompileKernel("shaders/shader_v03.metal",
                                    "fog_kernel", &err);
     if (!m_pipeline_fog) {
-      std::cerr << "[Metal] Fog kernel: "
-                << (err ? [[err localizedDescription] UTF8String] : "?")
-                << std::endl;
+      LUCIDA_ERROR(Render, "fog kernel: %s",
+                   err ? [[err localizedDescription] UTF8String] : "?");
       return false;
     }
 
@@ -653,11 +649,13 @@ public:
     }
     m_frame_sema = dispatch_semaphore_create(kMaxFramesInFlight);
 
-    // Only the graphics half of ImGui lives here; the platform half is wired
-    // up by the platform module against the same ImGui context.
-    ImGui_ImplMetal_Init(m_device);
     return true;
   }
+
+  // Only the graphics half of ImGui lives here; the platform half is wired up
+  // by the platform module against the same context.
+  void OverlayInit() override { ImGui_ImplMetal_Init(m_device); }
+  void OverlayShutdown() override { ImGui_ImplMetal_Shutdown(); }
 
   // ------------------------------------------------- Camera and settings
   void SetCamera(const CameraState &camera) override {
@@ -766,9 +764,9 @@ public:
         [cmd waitUntilCompleted];
       }
 
-      std::cout << "[Metal] " << label << ": " << slices << " x " << side
-                << "^2 + " << tdesc.mipmapLevelCount << " mips ("
-                << (data.size() * 4 / 3) / (1024 * 1024) << " MB)" << std::endl;
+      LUCIDA_INFO(Render, "%s: %d x %d^2 + %lu mips (%zu MB)", label, slices, side,
+                  (unsigned long)tdesc.mipmapLevelCount,
+                  (data.size() * 4 / 3) / (1024 * 1024));
       return tex;
     };
 
@@ -865,8 +863,8 @@ public:
     m_pool_nodes.clear(); m_pool_tripos.clear();
     m_pool_triattr.clear(); m_pool_mats.clear();
     ClearInstances();
-    int slot = AddMesh(mesh);
-    if (slot >= 0)
+    const MeshHandle slot = AddMesh(mesh);
+    if (slot.IsValid())
       AddInstance(slot, glm::translate(glm::mat4(1.0f), mesh.origin));
 
     UploadMeshTextures(mesh);
@@ -885,14 +883,14 @@ public:
     // The demo point lights are sized for a three-sphere scene; a mesh is lit
     // by the directional sun and sky irradiance in the shader instead.
     m_uniforms.num_lights = 0;
-    set_vec3(m_uniforms.model_pos, mesh.origin);
+    SetVec3(m_uniforms.model_pos, mesh.origin);
 
     // The scene changed completely; nothing in the history is reusable.
     m_reset_history = true;
     m_have_prev_vp = false;
 
-    std::cout << "[Metal] Mesh loaded: " << m_num_triangles << " tris, "
-              << m_num_bvh_nodes << " BVH nodes" << std::endl;
+    LUCIDA_INFO(Render, "mesh loaded: %d tris, %d BVH nodes", m_num_triangles,
+                m_num_bvh_nodes);
   }
 
   void ClearMeshes() override {
@@ -987,11 +985,11 @@ public:
       m_uniforms.mesh_tex_dim = float(m_mesh_tex_dim);
       m_uniforms.orm_tex_dim = float(m_orm_tex_dim);
       m_uniforms.mesh_mat_count = m_num_mesh_mats;
-      set_vec3(m_uniforms.ambient_light, {0.3, 0.4, 0.6});
-      set_vec3(m_uniforms.camera_origin, m_cam_pos);
-      set_vec3(m_uniforms.camera_forward, fwd);
-      set_vec3(m_uniforms.camera_right, right);
-      set_vec3(m_uniforms.camera_up, up);
+      SetVec3(m_uniforms.ambient_light, {0.3, 0.4, 0.6});
+      SetVec3(m_uniforms.camera_origin, m_cam_pos);
+      SetVec3(m_uniforms.camera_forward, fwd);
+      SetVec3(m_uniforms.camera_right, right);
+      SetVec3(m_uniforms.camera_up, up);
       m_uniforms.time = float(std::fmod(time.elapsed, 10000.0));
       m_uniforms.enable_fog = m_fog ? 1 : 0;
       m_uniforms.enable_jitter = m_jitter ? 1 : 0;
@@ -1118,8 +1116,8 @@ public:
       __block std::atomic<uint64_t> *nsamp = &m_gpu_samples;
       [cmd addCompletedHandler:^(id<MTLCommandBuffer> cb) {
         if (cb.error) {
-          std::cerr << "[Metal] command buffer error: " <<
-              [[cb.error localizedDescription] UTF8String] << std::endl;
+          LUCIDA_ERROR(Render, "command buffer: %s",
+                       [[cb.error localizedDescription] UTF8String]);
         }
         double ms = (cb.GPUEndTime - cb.GPUStartTime) * 1000.0;
         if (ms > 0.0) {
@@ -1189,7 +1187,6 @@ public:
   // ------------------------------------------------- Shutdown
   void Shutdown() override {
     // The layer belongs to the platform module, which destroys it.
-    ImGui_ImplMetal_Shutdown();
   }
 };
 

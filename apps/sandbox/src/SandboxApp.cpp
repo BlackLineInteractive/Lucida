@@ -13,10 +13,12 @@
 #include "lucida/resource/ModelLoader.h"
 #include "lucida/runtime/Engine.h"
 
+#include <stb_image_write.h>
+
 #include <cstring>
 #include <fstream>
-#include <sstream>
 #include <string>
+#include <vector>
 
 namespace lucida {
 namespace {
@@ -82,10 +84,20 @@ void SaveConfig(const std::string& path, const Config& cfg) {
          << "\nmodel_scale=" << cfg.model_scale << "\n";
 }
 
+// Headless verification: render N frames, optionally save the last one, quit.
+// Without it the only way to know the renderer works is to look at it.
+struct BenchOptions {
+    i32 frames = 0;              // 0 disables
+    std::string screenshot_path;
+};
+
 class SandboxApp final : public IApplication {
 public:
-    SandboxApp(Config config, std::string config_path)
-        : m_config(std::move(config)), m_config_path(std::move(config_path)) {}
+    SandboxApp(Config config, std::string config_path, BenchOptions bench)
+        : m_config(std::move(config)), m_config_path(std::move(config_path)),
+          m_bench(std::move(bench)) {}
+
+    bool Finished() const { return m_finished; }
 
     bool OnInit(World&) override {
         m_platform = CreatePlatformSDL2();
@@ -99,9 +111,11 @@ public:
         m_renderer = CreateMetalBackend();
         if (!m_renderer->Init(m_platform->Surface())) return false;
 
-        // ImGui context first, then both halves of its backend.
+        // ImGui context first, then both halves of its backend: each half
+        // writes into the context and will fault if it does not exist yet.
         m_ui.Init();
         m_platform->OverlayInit();
+        m_renderer->OverlayInit();
 
         m_renderer->SetDemoScene(m_ui_state.demo_scene);
         m_renderer->ApplySettings(m_config.render);
@@ -126,6 +140,7 @@ public:
         SaveConfig(m_config_path, m_config);
 
         if (m_physics) m_physics->Shutdown();
+        m_renderer->OverlayShutdown();
         m_platform->OverlayShutdown();
         m_renderer->Shutdown();
         m_ui.Shutdown();
@@ -200,9 +215,42 @@ public:
         }
 
         m_renderer->Render(time);
+
+        if (m_bench.frames > 0) RunBenchFrame(time);
     }
 
 private:
+    void RunBenchFrame(const FrameTime& time) {
+        m_bench_times.push_back(time.real_delta * 1000.0f);
+        if (i32(m_bench_times.size()) < m_bench.frames) return;
+
+        // Drop the first frames: they carry shader compilation and the first
+        // texture uploads, which say nothing about steady-state cost.
+        const usize warmup = Min<usize>(10, m_bench_times.size() / 4);
+        f32 total = 0.0f, worst = 0.0f;
+        for (usize i = warmup; i < m_bench_times.size(); ++i) {
+            total += m_bench_times[i];
+            worst = Max(worst, m_bench_times[i]);
+        }
+        const f32 count = f32(m_bench_times.size() - warmup);
+        LUCIDA_INFO(App, "bench %d frames: avg %.2f ms (%.1f fps), worst %.2f ms, gpu %.2f ms",
+                    m_bench.frames, total / count, 1000.0f * count / total, worst,
+                    m_renderer->Stats().gpu_frame_ms);
+
+        if (!m_bench.screenshot_path.empty()) {
+            std::vector<u8> rgba;
+            i32 w = 0, h = 0;
+            if (m_renderer->ReadbackFrame(rgba, w, h)) {
+                stbi_write_png(m_bench.screenshot_path.c_str(), w, h, 4, rgba.data(), w * 4);
+                LUCIDA_INFO(App, "wrote %s (%dx%d)", m_bench.screenshot_path.c_str(), w, h);
+            } else {
+                LUCIDA_ERROR(App, "readback failed");
+            }
+        }
+        m_finished = true;
+        m_ui_state.request_quit = true;
+    }
+
     void LoadModelFile(const std::string& path) {
         LUCIDA_INFO(App, "loading %s", path.c_str());
         MeshData mesh = LoadModel(path, 2.0f);
@@ -237,6 +285,10 @@ private:
     VehicleHandle  m_vehicle;
     InstanceHandle m_car_instance;
     f32            m_car_scale = 1.0f;
+
+    BenchOptions     m_bench;
+    std::vector<f32> m_bench_times;
+    bool             m_finished = false;
 };
 
 } // namespace
@@ -247,9 +299,12 @@ int main(int argc, char** argv) {
 
     std::string config_path = "config.txt";
     std::string model_override;
+    BenchOptions bench;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)      config_path = argv[++i];
         else if (std::strcmp(argv[i], "--mesh") == 0 && i + 1 < argc)   model_override = argv[++i];
+        else if (std::strcmp(argv[i], "--bench") == 0 && i + 1 < argc)  bench.frames = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--shot") == 0 && i + 1 < argc)   bench.screenshot_path = argv[++i];
         else if (std::strcmp(argv[i], "--verbose") == 0)                LogSetLevel(LogLevel::Debug);
     }
 
@@ -263,7 +318,7 @@ int main(int argc, char** argv) {
     Engine engine;
     if (!engine.Init(engine_config)) return 1;
 
-    SandboxApp app(config, config_path);
+    SandboxApp app(config, config_path, bench);
     const int result = engine.Run(app);
     engine.Shutdown();
     return result;

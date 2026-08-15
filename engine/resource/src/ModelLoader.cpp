@@ -18,6 +18,13 @@
 #include <stb_image.h>
 #include <stb_image_write.h>
 
+#include <bvh/v2/bvh.h>
+#include <bvh/v2/vec.h>
+#include <bvh/v2/tri.h>
+#include <bvh/v2/binned_sah_builder.h>
+#include <bvh/v2/default_builder.h>
+#include <bvh/v2/thread_pool.h>
+
 namespace lucida {
 
 // ------------------------------------------------------------------ helpers --
@@ -150,12 +157,6 @@ static bool GetORMTexture(const aiMaterial* mat, aiString& out, const char*& whi
     return false;
 }
 
-#include <bvh/v2/bvh.h>
-#include <bvh/v2/vec.h>
-#include <bvh/v2/tri.h>
-#include <bvh/v2/binned_sah_builder.h>
-#include <bvh/v2/default_builder.h>
-#include <bvh/v2/thread_pool.h>
 
 static void BuildBVH(std::vector<GPUTriangle>& tris,
                      std::vector<GPUBVHNode>&  nodes,
