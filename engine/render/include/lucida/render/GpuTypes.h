@@ -145,8 +145,18 @@ struct GPUUniforms {
     float fog_density; int fog_steps; int frame_index;
     float mesh_tex_dim;
     float orm_tex_dim; int mesh_mat_count; int num_instances; float pad10;
+
+    // Appended, never inserted: prev_view_proj has to stay at offset 176 for the
+    // shader's float4x4 to line up, and everything before it is already spoken
+    // for. New rows go on the end.
+    float sky_zenith[3];  float grid_opacity;
+    float sky_horizon[3]; float grid_fade;
+    float sky_ground[3];  int   grid_enabled;
+    float grid_color[3];  float pad11;
+    float grid_axis_x[3]; float pad12;
+    float grid_axis_z[3]; float pad13;
 };
-static_assert(sizeof(GPUUniforms) == 272);
+static_assert(sizeof(GPUUniforms) == 368);
 
 inline void SetVec3(float* dst, const Vec3& v) { dst[0] = v.x; dst[1] = v.y; dst[2] = v.z; }
 

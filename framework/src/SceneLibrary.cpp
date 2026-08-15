@@ -8,116 +8,148 @@ namespace {
 
 constexpr f32 kFloorY = -1.0f;
 
-// Materials shared by the primitive scenes, added in a fixed order so the
-// indices below stay readable.
 struct CommonMaterials {
     i32 floor, chrome, glass, red, emitter, water;
 };
 
-CommonMaterials AddCommonMaterials(RenderScene& scene) {
+CommonMaterials AddCommonMaterials(SceneAssets& assets) {
     CommonMaterials m{};
-    m.floor   = scene.AddMaterial(Material(CHECKERBOARD, {0.8f, 0.8f, 0.8f}, {0, 0, 0},
-                                           0.8, 0.0, 1.0, {0.2f, 0.2f, 0.2f}), PROC_NONE, "floor");
-    m.chrome  = scene.AddMaterial(Material(METAL, {0.9f, 0.9f, 0.95f}, {0, 0, 0}, 0.05, 1.0),
-                                  PROC_NONE, "chrome");
-    m.glass   = scene.AddMaterial(Material(GLASS, {0.98f, 0.99f, 1.0f}, {0, 0, 0}, 0.0, 0.0, 1.5),
-                                  PROC_NONE, "glass");
-    m.red     = scene.AddMaterial(Material(DIFFUSE, {0.8f, 0.15f, 0.1f}, {0, 0, 0}, 0.9, 0.0),
-                                  PROC_NONE, "red_plastic");
-    m.emitter = scene.AddMaterial(Material(EMISSIVE, {0, 0, 0}, {0.3f, 0.5f, 2.0f}, 1.0, 0.0),
-                                  PROC_NONE, "blue_emitter");
-    m.water   = scene.AddMaterial(Material(WATER, {0.0f, 0.3f, 0.4f}, {0, 0, 0}, 0.0, 0.0, 1.33),
-                                  PROC_NONE, "water");
+    m.floor   = assets.AddMaterial(Material(CHECKERBOARD, {0.8f, 0.8f, 0.8f}, {0, 0, 0},
+                                            0.8, 0.0, 1.0, {0.2f, 0.2f, 0.2f}),
+                                   PROC_NONE, "floor");
+    m.chrome  = assets.AddMaterial(Material(METAL, {0.9f, 0.9f, 0.95f}, {0, 0, 0}, 0.05, 1.0),
+                                   PROC_NONE, "chrome");
+    m.glass   = assets.AddMaterial(Material(GLASS, {0.98f, 0.99f, 1.0f}, {0, 0, 0}, 0.0, 0.0, 1.5),
+                                   PROC_NONE, "glass");
+    m.red     = assets.AddMaterial(Material(DIFFUSE, {0.8f, 0.15f, 0.1f}, {0, 0, 0}, 0.9, 0.0),
+                                   PROC_NONE, "red_plastic");
+    m.emitter = assets.AddMaterial(Material(EMISSIVE, {0, 0, 0}, {0.3f, 0.5f, 2.0f}, 1.0, 0.0),
+                                   PROC_NONE, "blue_emitter");
+    m.water   = assets.AddMaterial(Material(WATER, {0.0f, 0.3f, 0.4f}, {0, 0, 0}, 0.0, 0.0, 1.33),
+                                   PROC_NONE, "water");
     return m;
 }
 
-void AddPrimitives(RenderScene& scene, const CommonMaterials& m) {
-    scene.AddSphere({-2.0f, 0.0f, -5.0f}, 1.0f, m.chrome);
-    scene.AddSphere({ 0.0f, 0.2f, -4.5f}, 1.2f, m.glass);
-    scene.AddSphere({ 1.5f, 0.5f, -3.5f}, 0.3f, m.emitter);
-    scene.AddCube({1.5f, -0.5f, -6.0f}, {0.5f, 0.5f, 0.5f}, m.red);
+void AddPrimitives(Registry& registry, const CommonMaterials& m) {
+    CreatePrimitive(registry, PrimitiveType::Sphere, {-2.0f, 0.0f, -5.0f}, m.chrome, "Chrome ball");
 
-    scene.AddLight({-5.0f, 8.0f, -2.0f}, 50.0f, {1.0f, 0.95f, 0.9f}, 2.0f);
-    // Second light sits inside the emissive sphere, so the glow casts light too.
-    scene.AddLight({1.5f, 0.5f, -3.5f}, 15.0f, {0.3f, 0.5f, 1.0f}, 0.2f);
+    const Entity glass = CreatePrimitive(registry, PrimitiveType::Sphere,
+                                         {0.0f, 0.2f, -4.5f}, m.glass, "Glass ball");
+    registry.Get<LocalTransform>(glass)->scale = 1.2f;
+
+    const Entity emitter = CreatePrimitive(registry, PrimitiveType::Sphere,
+                                           {1.5f, 0.5f, -3.5f}, m.emitter, "Emitter");
+    registry.Get<LocalTransform>(emitter)->scale = 0.3f;
+
+    CreatePrimitive(registry, PrimitiveType::Box, {1.5f, -0.5f, -6.0f}, m.red, "Red box");
+
+    CreateLight(registry, {-5.0f, 8.0f, -2.0f}, {1.0f, 0.95f, 0.9f}, 50.0f, 2.0f, "Key light");
+    // Sits inside the emissive sphere so the glow casts light as well as showing.
+    CreateLight(registry, {1.5f, 0.5f, -3.5f}, {0.3f, 0.5f, 1.0f}, 15.0f, 0.2f, "Emitter glow");
+}
+
+Entity AddFloor(Registry& registry, i32 material, f32 height = kFloorY) {
+    const Entity floor = CreatePrimitive(registry, PrimitiveType::Plane,
+                                         {0.0f, height, 0.0f}, material, "Ground");
+    return floor;
 }
 
 CameraState EyeLevelSpawn(const Vec3& position, f32 pitch = 0.0f) {
     CameraState camera;
     camera.position = position;
-    camera.yaw      = -kHalfPi;   // looking down -Z
+    camera.yaw      = -kHalfPi;
     camera.pitch    = pitch;
     return camera;
 }
 
 } // namespace
 
-RenderScene BasicPrimitives() {
-    RenderScene scene;
-    scene.name  = "basic primitives";
-    scene.model = ShadingModel::Whitted;
+SceneAssets Empty(Registry& registry) {
+    SceneAssets assets;
+    assets.name  = "empty";
+    assets.model = ShadingModel::WhittedGI;
 
-    const CommonMaterials m = AddCommonMaterials(scene);
-    scene.AddPlane({0, 1, 0}, kFloorY, m.floor);
-    AddPrimitives(scene, m);
+    // No geometry at all. The grid and the sky gradient are drawn by the
+    // renderer, not by objects, so an empty scene still looks like somewhere to
+    // stand rather than a void.
+    assets.environment.fog_enabled = false;
+    assets.environment.grid_enabled = true;
+    assets.spawn = EyeLevelSpawn({0.0f, 1.6f, 6.0f}, -0.12f);
 
-    scene.environment.fog_enabled = false;
-    scene.spawn = EyeLevelSpawn({0.0f, 0.0f, 2.0f});
-    return scene;
+    // One default material, so the first primitive the user creates has
+    // something to wear.
+    assets.AddMaterial(Material(DIFFUSE, {0.75f, 0.75f, 0.78f}, {0, 0, 0}, 0.45, 0.0),
+                       PROC_NONE, "default");
+    (void)registry;
+    return assets;
 }
 
-RenderScene WaterAndFog() {
-    RenderScene scene;
-    scene.name  = "water and fog";
-    scene.model = ShadingModel::WhittedGI;
+SceneAssets BasicPrimitives(Registry& registry) {
+    SceneAssets assets;
+    assets.name  = "basic primitives";
+    assets.model = ShadingModel::Whitted;
 
-    const CommonMaterials m = AddCommonMaterials(scene);
-    scene.AddPlane({0, 1, 0}, kFloorY, m.floor);
+    const CommonMaterials m = AddCommonMaterials(assets);
+    AddFloor(registry, m.floor);
+    AddPrimitives(registry, m);
+
+    assets.environment.fog_enabled = false;
+    assets.spawn = EyeLevelSpawn({0.0f, 0.0f, 2.0f});
+    return assets;
+}
+
+SceneAssets WaterAndFog(Registry& registry) {
+    SceneAssets assets;
+    assets.name  = "water and fog";
+    assets.model = ShadingModel::WhittedGI;
+
+    const CommonMaterials m = AddCommonMaterials(assets);
+    AddFloor(registry, m.floor);
     // Water sits just above the floor: the checker reads through it, which is
     // what makes the refraction legible.
-    scene.AddPlane({0, 1, 0}, -0.85f, m.water);
-    AddPrimitives(scene, m);
+    AddFloor(registry, m.water, -0.85f);
+    AddPrimitives(registry, m);
 
-    scene.environment.fog_enabled = true;
-    scene.spawn = EyeLevelSpawn({0.0f, 0.0f, 2.0f});
-    return scene;
+    assets.environment.fog_enabled = true;
+    assets.spawn = EyeLevelSpawn({0.0f, 0.0f, 2.0f});
+    return assets;
 }
 
-RenderScene MaterialLab() {
-    RenderScene scene;
-    scene.name  = "material lab";
-    scene.model = ShadingModel::WhittedGI;
+SceneAssets MaterialLab(Registry& registry) {
+    SceneAssets assets;
+    assets.name  = "material lab";
+    assets.model = ShadingModel::WhittedGI;
 
     struct Stand { MaterialType type; Vec3 albedo; double rough, metal, ri; i32 proc;
                    const char* name; };
     static constexpr Stand kStands[] = {
-        { METAL,   {0.95f, 0.96f, 0.98f}, 0.02, 1.0, 1.50, PROC_NONE, "polished_chrome" },       // polished chrome
-        { METAL,   {0.95f, 0.96f, 0.98f}, 0.25, 1.0, 1.50, PROC_BRUSHED, "brushed_steel" },    // brushed steel
-        { METAL,   {1.00f, 0.77f, 0.34f}, 0.10, 1.0, 1.50, PROC_NONE, "gold" },       // gold
-        { METAL,   {0.95f, 0.64f, 0.54f}, 0.20, 1.0, 1.50, PROC_PATINA, "copper_patina" },     // copper, oxidising
-        { METAL,   {0.56f, 0.57f, 0.58f}, 0.30, 1.0, 1.50, PROC_RUST, "rusted_iron" },       // iron turning to rust
-        { METAL,   {0.94f, 0.78f, 0.38f}, 0.50, 1.0, 1.50, PROC_ROUGH_RAMP, "roughness_sweep" }, // roughness sweep
-        { METAL,   {0.75f, 0.62f, 0.18f}, 0.30, 1.0, 1.50, PROC_HEX, "hex_inlay" },        // hex-cell inlay
-        { GLASS,   {0.98f, 0.99f, 1.00f}, 0.00, 0.0, 1.52, PROC_NONE, "clear_glass" },       // clear glass
-        { GLASS,   {0.85f, 0.93f, 0.98f}, 0.35, 0.0, 1.33, PROC_NONE, "frosted_glass" },       // frosted, low IOR
-        { WATER,   {0.00f, 0.30f, 0.40f}, 0.00, 0.0, 1.33, PROC_NONE, "water" },       // water
-        { DIFFUSE, {0.86f, 0.85f, 0.82f}, 0.10, 0.0, 1.50, PROC_MARBLE, "marble" },     // polished marble
-        { DIFFUSE, {0.45f, 0.26f, 0.12f}, 0.45, 0.0, 1.50, PROC_WOOD, "wood" },       // wood
-        { DIFFUSE, {0.18f, 0.45f, 0.55f}, 0.30, 0.0, 1.50, PROC_TILES, "glazed_tiles" },      // glazed tiles
-        { DIFFUSE, {0.52f, 0.51f, 0.49f}, 0.85, 0.0, 1.50, PROC_CONCRETE, "concrete" },   // concrete
-        { DIFFUSE, {0.80f, 0.12f, 0.10f}, 0.12, 0.0, 1.50, PROC_NONE, "red_plastic" },       // smooth plastic
-        { DIFFUSE, {0.05f, 0.05f, 0.06f}, 0.95, 0.0, 1.50, PROC_NONE, "matte_rubber" },       // matte rubber
-        { EMISSIVE,{0.00f, 0.00f, 0.00f}, 1.00, 0.0, 1.50, PROC_NONE, "emitter" },       // emitter
-        { CHECKERBOARD, {0.9f, 0.9f, 0.9f}, 0.35, 0.0, 1.50, PROC_NONE, "reference_checker" },     // reference checker
+        { METAL,   {0.95f, 0.96f, 0.98f}, 0.02, 1.0, 1.50, PROC_NONE,       "polished_chrome" },
+        { METAL,   {0.95f, 0.96f, 0.98f}, 0.25, 1.0, 1.50, PROC_BRUSHED,    "brushed_steel" },
+        { METAL,   {1.00f, 0.77f, 0.34f}, 0.10, 1.0, 1.50, PROC_NONE,       "gold" },
+        { METAL,   {0.95f, 0.64f, 0.54f}, 0.20, 1.0, 1.50, PROC_PATINA,     "copper_patina" },
+        { METAL,   {0.56f, 0.57f, 0.58f}, 0.30, 1.0, 1.50, PROC_RUST,       "rusted_iron" },
+        { METAL,   {0.94f, 0.78f, 0.38f}, 0.50, 1.0, 1.50, PROC_ROUGH_RAMP, "roughness_sweep" },
+        { METAL,   {0.75f, 0.62f, 0.18f}, 0.30, 1.0, 1.50, PROC_HEX,        "hex_inlay" },
+        { GLASS,   {0.98f, 0.99f, 1.00f}, 0.00, 0.0, 1.52, PROC_NONE,       "clear_glass" },
+        { GLASS,   {0.85f, 0.93f, 0.98f}, 0.35, 0.0, 1.33, PROC_NONE,       "frosted_glass" },
+        { WATER,   {0.00f, 0.30f, 0.40f}, 0.00, 0.0, 1.33, PROC_NONE,       "water" },
+        { DIFFUSE, {0.86f, 0.85f, 0.82f}, 0.10, 0.0, 1.50, PROC_MARBLE,     "marble" },
+        { DIFFUSE, {0.45f, 0.26f, 0.12f}, 0.45, 0.0, 1.50, PROC_WOOD,       "wood" },
+        { DIFFUSE, {0.18f, 0.45f, 0.55f}, 0.30, 0.0, 1.50, PROC_TILES,      "glazed_tiles" },
+        { DIFFUSE, {0.52f, 0.51f, 0.49f}, 0.85, 0.0, 1.50, PROC_CONCRETE,   "concrete" },
+        { DIFFUSE, {0.80f, 0.12f, 0.10f}, 0.12, 0.0, 1.50, PROC_NONE,       "red_plastic" },
+        { DIFFUSE, {0.05f, 0.05f, 0.06f}, 0.95, 0.0, 1.50, PROC_NONE,       "matte_rubber" },
+        { EMISSIVE,{0.00f, 0.00f, 0.00f}, 1.00, 0.0, 1.50, PROC_NONE,       "emitter" },
+        { CHECKERBOARD, {0.9f, 0.9f, 0.9f}, 0.35, 0.0, 1.50, PROC_NONE,     "reference_checker" },
     };
     constexpr i32 kCount = i32(sizeof(kStands) / sizeof(kStands[0]));
 
-    const i32 floor_mat  = scene.AddMaterial(Material(CHECKERBOARD, {0.8f, 0.8f, 0.8f}, {0, 0, 0},
-                                                      0.8, 0.0, 1.0, {0.2f, 0.2f, 0.2f}),
-                                             PROC_NONE, "floor");
-    const i32 plinth_mat = scene.AddMaterial(Material(DIFFUSE, {0.30f, 0.30f, 0.32f}, {0, 0, 0},
-                                                      0.7, 0.0), PROC_NONE, "plinth");
-    scene.AddPlane({0, 1, 0}, kFloorY, floor_mat);
+    const i32 floor_mat  = assets.AddMaterial(Material(CHECKERBOARD, {0.8f, 0.8f, 0.8f},
+                                                       {0, 0, 0}, 0.8, 0.0, 1.0,
+                                                       {0.2f, 0.2f, 0.2f}), PROC_NONE, "floor");
+    const i32 plinth_mat = assets.AddMaterial(Material(DIFFUSE, {0.30f, 0.30f, 0.32f}, {0, 0, 0},
+                                                       0.7, 0.0), PROC_NONE, "plinth");
+    AddFloor(registry, floor_mat);
 
     constexpr f32 kSpacing = 2.4f, kRadius = 0.75f, kPlinthHalfHeight = 0.55f;
     const f32 x0 = -0.5f * (kCount - 1) * kSpacing;
@@ -125,36 +157,45 @@ RenderScene MaterialLab() {
     for (i32 i = 0; i < kCount; ++i) {
         const Stand& stand = kStands[i];
         const Vec3 emission = (stand.type == EMISSIVE) ? Vec3(1.6f, 1.35f, 0.9f) : Vec3(0.0f);
-        const i32 mat = scene.AddMaterial(
+        const i32 mat = assets.AddMaterial(
             Material(stand.type, stand.albedo, emission, stand.rough, stand.metal, stand.ri),
             stand.proc, stand.name);
 
         const f32 x = x0 + f32(i) * kSpacing;
         const f32 top = kFloorY + 2.0f * kPlinthHalfHeight;
-        scene.AddCube({x, kFloorY + kPlinthHalfHeight, -6.0f},
-                      {0.85f, kPlinthHalfHeight, 0.85f}, plinth_mat);
-        scene.AddSphere({x, top + kRadius, -6.0f}, kRadius, mat);
+
+        const Entity plinth = CreatePrimitive(registry, PrimitiveType::Box,
+                                              {x, kFloorY + kPlinthHalfHeight, -6.0f},
+                                              plinth_mat, "Plinth");
+        registry.Get<PrimitiveShape>(plinth)->size = Vec3(0.85f, kPlinthHalfHeight, 0.85f);
+        registry.Add<LocalBounds>(plinth, LocalBounds{Vec3(-0.85f, -kPlinthHalfHeight, -0.85f),
+                                                      Vec3( 0.85f,  kPlinthHalfHeight,  0.85f)});
+
+        const Entity ball = CreatePrimitive(registry, PrimitiveType::Sphere,
+                                            {x, top + kRadius, -6.0f}, mat, stand.name);
+        registry.Get<LocalTransform>(ball)->scale = kRadius;
     }
 
-    scene.AddLight({-6.0f, 9.0f, 1.0f}, 90.0f, {1.00f, 0.96f, 0.90f}, 1.5f);
-    scene.AddLight({ 7.0f, 5.0f, 1.0f}, 45.0f, {0.65f, 0.78f, 1.00f}, 2.5f);
+    CreateLight(registry, {-6.0f, 9.0f, 1.0f}, {1.00f, 0.96f, 0.90f}, 90.0f, 1.5f, "Key light");
+    CreateLight(registry, { 7.0f, 5.0f, 1.0f}, {0.65f, 0.78f, 1.00f}, 45.0f, 2.5f, "Fill light");
 
-    // Far enough back that the whole row fits a 60-degree frame.
-    scene.spawn = EyeLevelSpawn({0.0f, 2.2f, 15.0f}, -0.05f);
-    return scene;
+    assets.spawn = EyeLevelSpawn({0.0f, 2.2f, 15.0f}, -0.05f);
+    return assets;
 }
 
-RenderScene Build(BuiltIn which) {
+SceneAssets Build(BuiltIn which, Registry& registry) {
     switch (which) {
-    case BuiltIn::BasicPrimitives: return BasicPrimitives();
-    case BuiltIn::MaterialLab:     return MaterialLab();
+    case BuiltIn::Empty:           return Empty(registry);
+    case BuiltIn::BasicPrimitives: return BasicPrimitives(registry);
+    case BuiltIn::MaterialLab:     return MaterialLab(registry);
     case BuiltIn::WaterAndFog:
-    default:                       return WaterAndFog();
+    default:                       return WaterAndFog(registry);
     }
 }
 
 const char* Name(BuiltIn which) {
     switch (which) {
+    case BuiltIn::Empty:           return "Empty";
     case BuiltIn::BasicPrimitives: return "Basic primitives";
     case BuiltIn::MaterialLab:     return "Material lab";
     case BuiltIn::WaterAndFog:     return "Water and fog";

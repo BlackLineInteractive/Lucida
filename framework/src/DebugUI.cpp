@@ -4,6 +4,7 @@
 #include "lucida/framework/DebugUI.h"
 
 #include "lucida/core/diag/Profiler.h"
+#include "lucida/framework/Picking.h"
 #include "lucida/framework/Theme.h"
 #include "lucida/physics/Components.h"
 #include "lucida/render/Components.h"
@@ -42,6 +43,22 @@ void LabelledText(const char* label, const char* fmt, ...) {
 }
 
 } // namespace
+
+// Turns a live-edited control into a single undoable command. ImGui reports both
+// edges of an interaction, which is exactly what the one-entry-per-drag rule
+// needs: grab the old value on activation, push on release.
+void DebugUI::TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
+                        const char* name) {
+    if (ImGui::IsItemActivated()) {
+        m_drag_start = current;
+        m_dragging = true;
+    }
+    if (m_dragging && ImGui::IsItemDeactivatedAfterEdit()) {
+        m_commands.Push(std::make_unique<TransformCommand>(registry, entity, m_drag_start,
+                                                           current, name));
+        m_dragging = false;
+    }
+}
 
 void DebugUI::Init() {
     IMGUI_CHECKVERSION();
@@ -85,7 +102,16 @@ void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
                                  ImGuiDockNodeFlags_PassthruCentralNode);
 
     DrawMenuBar(ui);
-    if (ui.show_viewport && viewport_texture) DrawViewport(ui, viewport_texture, viewport_aspect);
+    // Undo before anything reads the world this frame, so the panels below show
+    // the restored state rather than the state that was just undone.
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool modifier = io.KeySuper || io.KeyCtrl;   // Cmd on macOS, Ctrl elsewhere
+    if (modifier && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+        if (io.KeyShift) m_commands.Redo(); else m_commands.Undo();
+    }
+
+    if (ui.show_viewport && viewport_texture)
+        DrawViewport(world, ui, viewport_texture, viewport_aspect, camera);
     if (ui.show_hierarchy) DrawHierarchy(world, ui);
     if (ui.show_inspector) DrawInspector(world, ui);
     if (ui.show_renderer)  DrawRenderer(ui, settings, camera);
@@ -165,7 +191,8 @@ void DebugUI::DrawMenuBar(UiState& ui) {
     ImGui::EndMainMenuBar();
 }
 
-void DebugUI::DrawViewport(UiState& ui, void* texture, f32 aspect) {
+void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
+                           const CameraController& camera) {
     // No padding: the image is the panel, and a border of window background
     // around a rendered frame reads as a bug.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -173,19 +200,46 @@ void DebugUI::DrawViewport(UiState& ui, void* texture, f32 aspect) {
     ImGui::PopStyleVar();
 
     if (open) {
-        // Fit the image inside the panel without stretching it. The trace still
-        // runs at window resolution; matching it to the panel is the next step
-        // and is what will make a small viewport genuinely cheaper.
         const ImVec2 avail = ImGui::GetContentRegionAvail();
+
+        // Report the panel in *pixels*, not points. ImGui works in points and
+        // the framebuffer is 2x that on a retina display: reporting points would
+        // trace at half the resolution the panel actually shows and look soft.
+        const ImVec2 scale = ImGui::GetIO().DisplayFramebufferScale;
+        ui.viewport_width  = i32(avail.x * (scale.x > 0.0f ? scale.x : 1.0f));
+        ui.viewport_height = i32(avail.y * (scale.y > 0.0f ? scale.y : 1.0f));
+
+        // The renderer is tracing at the panel's own aspect now, so the image
+        // fills it. The letterbox stays for the frames right after a resize,
+        // where the texture still carries the previous shape.
         ImVec2 size = avail;
-        if (avail.x / avail.y > aspect) {
-            size.x = avail.y * aspect;
-        } else {
-            size.y = avail.x / aspect;
+        if (aspect > 0.0f && avail.y > 0.0f) {
+            if (avail.x / avail.y > aspect) size.x = avail.y * aspect;
+            else                            size.y = avail.x / aspect;
         }
         ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + (avail.x - size.x) * 0.5f,
                                    ImGui::GetCursorPosY() + (avail.y - size.y) * 0.5f));
+
+        const ImVec2 image_min = ImGui::GetCursorScreenPos();
         ImGui::Image(reinterpret_cast<ImTextureID>(texture), size);
+
+        // Click to select. Only on a release without a drag: press-and-drag in
+        // the viewport is how the camera is flown, and losing the selection
+        // every time you look around would be maddening.
+        if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+            ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x == 0.0f &&
+            ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y == 0.0f) {
+            const ImVec2 mouse = ImGui::GetMousePos();
+            const Vec2 ndc((mouse.x - image_min.x) / size.x * 2.0f - 1.0f,
+                           1.0f - (mouse.y - image_min.y) / size.y * 2.0f);
+
+            const Ray ray = RayThroughViewport(camera.Camera(), aspect, ndc);
+            const PickResult hit = PickEntity(world.Entities(), ray);
+            ui.selection = hit.entity;   // a miss clears the selection, as it should
+        }
+    } else {
+        ui.viewport_width = 0;
+        ui.viewport_height = 0;
     }
     ImGui::End();
 }
@@ -245,7 +299,10 @@ void DebugUI::DrawInspector(World& world, UiState& ui) {
 
     if (LocalTransform* local = entities.Get<LocalTransform>(ui.selection)) {
         if (BeginSection("Transform", true)) {
+            // One undo entry per drag, not per frame: remember the value when the
+            // control is grabbed, push the command when it is let go.
             Vec3Row("Position", local->position);
+            TrackEdit(entities, ui.selection, *local, "Move");
 
             // Euler angles exist for editing only: derived on read, rebuilt on
             // write, never stored. A second representation of the same rotation
@@ -254,11 +311,13 @@ void DebugUI::DrawInspector(World& world, UiState& ui) {
             if (Vec3Row("Rotation", euler, 0.5f)) {
                 local->rotation = Quat(glm::radians(euler));
             }
+            TrackEdit(entities, ui.selection, *local, "Rotate");
 
             ImGui::TextUnformatted("Scale");
             ImGui::SameLine(90.0f);
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::DragFloat("##scale", &local->scale, 0.01f, 0.001f, 1000.0f);
+            TrackEdit(entities, ui.selection, *local, "Scale");
             EndSection();
         }
     }

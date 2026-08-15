@@ -79,6 +79,14 @@ struct Uniforms {
     float4x4 prev_view_proj;
     float fog_density; int fog_steps; int frame_index; float mesh_tex_dim;
     float orm_tex_dim; int mesh_mat_count; int num_instances; float pad10;
+
+    // Mirrors GPUUniforms. Appended, never inserted.
+    packed_float3 sky_zenith;  float grid_opacity;
+    packed_float3 sky_horizon; float grid_fade;
+    packed_float3 sky_ground;  int   grid_enabled;
+    packed_float3 grid_color;  float pad11;
+    packed_float3 grid_axis_x; float pad12;
+    packed_float3 grid_axis_z; float pad13;
 };
 
 constant float EPSILON = 1e-4;
@@ -681,37 +689,21 @@ float3 schlick(float cos_theta, float n1, float n2) {
     return float3(r0 + (1.0 - r0) * pow(x, 5.0));
 }
 
-float3 sky_color(float3 dir) {
-    float3 sun_dir = normalize(float3(0.5, 0.4, 0.7));
-    float cos_theta = dot(dir, sun_dir);
-    float angle = acos(clamp(cos_theta, -1.0, 1.0));
-    
-    // Rayleigh scattering approximation
-    float rayleigh = 0.75 * (1.0 + cos_theta * cos_theta);
-    float3 zenith_color = float3(0.15, 0.35, 0.7);
-    float3 horizon_color = float3(0.7, 0.85, 0.95);
-    
-    float t = pow(max(0.0, dir.y), 0.5);
-    float3 sky = mix(horizon_color, zenith_color, t) * rayleigh;
-    
-    // Mie scattering (Sun halo)
-    float g = 0.98;
-    float mie = (1.0 - g*g) / pow(1.0 + g*g - 2.0*g*cos_theta, 1.5);
-    sky += float3(1.0, 0.9, 0.8) * mie * 0.05;
-    
-    // Sun disk
-    float sun_angular_radius = 0.00935;
-    if (angle < sun_angular_radius) {
-        float falloff = smoothstep(sun_angular_radius, 0.0, angle);
-        sky += float3(5.0, 4.5, 3.5) * falloff; // Very bright sun
+float3 sky_color(float3 dir, constant Uniforms& u) {
+    // A gradient the scene owns, not a constant baked into the shader: an empty
+    // project needs to look like somewhere, and loading an HDRI to get a sky is
+    // exactly the cost this engine is trying not to pay.
+    float3 zenith  = float3(u.sky_zenith);
+    float3 horizon = float3(u.sky_horizon);
+    float3 ground  = float3(u.sky_ground);
+
+    float up = dir.y;
+    if (up >= 0.0) {
+        float t = pow(saturate(up), 0.55);
+        return mix(horizon, zenith, t);
     }
-    
-    // Ground bounce
-    if (dir.y < 0.0) {
-        sky = mix(horizon_color, float3(0.2, 0.2, 0.2), pow(-dir.y, 0.5));
-    }
-    
-    return sky;
+    float t = pow(saturate(-up * 2.0), 0.8);
+    return mix(horizon, ground, t);
 }
 
 // ------------------------------------------------------- mesh lighting model
@@ -803,7 +795,7 @@ GIResult trace_gi(float3 p, float3 N, float3 geo_n, float t, float radius,
     return r;
 }
 
-// Hemisphere-integrated sky, rather than a single sky_color() lookup along the
+// Hemisphere-integrated sky, rather than a single sky_color(, u) lookup along the
 // normal. Surfaces facing up see the zenith, surfaces facing down see the
 // ground bounce, and everything between blends.
 float3 sky_irradiance(float3 N) {
@@ -961,7 +953,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
         }
 
         if (!hit.hit) {
-            result += contrib * sky_color(cur.direction);
+            result += contrib * sky_color(cur.direction, u);
             continue;
         }
 
@@ -1205,14 +1197,14 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 indirect = sky_irradiance(bent) * ao;
             } else {
                 ao = calc_analytic_ao(hit.point, N, spheres, cubes, u);
-                float3 sky_ambient = sky_color(N) * u.ambient_light * 0.5;
+                float3 sky_ambient = sky_color(N, u) * u.ambient_light * 0.5;
                 indirect = (sky_ambient + calc_gi(hit.point, N, materials, spheres, planes, cubes, u)) * ao;
             }
 
             direct += indirect * diffuse_albedo;
             // Ambient specular: only polished or metallic surfaces have sharp specular reflections.
             float ambient_spec_power = pow(max(0.0f, 1.0f - roughness), 4.0f);
-            direct += sky_color(reflect(cur.direction, N)) * F0 * (ao * ambient_spec_power * 0.5f);
+            direct += sky_color(reflect(cur.direction, N), u) * F0 * (ao * ambient_spec_power * 0.5f);
             result += contrib * direct;
 
             // Spawn a recursive mirror ray ONLY for genuine reflective surfaces (metals or polished gloss):
@@ -1282,7 +1274,7 @@ float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
 
     float3 vol_color     = float3(0.0);
     float  transmittance = 1.0;
-    float3 sky_ambient   = sky_color(dir);
+    float3 sky_ambient   = sky_color(dir, u);
 
     float sun_cos = max(0.0, dot(dir, kSunDir));
     float sun_phase = 0.15 + 0.85 * pow(sun_cos, 8.0);
@@ -1545,6 +1537,10 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
     }
     color /= float(SAMPLES * SAMPLES);
 
+    // Grid before fog and tone mapping, so it sits in the scene rather than on
+    // the screen: distance haze and exposure apply to it like anything else.
+    color = composite_grid(color, u.camera_origin, center_dir, center_fd, u.tan_half_fov, u);
+
     // Composite the low-resolution fog pass. Bilinear is enough for a medium this
     // smooth, and it turns 32 BVH traversals per pixel into 32 per fog texel.
     if (u.enable_fog > 0) {
@@ -1676,4 +1672,76 @@ kernel void present_kernel(texture2d<float, access::sample> src [[texture(0)]],
     constexpr sampler smp(coord::normalized, filter::linear, address::clamp_to_edge);
     const float2 uv = (float2(gid) + 0.5f) / float2(dst.get_width(), dst.get_height());
     dst.write(float4(src.sample(smp, uv).rgb, 1.0f), gid);
+}
+
+// ---------------------------------------------------------------- ground grid
+//
+// The editor grid, drawn by the tracer rather than painted over the finished
+// image, so geometry occludes it correctly and it takes the same fog and
+// exposure as everything else.
+//
+// A compute kernel has no fwidth, so the pixel footprint is derived instead:
+// at distance t a pixel covers t * 2 * tan_half / screen_height world units.
+// That is what makes the lines a constant thickness on screen and what lets the
+// spacing step by decades without shimmering.
+struct GridSample { float3 color; float alpha; };
+
+GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
+    GridSample out;
+    out.color = float3(u.grid_color);
+    out.alpha = 0.0;
+
+    // Pick the decade whose lines are still far enough apart to read, and blend
+    // into the next one so nothing pops as the camera pulls back.
+    float decade = max(0.0, log10(footprint * 40.0));
+    float step0 = pow(10.0, floor(decade));
+    float step1 = step0 * 10.0;
+    float blend = fract(decade);
+
+    float half_width = footprint * 0.6;
+
+    // Distance to the nearest line of a given spacing, in world units.
+    float2 d0 = abs(fract(p.xz / step0 + 0.5) - 0.5) * step0;
+    float2 d1 = abs(fract(p.xz / step1 + 0.5) - 0.5) * step1;
+
+    float l0 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d0.x, d0.y));
+    float l1 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d1.x, d1.y));
+
+    // The coarser decade is always fully present; the finer one fades in.
+    out.alpha = max(l1, l0 * (1.0 - blend));
+
+    // Axes last so they win over the lines they sit on.
+    float ax = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.z));
+    float az = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.x));
+    if (ax > 0.01) { out.color = float3(u.grid_axis_x); out.alpha = max(out.alpha, ax); }
+    if (az > 0.01) { out.color = float3(u.grid_axis_z); out.alpha = max(out.alpha, az); }
+
+    return out;
+}
+
+// Composites the grid over an already-shaded pixel. `surface_t` is the distance
+// to whatever the ray hit, so the grid is hidden behind geometry rather than
+// drawn on top of it.
+float3 composite_grid(float3 color, float3 origin, float3 dir, float surface_t,
+                      float tan_half, constant Uniforms& u) {
+    if (u.grid_enabled == 0) return color;
+    if (abs(dir.y) < 1e-5) return color;
+
+    float t = -origin.y / dir.y;
+    if (t <= 0.0 || t >= surface_t) return color;
+
+    float3 p = origin + dir * t;
+
+    float footprint = t * 2.0 * tan_half / max(u.screen_height, 1.0);
+    GridSample g = sample_grid(p, footprint, u);
+    if (g.alpha <= 0.001) return color;
+
+    // Fade with distance so the horizon stays clean instead of turning into a
+    // solid band of aliased lines.
+    float fade = 1.0 - smoothstep(u.grid_fade * 0.35, u.grid_fade, t);
+    // And fade at grazing angles, where a pixel covers so much ground that every
+    // line inside it would average to a smear.
+    float grazing = smoothstep(0.0, 0.12, abs(dir.y));
+
+    return mix(color, g.color, g.alpha * fade * grazing * u.grid_opacity);
 }

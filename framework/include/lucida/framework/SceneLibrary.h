@@ -2,32 +2,33 @@
 // Copyright (C) 2026 BlackLine Interactive
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
-// The built-in scenes, as data.
+// The built-in scenes.
 //
-// These used to be a switch inside the Metal backend, which meant every scene
-// was also a renderer change and no second backend could show anything. They are
-// ordinary functions now: they build a RenderScene and hand it back.
+// They populate a registry with entities and fill in the material palette, so
+// everything they create is selectable, inspectable and movable. A scene that
+// builds raw GPU arrays is a picture; a scene that builds entities is a world.
 
-#include "lucida/render/Scene.h"
+#include "lucida/framework/SceneAssets.h"
 
 namespace lucida::scenes {
 
-// Analytic primitives under a hard-shadowed key light. Uses the plain Whitted
-// kernel: no meshes, no fog, no water.
-RenderScene BasicPrimitives();
+// Nothing but a ground grid and a gradient sky. This is what a new project
+// opens onto: an empty stage, not somebody else's demo.
+SceneAssets Empty(Registry& registry);
+
+// Analytic primitives under a hard-shadowed key light.
+SceneAssets BasicPrimitives(Registry& registry);
 
 // Adds a water surface and volumetric fog over the same primitives.
-RenderScene WaterAndFog();
+SceneAssets WaterAndFog(Registry& registry);
 
 // A row of plinths, each carrying a sphere with a different procedural surface,
-// so the whole material axis — conductor to dielectric, mirror to fully rough,
-// opaque to refractive — is visible side by side in one frame.
-RenderScene MaterialLab();
+// so the whole material axis is visible side by side in one frame.
+SceneAssets MaterialLab(Registry& registry);
 
-// Stable order for UI and command lines.
-enum class BuiltIn : u8 { BasicPrimitives = 0, WaterAndFog, MaterialLab, Count };
+enum class BuiltIn : u8 { Empty = 0, BasicPrimitives, WaterAndFog, MaterialLab, Count };
 
-RenderScene Build(BuiltIn which);
+SceneAssets Build(BuiltIn which, Registry& registry);
 const char* Name(BuiltIn which);
 
 } // namespace lucida::scenes

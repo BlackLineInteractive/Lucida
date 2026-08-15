@@ -9,6 +9,7 @@
 // tools live; nothing below it links ImGui.
 
 #include "lucida/core/ecs/Registry.h"
+#include "lucida/framework/Commands.h"
 #include "lucida/framework/CameraController.h"
 #include "lucida/framework/SceneLibrary.h"
 #include "lucida/render/RenderBackend.h"
@@ -34,6 +35,12 @@ struct UiState {
     // undo stack behind it is a fast way to lose work.
     Entity selection = kNullEntity;
 
+    // Size of the viewport panel in framebuffer pixels, filled in each frame.
+    // The renderer traces to this rather than to the window, so a third-screen
+    // panel costs a third of the rays.
+    i32 viewport_width  = 0;
+    i32 viewport_height = 0;
+
     scenes::BuiltIn scene = scenes::BuiltIn::WaterAndFog;
     bool request_scene_reload = false;
     std::string pending_model_path;   // non-empty when the user picked a file
@@ -43,6 +50,8 @@ class DebugUI {
 public:
     void Init();
     void Shutdown();
+
+    CommandStack& Commands() { return m_commands; }
 
     // Between platform->OverlayNewFrame() and backend->Render().
     // viewport_texture is the backend's presented image, or null when the
@@ -54,11 +63,20 @@ public:
 private:
     void BuildDefaultLayout(unsigned dockspace_id);
     void DrawMenuBar(UiState& ui);
-    void DrawViewport(UiState& ui, void* texture, f32 aspect);
+    void DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
+                      const CameraController& camera);
     void DrawHierarchy(World& world, UiState& ui);
     void DrawInspector(World& world, UiState& ui);
     void DrawRenderer(UiState& ui, RenderSettings& settings, CameraController& camera);
     void DrawStats(const RenderStats& stats, const FrameTime& time);
+    void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
+                   const char* name);
+
+    CommandStack m_commands;
+    // Transform captured when a control was grabbed, so releasing it can push
+    // one undo entry for the whole drag instead of one per frame.
+    LocalTransform m_drag_start;
+    bool m_dragging = false;
 
     f32  m_fps_ema = 60.0f;
     bool m_reset_layout = false;

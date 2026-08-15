@@ -70,6 +70,13 @@ below are on this machine unless stated.
 | Basic primitives | 1971x1065 | Whitted kernel | 87.5 fps | 11.1 ms |
 | Starter project, 1 sphere | 3584x1938 | full RT, no upscale | 56.2 fps | 11.3 ms |
 
+**The viewport traces at the panel's resolution, not the window's.** On the reference
+layout the centre dock measures 2286x1376 against a 3584x1938 window — 3.1 M pixels
+instead of 6.9 M, so the editor traces **2.2x fewer rays** than it did while showing the
+same image. The panel measures itself each frame and the renderer follows; targets are
+rebuilt only past a 32-pixel threshold, so dragging a splitter scales the last image
+rather than rebuilding six full-resolution textures per frame.
+
 ## Budgets to hold
 
 Frame, on the reference machine, at 1080x720 with the Selective tier (M8):
@@ -93,10 +100,6 @@ Memory:
 
 ## Known costs, deliberately carried for now
 
-* **The viewport traces at window resolution, not panel resolution.** In the editor the
-  panel is a fraction of the window, so a small viewport currently costs as much as a
-  full-screen one — exactly backwards. Fixing this is the next item in M21 and is worth
-  more than any micro-optimisation on the list.
 * **Two full-screen passes to present in game mode**: the tracer writes the present
   texture, then a compute copy moves it to the drawable. The copy exists so screenshots
   capture what the screen shows. It can be collapsed into one pass when not capturing.
@@ -121,6 +124,10 @@ Memory:
 ## How this is enforced
 
 Today, by hand: `--bench N --shot out.png` prints frame, GPU and profiler slots.
+
+The first automated piece exists: `cmake -B build -DLUCIDA_BUILD_TESTS=ON` and
+`ctest --test-dir build` run the editor checks — picking maths and the undo stack —
+with no window and no GPU, so they run anywhere CI does.
 
 Planned, and the reason this document exists:
 

@@ -93,6 +93,11 @@ public:
     // the window, and the backend leaves the window to the UI.
     virtual void SetViewportAsPanel(bool enabled) = 0;
 
+    // The size the renderer should fill, in pixels. Zero means the window. The
+    // editor passes its viewport panel, so a panel taking a third of the screen
+    // costs a third of the rays instead of full price for a thumbnail.
+    virtual void SetViewportSize(i32 width, i32 height) = 0;
+
     // The presented image as an opaque handle the UI layer can draw. Backend
     // specific (an MTLTexture here); only the UI ever touches it.
     virtual void* ViewportTexture() const = 0;

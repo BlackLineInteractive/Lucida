@@ -19,6 +19,53 @@ struct MeshInstance {
     InstanceHandle instance;
 };
 
+// The mesh's bounding box in the entity's own space. Kept on the entity rather
+// than looked up from the backend so picking, culling and framing a selection
+// are all answerable without asking the renderer anything.
+struct LocalBounds {
+    Vec3 min{-0.5f};
+    Vec3 max{ 0.5f};
+};
+
+// An analytic primitive: geometry described by a handful of numbers rather than
+// by triangles. This is where the engine's cheapness comes from — a sphere is
+// twelve floats and an exact intersection, not a mesh to build a BVH over.
+enum class PrimitiveType : u8 { Sphere = 0, Box, Plane, Count };
+
+struct PrimitiveShape {
+    PrimitiveType type = PrimitiveType::Sphere;
+
+    // Sphere: radius in x. Box: half extents. Plane: normal, with `offset` as
+    // the distance along it. One struct rather than three because the editor
+    // wants to switch a primitive's type without destroying the entity.
+    Vec3 size{0.5f};
+    Vec3 normal{0.0f, 1.0f, 0.0f};
+    f32  offset = 0.0f;
+
+    Vec3 HalfExtents() const {
+        switch (type) {
+        case PrimitiveType::Sphere: return Vec3(size.x);
+        case PrimitiveType::Box:    return size;
+        // A plane is unbounded; give picking something finite to hit that still
+        // reads as "the ground" rather than a wall in front of the camera.
+        case PrimitiveType::Plane:  return Vec3(50.0f, 0.02f, 50.0f);
+        default:                    return Vec3(0.5f);
+        }
+    }
+};
+
+// Which material in the scene palette this entity uses.
+struct MaterialRef {
+    i32 index = 0;
+};
+
+// A light, as an entity, so it can be selected and moved like anything else.
+struct LightSource {
+    Vec3 color{1.0f, 0.95f, 0.9f};
+    f32  intensity = 50.0f;
+    f32  radius = 1.0f;
+};
+
 // Marks the entity the viewport camera follows. Zero or one per world.
 struct CameraTag {};
 

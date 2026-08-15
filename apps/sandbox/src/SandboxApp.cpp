@@ -262,7 +262,19 @@ public:
         const bool as_panel = m_ui_state.show_menu && m_ui_state.show_viewport;
         m_renderer->SetViewportAsPanel(as_panel);
 
-        const f32 aspect = h > 0 ? f32(w) / f32(h) : 16.0f / 9.0f;
+        // The panel measured itself last frame; hand that to the renderer before
+        // it traces this one. One frame of lag on a resize is invisible, and it
+        // avoids measuring and reacting inside the same frame.
+        if (as_panel && m_ui_state.viewport_width > 0) {
+            m_renderer->SetViewportSize(m_ui_state.viewport_width, m_ui_state.viewport_height);
+        } else if (!as_panel) {
+            m_renderer->SetViewportSize(0, 0);   // back to filling the window
+        }
+
+        const f32 aspect =
+            (as_panel && m_ui_state.viewport_height > 0)
+                ? f32(m_ui_state.viewport_width) / f32(m_ui_state.viewport_height)
+                : (h > 0 ? f32(w) / f32(h) : 16.0f / 9.0f);
         m_ui.Build(world, m_ui_state, settings, m_renderer->Stats(), m_camera, time,
                    as_panel ? m_renderer->ViewportTexture() : nullptr, aspect);
 
@@ -360,6 +372,10 @@ private:
         instance.mesh     = handle;
         instance.instance = m_renderer->AddInstance(handle, local.ToMatrix());
         entities.Add<MeshInstance>(m_car, instance);
+
+        // The loader already computed these while normalising the mesh; carrying
+        // them onto the entity is what makes the thing clickable.
+        entities.Add<LocalBounds>(m_car, LocalBounds{mesh.aabb_min, mesh.aabb_max});
 
         m_renderer->SetMeshOrigin(m_config.model_pos);
         m_config.model_path = m_project.MakeRelative(path);

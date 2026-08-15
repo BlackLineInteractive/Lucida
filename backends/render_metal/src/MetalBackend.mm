@@ -204,6 +204,11 @@ class MetalBackend final : public IRenderBackend {
   int m_render_h = 0;
   int m_ray_w = 0; // internal ray-tracing resolution
   int m_ray_h = 0;
+  // Size the renderer is asked to fill. Zero means the whole window; in the
+  // editor it is the viewport panel, usually a third of it. Tracing the window
+  // while showing a third of it is paying full price for a thumbnail.
+  int m_target_w = 0;
+  int m_target_h = 0;
   int m_fog_w = 0; // fog march resolution
   int m_fog_h = 0;
   int m_num_triangles = 0;
@@ -402,16 +407,19 @@ class MetalBackend final : public IRenderBackend {
     }
   }
 
+  int TargetWidth() const  { return m_target_w > 0 ? m_target_w : m_render_w; }
+  int TargetHeight() const { return m_target_h > 0 ? m_target_h : m_render_h; }
+
   void CreateRenderTargets() {
-    if (m_render_w <= 0 || m_render_h <= 0)
+    if (TargetWidth() <= 0 || TargetHeight() <= 0)
       return;
 
     // Ray resolution actually follows m_render_scale now. It used to be
     // hardcoded to m_render_w/2 in the dispatch while the textures were
     // sized by m_render_scale, so any scale other than 0.5 either rendered
     // outside the target or left part of it stale.
-    m_ray_w = std::max(1, (int)(m_render_w * m_render_scale));
-    m_ray_h = std::max(1, (int)(m_render_h * m_render_scale));
+    m_ray_w = std::max(1, (int)(TargetWidth() * m_render_scale));
+    m_ray_h = std::max(1, (int)(TargetHeight() * m_render_scale));
     m_fog_w = std::max(1, (int)(m_ray_w * kFogScale));
     m_fog_h = std::max(1, (int)(m_ray_h * kFogScale));
 
@@ -426,7 +434,7 @@ class MetalBackend final : public IRenderBackend {
       return [m_device newTextureWithDescriptor:desc];
     };
 
-    m_tex_present = mktex(m_layer.pixelFormat, m_render_w, m_render_h);
+    m_tex_present = mktex(m_layer.pixelFormat, TargetWidth(), TargetHeight());
     m_tex_gbuffer = mktex(MTLPixelFormatRGBA16Float, m_ray_w, m_ray_h);
     m_tex_depth = mktex(MTLPixelFormatR32Float, m_ray_w, m_ray_h);
     m_tex_motion = mktex(MTLPixelFormatRG16Float, m_ray_w, m_ray_h);
@@ -446,8 +454,8 @@ class MetalBackend final : public IRenderBackend {
           [MTLFXTemporalScalerDescriptor new];
       sdesc.inputWidth = m_ray_w;
       sdesc.inputHeight = m_ray_h;
-      sdesc.outputWidth = m_render_w;
-      sdesc.outputHeight = m_render_h;
+      sdesc.outputWidth = TargetWidth();
+      sdesc.outputHeight = TargetHeight();
       sdesc.colorTextureFormat = MTLPixelFormatRGBA16Float;
       sdesc.depthTextureFormat = MTLPixelFormatR32Float;
       sdesc.motionTextureFormat = MTLPixelFormatRG16Float;
@@ -466,7 +474,7 @@ class MetalBackend final : public IRenderBackend {
     }
 #endif
     LUCIDA_INFO(Render, "targets: output %dx%d  rays %dx%d  fog %dx%d",
-                m_render_w, m_render_h, m_ray_w, m_ray_h, m_fog_w, m_fog_h);
+                TargetWidth(), TargetHeight(), m_ray_w, m_ray_h, m_fog_w, m_fog_h);
   }
 
 public:
@@ -889,7 +897,7 @@ public:
       Vec3 up = glm::normalize(glm::cross(right, fwd));
 
       float tan_half = float(tan((60.0 * M_PI / 180.0) / 2.0));
-      float aspect = float(m_render_w) / float(m_render_h);
+      float aspect = float(TargetWidth()) / float(TargetHeight());
 
       // Halton(2,3) sub-pixel jitter in [-0.5, 0.5] pixels. Each frame
       // samples a different point inside the pixel; MetalFX resolves the
@@ -1158,6 +1166,24 @@ public:
 
   // ------------------------------------------------- Stats
   void SetViewportAsPanel(bool enabled) override { m_viewport_as_panel = enabled; }
+
+  void SetViewportSize(i32 width, i32 height) override {
+    const int w = width  > 0 ? width  : 0;   // zero means follow the window
+    const int h = height > 0 ? height : 0;
+    if (w == m_target_w && h == m_target_h) return;
+
+    // A panel being dragged changes size every frame, and rebuilding half a
+    // dozen full-resolution textures per frame costs far more than the pixels
+    // saved. Rebuild past a threshold only; in between, the panel scales the
+    // last image. A moment of soft edges while dragging is invisible next to a
+    // stutter.
+    const bool switching = (w == 0) != (m_target_w == 0) || m_target_w == 0;
+    if (!switching && std::abs(w - m_target_w) < 32 && std::abs(h - m_target_h) < 32) return;
+
+    m_target_w = w;
+    m_target_h = h;
+    CreateRenderTargets();
+  }
   void* ViewportTexture() const override { return (__bridge void *)m_tex_present; }
 
   RenderStats Stats() const override {

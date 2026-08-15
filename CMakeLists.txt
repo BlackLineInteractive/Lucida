@@ -91,6 +91,11 @@ if(LUCIDA_BUILD_SANDBOX)
     add_subdirectory(apps/sandbox)
 endif()
 
+if(LUCIDA_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 message(STATUS "---- Lucida ${PROJECT_VERSION} ----")
 message(STATUS "  build   : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  render  : Metal=${LUCIDA_RENDER_METAL} GL=${LUCIDA_RENDER_GL} Vulkan=${LUCIDA_RENDER_VULKAN}")

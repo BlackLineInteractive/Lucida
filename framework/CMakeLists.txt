@@ -6,6 +6,8 @@ add_library(lucida_framework STATIC
     src/SceneLibrary.cpp
     src/Theme.cpp
     src/Systems.cpp
+    src/Commands.cpp
+    src/Picking.cpp
     src/DebugUI.cpp
     ${LUCIDA_IFD_DIR}/ImGuiFileDialog.cpp
 )

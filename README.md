@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/lucida.jpg" alt="Lucida Engine" width="100%">
+  <img src="media/lucida.jpg" alt="Lucida Engine" width="100%">
 </p>
 
 <p align="center">
@@ -31,6 +31,14 @@ patterns inside those layers, **Data-Oriented Design** (Fabian) for memory layou
 * Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 * Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
 * Frame and memory budgets, and where a small engine beats a large one: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+
+<p align="center">
+  <img src="media/0.1.png" alt="Lucida Engine" width="100%">
+</p>
+
+<p align="center">
+  <img src="media/0.1(2).png" alt="Lucida Engine" width="100%">
+</p>
 
 ## Where it stands
 

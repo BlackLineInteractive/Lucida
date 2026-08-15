@@ -226,6 +226,10 @@ Inspector (name, transform, world position, mesh and vehicle components), Render
 (quality and camera), Statistics (frame, GPU, profiler slots). Opening a project starts
 in editor mode with the cursor free; without one the sandbox still starts as a game.
 
+Also landed: **tracing at the viewport panel's resolution** rather than the window's —
+2.2x fewer rays on the default layout, and the reason the presentation was restructured
+in the first place.
+
 Also landed: the **standard editor layout** — viewport in the centre, hierarchy left,
 inspector and renderer right, statistics along the bottom, built once with DockBuilder
 and restored from `imgui.ini` afterwards, with View > Reset layout to get it back.
@@ -237,8 +241,20 @@ what the screen shows rather than an offscreen intermediate.
 
 * Still to do: **trace at the panel's resolution** rather than the window's — today a
   small viewport costs the same as a full-screen one, which is exactly backwards
-* Still to do: **selection by clicking in the viewport** through a ray query, ImGuizmo,
-  undo/redo as a command stack, the asset browser and the console
+Also landed: **selection by clicking in the viewport**, and **undo/redo as a command
+stack**. Picking is CPU-side and above the backend — it is a question about entities,
+not about pixels, so it needs no pick buffer, no readback and no GPU pass, and it works
+the same on any backend. It tests bounding boxes rather than triangles, which is the
+right answer for selecting an object and costs a slab test per entity.
+
+* Still to do: the asset browser and the console
+* Still to do: **gizmos as they work in a real engine** — ImGuizmo with translate,
+  rotate and scale on W/E/R, local and world space, grid and angle snapping held on a
+  modifier, a visible pivot, multi-axis planes. The part people get wrong: a gizmo drag
+  must produce **one** undo entry on release, not one per frame, which means it goes
+  through the command stack rather than writing the transform directly
+* Still to do: **undo/redo as a command stack** (GPP: Command). Every edit goes through
+  it or it does not exist
 * Selection: clicking in the viewport picks an entity through a ray query — the tracer
   already answers exactly that question
 * **ImGuizmo** for translate/rotate/scale, with snapping and local/world space
@@ -246,6 +262,42 @@ what the screen shows rather than an offscreen intermediate.
   not exist
 * **Done when:** an object can be selected, moved with a gizmo, edited in the
   inspector, and the change survives a save and reload
+
+### M25 — The editor's look, and whether ImGui stays
+
+ImGui is the right tool for standing an editor up and the wrong tool for making one look
+like a product. Worth being precise about why, because "replace ImGui" is a trap that
+has eaten whole projects.
+
+**Most of what reads as cheap is not ImGui, it is default ImGui.** Before replacing
+anything, do the work every good-looking ImGui editor has already done:
+
+* A real typeface at a real size — Inter, JetBrains Mono for numbers — instead of the
+  built-in bitmap font, which is most of the programmer-art impression on its own
+* An icon set (Lucide or Font Awesome) merged into the atlas, so panels carry icons
+  where a word would be noise
+* Custom-drawn widgets through `ImDrawList` where the default is ugly: sliders, the
+  transform row, the hierarchy row and its visibility toggle
+* Motion through **ImAnim**, already fetched — hover, selection, panel transitions
+* Spacing and grouping discipline; the theme already carries the palette
+
+That is about a week and it gets ninety per cent of the way. Only then is the
+replacement question worth asking, and the honest answer is that everyone who wanted a
+distinctive editor wrote their own retained UI: Unreal has Slate, Godot has Control
+nodes. Neither adopted a third-party toolkit.
+
+Candidates, if it comes to that:
+
+| Option | Why it might | Why it might not |
+|---|---|---|
+| **Restyled ImGui** | No migration, keeps every panel, immediate mode suits editors | A ceiling on how polished it can get |
+| **RmlUi** | HTML/CSS-like styling, genuinely prettier | Retained model fights an editor's live data; a second layout system to learn |
+| **Slint** | Modern, declarative, beautiful; its GPL-3 option matches our licence | Built around its own renderer and event loop; pairing it with a ray traced viewport is real work |
+| **Qt** | The professional-editor answer, and LGPL/GPL fits | Enormous dependency, different application model, reshapes the whole app |
+| **Our own retained UI** | What Unreal and Godot both concluded | Months, competing directly with shipping the engine |
+
+**Decision for now: restyle, do not replace.** Revisit once the editor's shape stops
+changing — migrating a UI toolkit during layout churn is the worst possible timing.
 
 ### M22 — Play mode (E4)
 
