@@ -172,8 +172,11 @@ public:
         if (!m_config.model_path.empty())
             LoadModelFile(world, m_project.Resolve(m_config.model_path));
 
-        m_platform->SetMouseCaptured(true);
-        m_ui_state.show_menu = false;
+        // Opening a project means you came to edit: panels up, cursor free.
+        // Without one, the sandbox is a game and starts in the viewport.
+        const bool editing = m_project.IsOpen();
+        m_ui_state.show_menu = editing;
+        m_platform->SetMouseCaptured(!editing);
         return true;
     }
 

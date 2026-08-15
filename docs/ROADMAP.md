@@ -207,11 +207,19 @@ MyGame/
 * **Verified:** created, zipped, unzipped somewhere else, opened there. No absolute
   path survives in any project file
 
-### M21 — Editor shell [next, E3]
+### M21 — Editor shell [in progress, E3]
 
-* **ImGui docking branch** — the current single-window build cannot lay out an editor.
-  A dependency change, not a UI tweak
-* Panels: docked viewport, scene tree, inspector, asset browser, console
+Landed so far: ImGui on the docking branch, a pass-through dock space over the traced
+image, a menu bar, and four panels — Hierarchy (entities, with per-entity visibility),
+Inspector (name, transform, world position, mesh and vehicle components), Renderer
+(quality and camera), Statistics (frame, GPU, profiler slots). Opening a project starts
+in editor mode with the cursor free; without one the sandbox still starts as a game.
+
+* Still to do: a dockable **viewport panel**, which needs the backend to render into
+  an offscreen texture and hand it to ImGui as a texture id rather than drawing
+  straight to the drawable
+* Still to do: **selection by clicking in the viewport** through a ray query, the
+  asset browser and the console
 * Selection: clicking in the viewport picks an entity through a ray query — the tracer
   already answers exactly that question
 * **ImGuizmo** for translate/rotate/scale, with snapping and local/world space

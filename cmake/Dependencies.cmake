@@ -53,6 +53,16 @@ function(lucida_fetch_headers name)
             file(REMOVE_RECURSE "${inner}")
         endif()
         file(REMOVE "${archive}")
+
+        # Archives carry their original timestamps, which can be older than
+        # object files from a previous build. Make would then decide there is
+        # nothing to recompile, and switching a dependency version would leave
+        # the old code linked with the new headers. Stamp everything as new.
+        file(GLOB_RECURSE fetched "${dst}/*")
+        foreach(item ${fetched})
+            file(TOUCH_NOCREATE "${item}")
+        endforeach()
+
         file(WRITE "${stamp}" "${ARG_URL}")
     endif()
 

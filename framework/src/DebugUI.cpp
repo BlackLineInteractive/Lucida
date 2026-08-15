@@ -71,7 +71,7 @@ void DebugUI::Build(World& world, UiState& ui, RenderSettings& settings,
     // The central dock node stays transparent so the traced image shows through
     // it. Until the renderer can hand ImGui a texture, that image is the
     // viewport; a dockable viewport panel arrives with offscreen targets.
-    ImGui::DockSpaceOverViewport(ImGui::GetMainViewport(),
+    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
                                  ImGuiDockNodeFlags_PassthruCentralNode);
 
     DrawMenuBar(ui);
