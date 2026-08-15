@@ -81,7 +81,9 @@ lucida_fetch_headers(entt URL "https://github.com/skypjack/entt/archive/refs/tag
                           INCLUDE "single_include")
 
 # --- UI ----------------------------------------------------------------------
-lucida_fetch_headers(imgui_src URL "https://github.com/ocornut/imgui/archive/refs/tags/v1.90.8.tar.gz")
+# Docking branch, same version. The single-window build cannot lay out an
+# editor: panels have to dock, tear off and remember where they were.
+lucida_fetch_headers(imgui_src URL "https://github.com/ocornut/imgui/archive/refs/tags/v1.90.8-docking.tar.gz")
 set(LUCIDA_IMGUI_DIR "${lucida_imgui_src_SOURCE_DIR}" CACHE INTERNAL "")
 
 lucida_fetch_headers(imgui_fd URL "https://github.com/aiekick/ImGuiFileDialog/archive/refs/tags/v0.6.7.tar.gz")
