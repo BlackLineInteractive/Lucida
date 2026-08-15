@@ -7,7 +7,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <regex>
 #include <unordered_map>
 
 namespace lucida {
@@ -49,14 +52,38 @@ bool ParseEnum(const Map& map, const json& node, const char* field, T& out) {
     return true;
 }
 
-json ToJson(const Vec3& v) { return json::array({v.x, v.y, v.z}); }
+// A float printed as a double becomes 0.8500000238418579, which is technically
+// the value and practically unreadable. Print the shortest decimal that reads
+// back as the same float: seven significant digits covers almost everything,
+// and nine is the guaranteed round-trip for the rest.
+double Num(f32 v) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof(buffer), "%.7g", double(v));
+    if (f32(std::strtod(buffer, nullptr)) != v) {
+        std::snprintf(buffer, sizeof(buffer), "%.9g", double(v));
+    }
+    return std::strtod(buffer, nullptr);
+}
+
+json ToJson(const Vec3& v) { return json::array({Num(v.x), Num(v.y), Num(v.z)}); }
 
 Vec3 ToVec3(const json& node, const Vec3& fallback = Vec3(0.0f)) {
     if (!node.is_array() || node.size() != 3) return fallback;
     return Vec3(node[0].get<f32>(), node[1].get<f32>(), node[2].get<f32>());
 }
 
-json ToJson(const float v[3]) { return json::array({v[0], v[1], v[2]}); }
+json ToJson(const float v[3]) { return json::array({Num(v[0]), Num(v[1]), Num(v[2])}); }
+
+// nlohmann breaks every array element onto its own line, which turns a vector
+// into six lines and makes the file miserable to edit. Collapse arrays that hold
+// nothing but numbers back onto one line.
+std::string CompactNumericArrays(const std::string& text) {
+    static const std::regex kNumericArray(
+        R"(\[\s*(-?[0-9][^\[\]\{\}"]*?)\s*\])");
+    std::string out = std::regex_replace(text, kNumericArray, "[$1]");
+    static const std::regex kInnerWhitespace(R"(,\s+(?=-?[0-9]))");
+    return std::regex_replace(out, kInnerWhitespace, ", ");
+}
 
 } // namespace
 
@@ -69,15 +96,15 @@ bool SaveScene(const RenderScene& scene, const std::string& path) {
     out["environment"] = {
         {"ambient", ToJson(scene.environment.ambient)},
         {"fog", scene.environment.fog_enabled},
-        {"fog_density", scene.environment.fog_density},
+        {"fog_density", Num(scene.environment.fog_density)},
         {"fog_steps", scene.environment.fog_steps},
     };
 
     out["spawn"] = {
         {"position", ToJson(scene.spawn.position)},
-        {"yaw", scene.spawn.yaw},
-        {"pitch", scene.spawn.pitch},
-        {"fov_y_degrees", scene.spawn.fov_y * kRadToDeg},
+        {"yaw", Num(scene.spawn.yaw)},
+        {"pitch", Num(scene.spawn.pitch)},
+        {"fov_y_degrees", Num(scene.spawn.fov_y * kRadToDeg)},
     };
 
     for (usize i = 0; i < scene.materials.size(); ++i) {
@@ -87,11 +114,11 @@ bool SaveScene(const RenderScene& scene, const std::string& path) {
                                                            : "material_" + std::to_string(i);
         jm["type"]       = NameOf(kMaterialTypes, m.type, "diffuse");
         jm["albedo"]     = ToJson(m.albedo);
-        jm["roughness"]  = m.roughness;
-        jm["metallic"]   = m.metallic;
+        jm["roughness"]  = Num(m.roughness);
+        jm["metallic"]   = Num(m.metallic);
         if (m.emission[0] != 0.0f || m.emission[1] != 0.0f || m.emission[2] != 0.0f)
             jm["emission"] = ToJson(m.emission);
-        if (m.type == GLASS || m.type == WATER) jm["ior"] = m.refractive_index;
+        if (m.type == GLASS || m.type == WATER) jm["ior"] = Num(m.refractive_index);
         if (m.type == CHECKERBOARD) jm["albedo2"] = ToJson(m.albedo2);
         if (m.proc_id != PROC_NONE)
             jm["procedural"] = NameOf(kProceduralPatterns, m.proc_id, "none");
@@ -106,12 +133,12 @@ bool SaveScene(const RenderScene& scene, const std::string& path) {
 
     for (const GPUSphere& s : scene.spheres) {
         out["spheres"].push_back({{"center", ToJson(s.center)},
-                                  {"radius", s.radius},
+                                  {"radius", Num(s.radius)},
                                   {"material", material_name(s.mat_index)}});
     }
     for (const GPUPlane& p : scene.planes) {
         out["planes"].push_back({{"normal", ToJson(p.normal)},
-                                 {"offset", p.d_offset},
+                                 {"offset", Num(p.d_offset)},
                                  {"material", material_name(p.mat_index)}});
     }
     for (const GPUCube& c : scene.cubes) {
@@ -121,9 +148,9 @@ bool SaveScene(const RenderScene& scene, const std::string& path) {
     }
     for (const GPULight& l : scene.lights) {
         out["lights"].push_back({{"position", ToJson(l.position)},
-                                 {"intensity", l.intensity},
+                                 {"intensity", Num(l.intensity)},
                                  {"color", ToJson(l.color)},
-                                 {"radius", l.radius}});
+                                 {"radius", Num(l.radius)}});
     }
 
     std::ofstream file(path);
@@ -131,7 +158,7 @@ bool SaveScene(const RenderScene& scene, const std::string& path) {
         LUCIDA_ERROR(Resource, "cannot write %s", path.c_str());
         return false;
     }
-    file << out.dump(2) << '\n';
+    file << CompactNumericArrays(out.dump(2)) << '\n';
     LUCIDA_INFO(Resource, "wrote scene '%s' to %s", scene.name.c_str(), path.c_str());
     return true;
 }
