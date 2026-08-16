@@ -39,11 +39,12 @@ void PhysicsSystem::Update(World& world, const FrameTime& time) {
 void RenderSyncSystem::Update(World& world, const FrameTime& time) {
     LUCIDA_PROFILE("render-sync");
     (void)time;
+    if (!m_renderer) return;
 
     for (auto [entity, mesh, world_transform, visibility] :
          world.Entities().View<MeshInstance, WorldTransform, Visibility>().each()) {
         if (!mesh.instance.IsValid() || !visibility.visible) continue;
-        m_renderer.SetInstanceTransform(mesh.instance, world_transform.matrix);
+        m_renderer->SetInstanceTransform(mesh.instance, world_transform.matrix);
     }
 }
 

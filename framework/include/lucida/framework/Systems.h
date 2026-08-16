@@ -32,14 +32,16 @@ private:
 // instances that actually moved: an unchanged matrix costs an upload otherwise.
 class RenderSyncSystem final : public ISystem {
 public:
-    explicit RenderSyncSystem(IRenderBackend& renderer) : m_renderer(renderer) {}
+    explicit RenderSyncSystem(IRenderBackend& renderer) : m_renderer(&renderer) {}
+
+    void SetRenderer(IRenderBackend& renderer) { m_renderer = &renderer; }
 
     const char* Name() const override { return "render-sync"; }
     UpdatePhase Phase() const override { return UpdatePhase::Presentation; }
     void Update(World& world, const FrameTime& time) override;
 
 private:
-    IRenderBackend& m_renderer;
+    IRenderBackend* m_renderer = nullptr;
 };
 
 } // namespace lucida

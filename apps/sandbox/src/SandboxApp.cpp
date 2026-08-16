@@ -7,8 +7,14 @@
 // engine modules it drives know none of them.
 
 #include "lucida/backend/JoltBackend.h"
-#include "lucida/backend/MetalBackend.h"
 #include "lucida/backend/PlatformSDL2.h"
+
+#if defined(LUCIDA_HAS_METAL)
+#include "lucida/backend/MetalBackend.h"
+#endif
+#if defined(LUCIDA_HAS_RC)
+#include "lucida/backend/RadianceCascadesBackend.h"
+#endif
 
 #include "lucida/core/diag/Profiler.h"
 #include "lucida/framework/CameraController.h"
@@ -40,6 +46,7 @@ struct Config {
     bool fullscreen = false;
     RenderSettings render;
     bool  walk_mode  = false;
+    std::string backend = "metal"; // "metal" or "rc"
     std::string model_path;
     Vec3  model_pos{0.0f, -1.6f, -3.0f};
     f32   model_scale = 100.0f;
@@ -144,14 +151,34 @@ public:
         window.fullscreen = m_config.fullscreen;
         if (!m_platform->Init(window)) return false;
 
-        m_renderer = CreateMetalBackend();
-        if (!m_renderer->Init(m_platform->Surface())) return false;
+#if defined(LUCIDA_HAS_RC)
+        if (m_config.backend == "rc" || m_config.backend == "radiance_cascades") {
+            m_renderer = CreateRadianceCascadesBackend();
+        }
+#endif
+        if (!m_renderer) {
+#if defined(LUCIDA_HAS_METAL)
+            m_renderer = CreateMetalBackend();
+#elif defined(LUCIDA_HAS_RC)
+            m_renderer = CreateRadianceCascadesBackend();
+#endif
+        }
+
+        if (!m_renderer || !m_renderer->Init(m_platform->Surface())) return false;
 
         // ImGui context first, then both halves of its backend: each half
         // writes into the context and will fault if it does not exist yet.
         m_ui.Init();
         m_platform->OverlayInit();
         m_renderer->OverlayInit();
+
+        if (m_config.backend == "rc" || m_config.backend == "radiance_cascades") {
+            m_ui_state.current_backend   = UiState::RenderBackendType::RadianceCascades3D;
+            m_ui_state.requested_backend = UiState::RenderBackendType::RadianceCascades3D;
+        } else {
+            m_ui_state.current_backend   = UiState::RenderBackendType::MetalRayTracing;
+            m_ui_state.requested_backend = UiState::RenderBackendType::MetalRayTracing;
+        }
 
         LoadScene(world, m_ui_state.scene);
         m_renderer->ApplySettings(m_config.render);
@@ -161,7 +188,7 @@ public:
         if (m_physics->Init()) {
             world.AddSystem<PhysicsSystem>(*m_physics);
         }
-        world.AddSystem<RenderSyncSystem>(*m_renderer);
+        m_render_sync_system = world.AddSystem<RenderSyncSystem>(*m_renderer);
 
         if (!m_config.model_path.empty() && std::filesystem::exists(m_project.Resolve(m_config.model_path)))
             LoadModelFile(world, m_project.Resolve(m_config.model_path));
@@ -170,6 +197,54 @@ public:
         m_ui_state.show_menu = true;
         m_platform->SetMouseCaptured(false);
         return true;
+    }
+
+    void SwitchBackend(World& world, UiState::RenderBackendType target_type) {
+        LUCIDA_INFO(App, "Switching render backend to %s",
+                    target_type == UiState::RenderBackendType::RadianceCascades3D ? "Radiance Cascades 3D" : "Metal Ray Tracer");
+
+        RenderSettings saved_settings = m_renderer ? m_renderer->Settings() : m_config.render;
+
+        if (m_renderer) {
+            m_renderer->OverlayShutdown();
+            m_renderer->Shutdown();
+            m_renderer.reset();
+        }
+
+        if (target_type == UiState::RenderBackendType::RadianceCascades3D) {
+#if defined(LUCIDA_HAS_RC)
+            m_renderer = CreateRadianceCascadesBackend();
+#endif
+        }
+        if (!m_renderer) {
+#if defined(LUCIDA_HAS_METAL)
+            m_renderer = CreateMetalBackend();
+            target_type = UiState::RenderBackendType::MetalRayTracing;
+#endif
+        }
+
+        if (!m_renderer || !m_renderer->Init(m_platform->Surface())) {
+            LUCIDA_ERROR(App, "Failed to initialize new render backend!");
+            return;
+        }
+
+        m_renderer->OverlayInit();
+        const bool as_panel = m_ui_state.show_menu && m_ui_state.show_viewport;
+        m_renderer->SetViewportAsPanel(as_panel);
+        if (as_panel && m_ui_state.viewport_width > 0) {
+            m_renderer->SetViewportSize(m_ui_state.viewport_width, m_ui_state.viewport_height);
+        }
+        m_renderer->ApplySettings(saved_settings);
+        m_renderer->SetCamera(m_camera.Camera());
+
+        if (m_render_sync_system) {
+            m_render_sync_system->SetRenderer(*m_renderer);
+        }
+
+        m_fingerprint = 0; // Trigger full scene re-upload
+        Republish(world);
+        m_ui_state.current_backend   = target_type;
+        m_ui_state.requested_backend = target_type;
     }
 
     void OnShutdown(World&) override {
@@ -228,6 +303,10 @@ public:
 
     void OnRender(World& world, const FrameTime& time) override {
         LUCIDA_PROFILE("render");
+
+        if (m_ui_state.requested_backend != m_ui_state.current_backend) {
+            SwitchBackend(world, m_ui_state.requested_backend);
+        }
 
         // Camera control:
         //   Game mode (no menu): mouse is captured, free FPS camera.
@@ -471,6 +550,7 @@ private:
     std::unique_ptr<IPlatform>       m_platform;
     std::unique_ptr<IRenderBackend>  m_renderer;
     std::unique_ptr<IPhysicsBackend> m_physics;
+    RenderSyncSystem*                m_render_sync_system = nullptr;
 
     CameraController m_camera;
     DebugUI          m_ui;
@@ -505,8 +585,10 @@ int main(int argc, char** argv) {
     std::string export_path;
     std::string project_dir;
     std::string new_project_dir;
+    std::string backend_arg;
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc)      config_path = argv[++i];
+        else if (std::strcmp(argv[i], "--backend") == 0 && i + 1 < argc) backend_arg = argv[++i];
         else if (std::strcmp(argv[i], "--mesh") == 0 && i + 1 < argc)   model_override = argv[++i];
         else if (std::strcmp(argv[i], "--bench") == 0 && i + 1 < argc)  bench.frames = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--shot") == 0 && i + 1 < argc)   bench.screenshot_path = argv[++i];
@@ -547,6 +629,7 @@ int main(int argc, char** argv) {
         config = LoadConfig(config_path);
     }
     if (!model_override.empty()) config.model_path = model_override;
+    if (!backend_arg.empty())    config.backend = backend_arg;
 
     // A --scene argument is either a file or the name of a built-in.
     const bool scene_is_file = scene_arg.size() > 5 &&

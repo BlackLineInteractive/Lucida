@@ -185,6 +185,16 @@ void DebugUI::DrawMenuBar(UiState& ui) {
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("Renderer")) {
+        if (ImGui::MenuItem("Metal Ray Tracer (Whitted RT)", nullptr, ui.current_backend == UiState::RenderBackendType::MetalRayTracing)) {
+            ui.requested_backend = UiState::RenderBackendType::MetalRayTracing;
+        }
+        if (ImGui::MenuItem("Radiance Cascades 3D (GI)", nullptr, ui.current_backend == UiState::RenderBackendType::RadianceCascades3D)) {
+            ui.requested_backend = UiState::RenderBackendType::RadianceCascades3D;
+        }
+        ImGui::EndMenu();
+    }
+
     if (ImGui::BeginMenu("Scene")) {
         for (u8 i = 0; i < u8(scenes::BuiltIn::Count); ++i) {
             const auto which = scenes::BuiltIn(i);
@@ -961,6 +971,15 @@ void DebugUI::DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSetti
     if (!ImGui::Begin("Graphics Settings", &ui.show_graphics_settings)) {
         ImGui::End();
         return;
+    }
+
+    if (BeginSection("Pipeline", true)) {
+        const char* pipelines[] = { "Metal Ray Tracer (Whitted)", "Radiance Cascades 3D (GI)" };
+        int cur_p = static_cast<int>(ui.current_backend);
+        if (ImGui::Combo("Backend", &cur_p, pipelines, 2)) {
+            ui.requested_backend = static_cast<UiState::RenderBackendType>(cur_p);
+        }
+        EndSection();
     }
 
     if (BeginSection("Quality", true)) {

@@ -63,6 +63,14 @@ struct UiState {
     enum class CameraSource : u8 { Viewport = 0, GameCamera };
     CameraSource camera_source = CameraSource::Viewport;
 
+    // Render Backend Pipeline selection (switchable at runtime)
+    enum class RenderBackendType : u8 {
+        MetalRayTracing = 0,
+        RadianceCascades3D
+    };
+    RenderBackendType current_backend   = RenderBackendType::MetalRayTracing;
+    RenderBackendType requested_backend = RenderBackendType::MetalRayTracing;
+
     // Viewport 3D line gizmo & frustum visualizers (cameras, lights, bounds)
     bool show_visualizers = true;
 };
