@@ -37,6 +37,29 @@ struct SceneEnvironment {
     Vec3 sky_horizon{0.18f, 0.22f, 0.28f};
     Vec3 sky_ground{0.04f, 0.04f, 0.06f};
 
+    // Sun / Celestial Lighting
+    bool sun_enabled = true;
+    Vec3 sun_direction{0.527f, 0.422f, 0.738f};
+    Vec3 sun_color{1.0f, 0.94f, 0.82f};
+    f32  sun_intensity = 5.0f;
+
+    // Water simulation parameters
+    f32  water_height = 0.02f;
+    f32  water_speed  = 1.0f;
+    f32  water_frequency = 1.0f;
+    f32  water_foam   = 0.8f;
+
+    // Post-processing & Tonemapping
+    f32  exposure = 1.0f;
+    i32  tonemap_mode = 0; // 0: ACES, 1: Reinhard, 2: Filmic, 3: Linear
+    f32  gamma = 2.2f;
+    f32  dither_strength = 1.0f;
+
+    // Ambient Occlusion
+    f32  ao_radius = 1.2f;
+    f32  ao_intensity = 0.5f;
+    i32  ao_samples = 6;
+
     // Editor ground grid, drawn by the tracer so it sits behind geometry
     // correctly instead of being painted over the finished image.
     bool grid_enabled = true;

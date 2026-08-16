@@ -13,6 +13,7 @@ _deps/
 external/
 
 # Assets and captures that do not belong in source control
+assets/
 *.glb
 *.gltf
 *.fbx

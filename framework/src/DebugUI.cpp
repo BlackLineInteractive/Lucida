@@ -1258,8 +1258,8 @@ void DebugUI::DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSetti
         EndSection();
     }
 
-    if (BeginSection("Environment", true)) {
-        ImGui::ColorEdit3("Ambient", glm::value_ptr(assets.environment.ambient));
+    if (BeginSection("Environment & Sky", true)) {
+        ImGui::ColorEdit3("Ambient Light", glm::value_ptr(assets.environment.ambient));
         ImGui::ColorEdit3("Sky Zenith", glm::value_ptr(assets.environment.sky_zenith));
         ImGui::ColorEdit3("Sky Horizon", glm::value_ptr(assets.environment.sky_horizon));
         ImGui::ColorEdit3("Sky Ground", glm::value_ptr(assets.environment.sky_ground));
@@ -1269,6 +1269,70 @@ void DebugUI::DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSetti
             ImGui::DragFloat("Fog Density", &assets.environment.fog_density, 0.001f);
             ImGui::SliderInt("Fog Steps", &assets.environment.fog_steps, 4, 64);
         }
+        EndSection();
+    }
+
+    if (BeginSection("Sun & Celestial Lighting", true)) {
+        ImGui::Checkbox("Sun Enabled", &assets.environment.sun_enabled);
+        if (assets.environment.sun_enabled) {
+            ImGui::ColorEdit3("Sun Color", glm::value_ptr(assets.environment.sun_color));
+            
+            ImGui::TextDisabled("Sun Presets:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Noon")) {
+                assets.environment.sun_direction = Vec3(0.0f, 1.0f, 0.2f);
+                assets.environment.sun_color = Vec3(1.0f, 0.98f, 0.95f);
+                assets.environment.sun_intensity = 6.0f;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Sunset")) {
+                assets.environment.sun_direction = Vec3(0.85f, 0.18f, 0.48f);
+                assets.environment.sun_color = Vec3(1.0f, 0.55f, 0.22f);
+                assets.environment.sun_intensity = 7.5f;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Morning")) {
+                assets.environment.sun_direction = Vec3(-0.72f, 0.38f, 0.58f);
+                assets.environment.sun_color = Vec3(1.0f, 0.88f, 0.68f);
+                assets.environment.sun_intensity = 5.0f;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Night / Moon")) {
+                assets.environment.sun_direction = Vec3(0.2f, 0.85f, -0.48f);
+                assets.environment.sun_color = Vec3(0.45f, 0.65f, 1.0f);
+                assets.environment.sun_intensity = 0.8f;
+            }
+
+            Vec3Row("Direction", assets.environment.sun_direction);
+            if (glm::length(assets.environment.sun_direction) > 0.001f) {
+                assets.environment.sun_direction = glm::normalize(assets.environment.sun_direction);
+            }
+            ImGui::DragFloat("Sun Intensity", &assets.environment.sun_intensity, 0.1f, 0.0f, 50.0f, "%.1f");
+        }
+        EndSection();
+    }
+
+    if (BeginSection("Post-Processing & Color", true)) {
+        ImGui::SliderFloat("Exposure", &assets.environment.exposure, 0.05f, 5.0f, "%.2f");
+        const char* tonemappers[] = { "ACES (Cinematic)", "Reinhard (Smooth)", "Filmic (High Contrast)", "Linear (Clamped)" };
+        ImGui::Combo("Tone Mapper", &assets.environment.tonemap_mode, tonemappers, 4);
+        ImGui::SliderFloat("Gamma", &assets.environment.gamma, 1.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Dither Strength", &assets.environment.dither_strength, 0.0f, 2.0f, "%.2f");
+        EndSection();
+    }
+
+    if (BeginSection("Ambient Occlusion (AO)", true)) {
+        ImGui::SliderFloat("AO Radius", &assets.environment.ao_radius, 0.1f, 5.0f, "%.2f m");
+        ImGui::SliderFloat("AO Intensity", &assets.environment.ao_intensity, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderInt("AO Quality (Rays)", &assets.environment.ao_samples, 1, 16);
+        EndSection();
+    }
+
+    if (BeginSection("Water Simulation", true)) {
+        ImGui::SliderFloat("Wave Height", &assets.environment.water_height, 0.001f, 0.15f, "%.3f m");
+        ImGui::SliderFloat("Wave Speed", &assets.environment.water_speed, 0.1f, 5.0f, "%.2fx");
+        ImGui::SliderFloat("Wave Frequency", &assets.environment.water_frequency, 0.1f, 5.0f, "%.2fx");
+        ImGui::SliderFloat("Foam Intensity", &assets.environment.water_foam, 0.0f, 2.0f, "%.2f");
         EndSection();
     }
 

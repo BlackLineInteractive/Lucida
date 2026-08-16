@@ -94,6 +94,16 @@ struct Uniforms {
     packed_float3 grid_axis_z; float pad13;
     int num_cylinders; int num_cones; int num_tori; int num_disks;
     float grid_spacing; int grid_auto_scale; float pad15; float pad16;
+
+    // Dynamic Lighting & Sun
+    packed_float3 sun_direction; float sun_intensity;
+    packed_float3 sun_color;     int   sun_enabled;
+    // Water simulation parameters
+    float water_height; float water_speed; float water_frequency; float water_foam;
+    // Post-processing & Tonemapping
+    float exposure; int tonemap_mode; float gamma; float dither_strength;
+    // Ambient Occlusion
+    float ao_radius; float ao_intensity; int ao_samples; float pad17;
 };
 
 constant float EPSILON = 1e-4;
@@ -843,12 +853,17 @@ float3 sky_color(float3 dir, constant Uniforms& u) {
 // A mesh instead gets: a directional sun (shadowed against the BVH), sky
 // irradiance over the hemisphere, and ray-traced ambient occlusion.
 
-// Pre-normalised: MSL forbids global constructors, so normalize() cannot be
-// called at file scope. This is normalize(0.5, 0.4, 0.7), matching sky_color.
-constant float3 kSunDir       = {0.527046f, 0.421637f, 0.737865f};
-constant float3 kSunColor     = {1.0f, 0.94f, 0.82f};
-constant float  kSunIntensity = 5.0;
-constant int    kAORays       = 6;
+inline float3 get_sun_dir(constant Uniforms& u) {
+    if (u.sun_enabled == 0) return float3(0.0, 1.0, 0.0);
+    float3 d = float3(u.sun_direction);
+    return length_squared(d) > 1e-4 ? normalize(d) : float3(0.527046f, 0.421637f, 0.737865f);
+}
+inline float3 get_sun_color(constant Uniforms& u) {
+    return float3(u.sun_color);
+}
+inline float get_sun_intensity(constant Uniforms& u) {
+    return (u.sun_enabled != 0) ? u.sun_intensity : 0.0f;
+}
 
 // Ambient occlusion by short any-hit rays over the cosine hemisphere. The
 // directions come from a golden-angle spiral: fixed, identical for every pixel,
@@ -859,21 +874,25 @@ float trace_ao(float3 p, float3 N, float3 geo_n, float t, float radius,
                constant Uniforms& u) {
     if (u.enable_triangles == 0 || u.num_bvh_nodes == 0) return 1.0;
 
+    int num_rays = clamp(u.ao_samples, 1, 16);
+    float effective_radius = u.ao_radius > 0.01f ? u.ao_radius : radius;
+
     float3 T = normalize(abs(N.z) < 0.9 ? cross(float3(0.0, 0.0, 1.0), N)
                                         : cross(float3(1.0, 0.0, 0.0), N));
     float3 B = cross(N, T);
     float3 ro = offset_ray(p, geo_n, N, t) - u.model_pos;
 
     float occ = 0.0;
-    for (int i = 0; i < kAORays; i++) {
-        float r  = sqrt((float(i) + 0.5) / float(kAORays));
+    for (int i = 0; i < num_rays; i++) {
+        float r  = sqrt((float(i) + 0.5) / float(num_rays));
         float th = float(i) * 2.3999632;              // golden angle
         float3 d = T * (r * cos(th)) + B * (r * sin(th))
                  + N * sqrt(max(0.0, 1.0 - r * r));
-        if (any_hit_instances(make_ray(ro, d), radius, nodes, tris, instances, u))
+        if (any_hit_instances(make_ray(ro, d), effective_radius, nodes, tris, instances, u))
             occ += 1.0;
     }
-    return 1.0 - occ / float(kAORays);
+    float raw_ao = 1.0 - occ / float(num_rays);
+    return mix(1.0f, raw_ao, clamp(u.ao_intensity * 2.0f, 0.0f, 1.0f));
 }
 
 // One bounce of indirect diffuse, evaluated over the same cosine hemisphere the
@@ -896,26 +915,29 @@ GIResult trace_gi(float3 p, float3 N, float3 geo_n, float t, float radius,
     GIResult r; r.bent_normal = N; r.ao = 1.0;
     if (u.enable_triangles == 0 || u.num_bvh_nodes == 0) return r;
 
+    int num_rays = clamp(u.ao_samples, 1, 16);
+    float effective_radius = u.ao_radius > 0.01f ? u.ao_radius : radius;
+
     float3 T = normalize(abs(N.z) < 0.9 ? cross(float3(0.0, 0.0, 1.0), N)
                                         : cross(float3(1.0, 0.0, 0.0), N));
     float3 B = cross(N, T);
 
     float3 bent = float3(0.0);
     float  occ  = 0.0;
-    for (int i = 0; i < kAORays; i++) {
-        float rr = sqrt((float(i) + 0.5) / float(kAORays));
+    for (int i = 0; i < num_rays; i++) {
+        float rr = sqrt((float(i) + 0.5) / float(num_rays));
         float th = float(i) * 2.3999632;              // golden angle
         float3 d = T * (rr * cos(th)) + B * (rr * sin(th))
                  + N * sqrt(max(0.0, 1.0 - rr * rr));
 
         float3 ro = offset_ray(p, geo_n, d, t);
-        if (any_hit_instances(make_ray(ro, d), radius, nodes, tris, instances, u))
+        if (any_hit_instances(make_ray(ro, d), effective_radius, nodes, tris, instances, u))
             occ += 1.0;
         else
             bent += d;      // this direction sees sky
     }
 
-    r.ao = 1.0 - occ / float(kAORays);
+    r.ao = 1.0 - occ / float(num_rays);
     r.bent_normal = (length(bent) > 1e-4) ? normalize(bent) : N;
     return r;
 }
@@ -924,9 +946,6 @@ GIResult trace_gi(float3 p, float3 N, float3 geo_n, float t, float radius,
 // normal. Surfaces facing up see the zenith, surfaces facing down see the
 // ground bounce, and everything between blends.
 float3 sky_irradiance(float3 N) {
-    // Open-air atrium: the sky is the dominant light source for everything the
-    // sun cannot reach, so it has to carry real energy rather than act as a
-    // token fill. Warmed slightly toward the ground bounce off the stone.
     float3 zenith = float3(0.62, 0.80, 1.15);
     float3 ground = float3(0.52, 0.44, 0.34);
     return mix(ground, zenith, N.y * 0.5 + 0.5) * 1.35;
@@ -938,9 +957,10 @@ float sun_shadow(float3 p, float3 geo_n, float t,
                  device const BVHNode* nodes, device const TriPos* tris,
                  device const Instance* instances,
                  constant Uniforms& u) {
-    if (u.enable_triangles == 0 || u.num_bvh_nodes == 0) return 1.0;
-    float3 ro = offset_ray(p, geo_n, kSunDir, t);
-    return any_hit_instances(make_ray(ro, kSunDir), 200.0, nodes, tris, instances, u)
+    if (u.enable_triangles == 0 || u.num_bvh_nodes == 0 || u.sun_enabled == 0) return 1.0;
+    float3 sdir = get_sun_dir(u);
+    float3 ro = offset_ray(p, geo_n, sdir, t);
+    return any_hit_instances(make_ray(ro, sdir), 200.0, nodes, tris, instances, u)
            ? 0.0 : 1.0;
 }
 
@@ -1171,21 +1191,23 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
         if (mat.type == WATER) {
             float3 wp = hit.point;
-            float tm = u.time;
+            float tm = u.time * (u.water_speed > 0.001f ? u.water_speed : 1.0f);
+            float freq = u.water_frequency > 0.001f ? u.water_frequency : 1.0f;
+            float h_scale = u.water_height > 0.0001f ? u.water_height * 2.0f : 0.020f;
 
-            float w1 = sin(wp.x * 6.0 + tm * 2.2) * 0.020;
-            float w2 = cos(wp.z * 5.0 + tm * 1.8) * 0.020;
-            float w3 = sin((wp.x * 0.7 + wp.z * 0.9) * 11.0 + tm * 3.2) * 0.010;
+            float w1 = sin(wp.x * (6.0 * freq) + tm * 2.2) * h_scale;
+            float w2 = cos(wp.z * (5.0 * freq) + tm * 1.8) * h_scale;
+            float w3 = sin((wp.x * 0.7 + wp.z * 0.9) * (11.0 * freq) + tm * 3.2) * (h_scale * 0.5);
             float wave_h = w1 + w2 + w3;
 
-            float dx = 6.0 * cos(wp.x * 6.0 + tm * 2.2) * 0.020
-                     + 11.0 * 0.7 * cos((wp.x * 0.7 + wp.z * 0.9) * 11.0 + tm * 3.2) * 0.010
-                     + 3.5 * -sin(wp.x * 3.5 - wp.z * 3.0 + tm * 2.4) * 0.008
-                     + 22.0 * 1.2 * cos((wp.x * 1.2 - wp.z * 0.8) * 22.0 + tm * 4.5) * 0.004;
-            float dz = 5.0 * -sin(wp.z * 5.0 + tm * 1.8) * 0.020
-                     + 11.0 * 0.9 * cos((wp.x * 0.7 + wp.z * 0.9) * 11.0 + tm * 3.2) * 0.010
-                     + 3.0 * sin(wp.x * 3.5 - wp.z * 3.0 + tm * 2.4) * 0.008
-                     - 22.0 * 0.8 * cos((wp.x * 1.2 - wp.z * 0.8) * 22.0 + tm * 4.5) * 0.004;
+            float dx = (6.0 * freq) * cos(wp.x * (6.0 * freq) + tm * 2.2) * h_scale
+                     + (11.0 * freq) * 0.7 * cos((wp.x * 0.7 + wp.z * 0.9) * (11.0 * freq) + tm * 3.2) * (h_scale * 0.5)
+                     + (3.5 * freq) * -sin(wp.x * (3.5 * freq) - wp.z * (3.0 * freq) + tm * 2.4) * (h_scale * 0.4)
+                     + (22.0 * freq) * 1.2 * cos((wp.x * 1.2 - wp.z * 0.8) * (22.0 * freq) + tm * 4.5) * (h_scale * 0.2);
+            float dz = (5.0 * freq) * -sin(wp.z * (5.0 * freq) + tm * 1.8) * h_scale
+                     + (11.0 * freq) * 0.9 * cos((wp.x * 0.7 + wp.z * 0.9) * (11.0 * freq) + tm * 3.2) * (h_scale * 0.5)
+                     + (3.0 * freq) * sin(wp.x * (3.5 * freq) - wp.z * (3.0 * freq) + tm * 2.4) * (h_scale * 0.4)
+                     - (22.0 * freq) * 0.8 * cos((wp.x * 1.2 - wp.z * 0.8) * (22.0 * freq) + tm * 4.5) * (h_scale * 0.2);
 
             float3 water_n = normalize(float3(-dx, 1.0, -dz));
 
@@ -1298,20 +1320,24 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 ao = gi.w;
                 bounce = gi.xyz;
 
-                float sun_ndl = max(0.0, dot(N, kSunDir));
-                if (sun_ndl > 0.0) {
-                    float vis = sun_shadow(hit.point, hit.geo_normal, hit.t, bvh_nodes, triangles, instances, u);
-                    if (vis > 0.0) {
-                        float3 H = normalize(kSunDir + V);
-                        float NdotH = max(0.0, dot(N, H));
-                        float VdotH = max(0.0, dot(V, H));
-                        float shininess = pow(2.0, (1.0 - roughness) * 11.0);
-                        float norm = (shininess + 8.0) / 25.13274;
-                        float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
-                        float3 sun_spec = F * pow(NdotH, shininess) * norm * (1.0 - roughness * 0.7);
-                        float3 sun_diff = (diffuse_albedo * (1.0 / 3.14159265f)) * sun_ndl * kSunColor * 2.0f * vis;
-                        float3 sun_spec_term = sun_spec * sun_ndl * kSunColor * 2.0f * vis;
-                        direct += sun_diff + sun_spec_term;
+                if (u.sun_enabled != 0) {
+                    float3 sdir = get_sun_dir(u);
+                    float3 scol = get_sun_color(u) * (u.sun_intensity * 0.4f);
+                    float sun_ndl = max(0.0, dot(N, sdir));
+                    if (sun_ndl > 0.0) {
+                        float vis = sun_shadow(hit.point, hit.geo_normal, hit.t, bvh_nodes, triangles, instances, u);
+                        if (vis > 0.0) {
+                            float3 H = normalize(sdir + V);
+                            float NdotH = max(0.0, dot(N, H));
+                            float VdotH = max(0.0, dot(V, H));
+                            float shininess = pow(2.0, (1.0 - roughness) * 11.0);
+                            float norm = (shininess + 8.0) / 25.13274;
+                            float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+                            float3 sun_spec = F * pow(NdotH, shininess) * norm * (1.0 - roughness * 0.7);
+                            float3 sun_diff = (diffuse_albedo * (1.0 / 3.14159265f)) * sun_ndl * scol * vis;
+                            float3 sun_spec_term = sun_spec * sun_ndl * scol * vis;
+                            direct += sun_diff + sun_spec_term;
+                        }
                     }
                 }
                 float3 bent = (length(bounce) > 1e-3) ? normalize(bounce) : N;
@@ -1434,7 +1460,11 @@ float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
     float  transmittance = 1.0;
     float3 sky_ambient   = sky_color(dir, u);
 
-    float sun_cos = max(0.0, dot(dir, kSunDir));
+    float3 sdir = get_sun_dir(u);
+    float3 scol = get_sun_color(u);
+    float  sintensity = get_sun_intensity(u);
+
+    float sun_cos = max(0.0, dot(dir, sdir));
     float sun_phase = 0.15 + 0.85 * pow(sun_cos, 8.0);
 
     for (int i = 0; i < steps; i++) {
@@ -1444,11 +1474,11 @@ float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
 
         float3 step_scattering = float3(0.0);
         if (density > 0.0001f) {
-            if (u.enable_triangles > 0) {
-                float vis = any_hit_instances(make_ray(sample_p, kSunDir), 200.0,
+            if (u.enable_triangles > 0 && u.sun_enabled != 0) {
+                float vis = any_hit_instances(make_ray(sample_p, sdir), 200.0,
                                               bvh_nodes, triangles, instances, u)
                             ? 0.0 : 1.0;
-                step_scattering += kSunColor * (kSunIntensity * 0.5f * sun_phase * vis);
+                step_scattering += scol * (sintensity * 0.5f * sun_phase * vis);
             }
             for (int l = 0; l < u.num_lights; l++) {
                 float3 to_light = lights[l].position - sample_p;
@@ -1851,7 +1881,7 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
                 dbg = float3(trace_ao(h.point, h.normal, h.geo_normal, h.t, 1.2, bvh_nodes, triangles, instances, u));
             else if (u.debug_mode == 10)
                 dbg = float3(sun_shadow(h.point, h.geo_normal, h.t, bvh_nodes, triangles, instances, u)
-                             * max(0.0, dot(h.normal, kSunDir)));
+                             * max(0.0, dot(h.normal, get_sun_dir(u))));
             else if (u.debug_mode == 8) {   // raw texture fetch, no LOD, no flags
                 dbg = h.is_mesh ? mesh_textures.sample(dbg_s, duv, h.mat_index, level(0.0)).xyz
                                 : float3(0.0, 1.0, 0.0);
@@ -1867,8 +1897,36 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
         return;
     }
 
-    float3 mapped = aces_approx(color);
-    mapped = pow(clamp(mapped, float3(0.0), float3(1.0)), float3(1.0/2.2));
+    // Color Grading, Tonemapping & Dithering
+    float3 exposed_color = color * max(u.exposure, 0.001f);
+    float3 mapped = exposed_color;
+
+    // Tonemap operators
+    if (u.tonemap_mode == 0) {
+        // ACES
+        mapped = aces_approx(exposed_color);
+    } else if (u.tonemap_mode == 1) {
+        // Reinhard
+        mapped = exposed_color / (exposed_color + float3(1.0));
+    } else if (u.tonemap_mode == 2) {
+        // Filmic / Hejl-Burgess-Dawson
+        float3 x = max(float3(0.0), exposed_color - 0.004);
+        mapped = (x * (6.2 * x + 0.5)) / (x * (6.2 * x + 1.7) + 0.06);
+    } else {
+        // Linear clamped
+        mapped = clamp(exposed_color, 0.0, 1.0);
+    }
+
+    // Gamma correction
+    float g = u.gamma > 0.1f ? u.gamma : 2.2f;
+    mapped = pow(clamp(mapped, float3(0.0), float3(1.0)), float3(1.0 / g));
+
+    // Ordered Dithering (Bayer 4x4) to eliminate color banding
+    if (u.dither_strength > 0.001f) {
+        float dither = (kBayer4[(gid.y & 3) * 4 + (gid.x & 3)] - 0.5) * (u.dither_strength / 255.0);
+        mapped = clamp(mapped + dither, 0.0, 1.0);
+    }
+
     outTexture.write(float4(mapped, 1.0), gid);
 
     // ---- MetalFX guidance buffers.

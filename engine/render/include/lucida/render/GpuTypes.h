@@ -159,8 +159,18 @@ struct GPUUniforms {
     float grid_axis_z[3]; float pad13;
     int   num_cylinders; int num_cones; int num_tori; int num_disks;
     float grid_spacing; int grid_auto_scale; float pad15; float pad16;
+
+    // Dynamic Lighting & Sun
+    float sun_direction[3]; float sun_intensity;
+    float sun_color[3];     int   sun_enabled;
+    // Water simulation parameters
+    float water_height; float water_speed; float water_frequency; float water_foam;
+    // Post-processing & Tonemapping
+    float exposure; int tonemap_mode; float gamma; float dither_strength;
+    // Ambient Occlusion
+    float ao_radius; float ao_intensity; int ao_samples; float pad17;
 };
-static_assert(sizeof(GPUUniforms) == 400);
+static_assert(sizeof(GPUUniforms) == 480);
 
 inline void SetVec3(float* dst, const Vec3& v) { dst[0] = v.x; dst[1] = v.y; dst[2] = v.z; }
 
