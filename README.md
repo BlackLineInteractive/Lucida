@@ -1,4 +1,6 @@
-<h1 align="center">Lucida - Game Engines</h1>
+<p align="center">
+  <img src="media/lucida.jpg" alt="Lucida Engine" width="100%">
+</p>
 
 <p align="center">
   <em>lucida</em> — the brightest star in a constellation.
