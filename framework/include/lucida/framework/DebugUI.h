@@ -85,6 +85,17 @@ struct UiState {
     bool request_pause = false;
     bool request_step  = false;
     bool request_stop  = false;
+
+    // Modals & Panels
+    bool show_manual_modal        = false;
+    bool show_preferences_window  = false;
+
+    // Preferences & Tooltip config
+    bool enable_ui_animations     = true;
+    f32  animation_speed          = 1.0f;
+    f32  camera_fly_speed         = 4.0f;
+    f32  camera_sprint_multiplier = 2.5f;
+    bool show_tooltips            = true;
 };
 
 class DebugUI {
@@ -123,6 +134,8 @@ private:
     void DrawStatsOverlay(World& world, const SceneAssets& assets, const RenderStats& stats,
                          const FrameTime& time, const RenderSettings& settings, const UiState& ui,
                          const ImVec2& image_min, const ImVec2& image_size);
+    void DrawManualModal(UiState& ui);
+    void DrawPreferencesWindow(UiState& ui, CameraController& camera, RenderSettings& settings);
     void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
                    const char* name);
     void TrackMaterialEdit(SceneAssets& assets, i32 mat_index, const GPUMaterial& current,

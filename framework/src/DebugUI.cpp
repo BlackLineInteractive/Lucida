@@ -12,20 +12,192 @@
 #include "lucida/runtime/World.h"
 
 #include "lucida/framework/SceneAssets.h"
+#include "lucida/framework/Manual.h"
 #include "lucida/resource/Terrain.h"
 #include "ImGuiFileDialog.h"
 #include "ImGuizmo.h"
+#include "im_anim.h"
 #include "imgui.h"
 #include "imgui_internal.h"   // DockBuilder
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
+#include <string>
 
 namespace lucida {
 namespace {
+
+static bool g_show_tooltips = true;
+
+inline void DrawTooltip(const char* text) {
+    if (!g_show_tooltips) return;
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
+        ImGui::TextUnformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+inline void HelpMarker(const char* desc) {
+    ImGui::TextDisabled("(?)");
+    DrawTooltip(desc);
+}
+
+enum class VectorIcon {
+    None,
+    Play,
+    Stop,
+    Pause,
+    Step,
+    Focus,
+    Eye,
+    Camera,
+    DownArrow
+};
+
+inline void DrawVectorIcon(ImDrawList* dl, VectorIcon icon, ImVec2 center, float size, ImU32 col) {
+    const float half = size * 0.5f;
+    switch (icon) {
+    case VectorIcon::Play: {
+        const ImVec2 p1(center.x - half * 0.65f, center.y - half * 0.85f);
+        const ImVec2 p2(center.x + half * 0.85f, center.y);
+        const ImVec2 p3(center.x - half * 0.65f, center.y + half * 0.85f);
+        dl->AddTriangleFilled(p1, p2, p3, col);
+        break;
+    }
+    case VectorIcon::Stop: {
+        const float r = half * 0.70f;
+        dl->AddRectFilled(ImVec2(center.x - r, center.y - r),
+                          ImVec2(center.x + r, center.y + r), col, 1.5f);
+        break;
+    }
+    case VectorIcon::Pause: {
+        const float bw = size * 0.22f;
+        const float bh = size * 0.80f;
+        const float gap = size * 0.16f;
+        dl->AddRectFilled(ImVec2(center.x - gap - bw, center.y - bh * 0.5f),
+                          ImVec2(center.x - gap, center.y + bh * 0.5f), col, 1.0f);
+        dl->AddRectFilled(ImVec2(center.x + gap, center.y - bh * 0.5f),
+                          ImVec2(center.x + gap + bw, center.y + bh * 0.5f), col, 1.0f);
+        break;
+    }
+    case VectorIcon::Step: {
+        const ImVec2 p1(center.x - half * 0.80f, center.y - half * 0.80f);
+        const ImVec2 p2(center.x + half * 0.20f, center.y);
+        const ImVec2 p3(center.x - half * 0.80f, center.y + half * 0.80f);
+        dl->AddTriangleFilled(p1, p2, p3, col);
+        dl->AddRectFilled(ImVec2(center.x + half * 0.40f, center.y - half * 0.80f),
+                          ImVec2(center.x + half * 0.75f, center.y + half * 0.80f), col, 1.0f);
+        break;
+    }
+    case VectorIcon::Focus: {
+        const float r = half * 0.75f;
+        dl->AddCircle(center, r, col, 16, 1.6f);
+        dl->AddCircleFilled(center, r * 0.35f, col);
+        dl->AddLine(ImVec2(center.x - r * 1.35f, center.y), ImVec2(center.x + r * 1.35f, center.y), col, 1.2f);
+        dl->AddLine(ImVec2(center.x, center.y - r * 1.35f), ImVec2(center.x, center.y + r * 1.35f), col, 1.2f);
+        break;
+    }
+    case VectorIcon::Eye: {
+        const float rx = half * 0.95f;
+        const float ry = half * 0.52f;
+        dl->AddEllipse(center, ImVec2(rx, ry), col, 0.0f, 16, 1.6f);
+        dl->AddCircleFilled(center, ry * 0.55f, col);
+        break;
+    }
+    case VectorIcon::Camera: {
+        const float w = half * 1.5f;
+        const float h = half * 1.0f;
+        dl->AddRect(ImVec2(center.x - w * 0.5f, center.y - h * 0.4f),
+                    ImVec2(center.x + w * 0.5f, center.y + h * 0.6f), col, 2.0f, 0, 1.4f);
+        dl->AddCircle(ImVec2(center.x, center.y + h * 0.1f), h * 0.28f, col, 12, 1.3f);
+        dl->AddRectFilled(ImVec2(center.x - w * 0.25f, center.y - h * 0.65f),
+                          ImVec2(center.x + w * 0.25f, center.y - h * 0.4f), col, 1.0f);
+        break;
+    }
+    case VectorIcon::DownArrow: {
+        const float r = half * 0.55f;
+        dl->AddTriangleFilled(
+            ImVec2(center.x - r, center.y - r * 0.5f),
+            ImVec2(center.x + r, center.y - r * 0.5f),
+            ImVec2(center.x, center.y + r * 0.7f),
+            col);
+        break;
+    }
+    default:
+        break;
+    }
+}
+
+inline bool VectorIconButton(const char* str_id, VectorIcon icon, const char* label = nullptr,
+                            ImVec2 size = ImVec2(0, 0), ImU32 base_col = 0, ImU32 text_col = 0) {
+    ImGui::PushID(str_id);
+    const ImGuiStyle& style = ImGui::GetStyle();
+
+    const ImVec2 text_size = (label && label[0] != '\0') ? ImGui::CalcTextSize(label) : ImVec2(0, 0);
+    const float icon_w = (icon != VectorIcon::None) ? 14.0f : 0.0f;
+    const float spacing = (icon != VectorIcon::None && text_size.x > 0.0f) ? 6.0f : 0.0f;
+
+    const float total_content_w = icon_w + spacing + text_size.x;
+    const ImVec2 box(
+        (size.x > 0.0f) ? size.x : total_content_w + style.FramePadding.x * 2.0f,
+        (size.y > 0.0f) ? size.y : std::max(text_size.y, icon_w) + style.FramePadding.y * 2.0f);
+
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::InvisibleButton("##btn", box);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active  = ImGui::IsItemActive();
+
+    // ImAnim smooth lift tween
+    const float lift = iam_tween_float(ImGui::GetID("##btn"), ImGui::GetID("lift"),
+                                       active ? 1.0f : (hovered ? 0.6f : 0.0f), 0.15f,
+                                       iam_ease_preset(iam_ease_out_cubic),
+                                       iam_policy_crossfade, ImGui::GetIO().DeltaTime);
+
+    ImVec4 bg;
+    if (base_col != 0) {
+        ImVec4 base = ImGui::ColorConvertU32ToFloat4(base_col);
+        bg = ImVec4(std::min(1.0f, base.x * (1.0f + lift * 0.35f)),
+                    std::min(1.0f, base.y * (1.0f + lift * 0.35f)),
+                    std::min(1.0f, base.z * (1.0f + lift * 0.35f)),
+                    base.w);
+    } else {
+        const ImVec4 b = ImGui::GetStyleColorVec4(ImGuiCol_Button);
+        const ImVec4 a = ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered);
+        bg = ImVec4(b.x + (a.x - b.x) * lift,
+                    b.y + (a.y - b.y) * lift,
+                    b.z + (a.z - b.z) * lift,
+                    b.w);
+    }
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(origin, ImVec2(origin.x + box.x, origin.y + box.y),
+                      ImGui::GetColorU32(bg), style.FrameRounding);
+
+    const ImU32 fg = (text_col != 0) ? text_col : ImGui::GetColorU32(ImGuiCol_Text);
+
+    const float start_x = origin.x + (box.x - total_content_w) * 0.5f;
+    const float center_y = origin.y + box.y * 0.5f;
+
+    if (icon != VectorIcon::None) {
+        const ImVec2 icon_center(start_x + icon_w * 0.5f, center_y);
+        DrawVectorIcon(dl, icon, icon_center, icon_w, fg);
+    }
+
+    if (text_size.x > 0.0f) {
+        const ImVec2 text_pos(start_x + icon_w + spacing, center_y - text_size.y * 0.5f);
+        dl->AddText(text_pos, fg, label);
+    }
+
+    ImGui::PopID();
+    return pressed;
+}
 
 // Unit mode: 0 = meters, 1 = centimeters
 static int g_units_mode = 0;
@@ -138,6 +310,9 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
                     IRenderBackend* renderer) {
     LUCIDA_PROFILE("debug-ui");
 
+    g_show_tooltips = ui.show_tooltips;
+    iam_update_begin_frame();
+
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
@@ -171,6 +346,13 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
 
     // Global keyboard shortcuts outside text fields
     if (!io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F1, false)) {
+            ui.show_manual_modal = !ui.show_manual_modal;
+        }
+        if (modifier && ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
+            ui.show_preferences_window = !ui.show_preferences_window;
+        }
+
         if (modifier && ImGui::IsKeyPressed(ImGuiKey_P, false)) {
             if (io.KeyShift) {
                 if (ui.play_state == UiState::PlayState::Playing) ui.request_pause = true;
@@ -209,6 +391,9 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
     if (ui.show_inspector) DrawInspector(world, ui, assets, camera, renderer);
     if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
     if (ui.show_stats_panel)       DrawStatsPanel(world, assets, stats, time, settings, ui);
+
+    if (ui.show_manual_modal)       DrawManualModal(ui);
+    if (ui.show_preferences_window) DrawPreferencesWindow(ui, camera, settings);
 
     if (ImGuiFileDialog::Instance()->Display("LoadModel", ImGuiWindowFlags_NoCollapse,
                                              ImVec2(600, 400))) {
@@ -297,6 +482,10 @@ void DebugUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
             ui.selection = kNullEntity;
             m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
         }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Preferences...", "Cmd+, / Ctrl+,")) {
+            ui.show_preferences_window = true;
+        }
         ImGui::EndMenu();
     }
 
@@ -350,6 +539,22 @@ void DebugUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("Help")) {
+        if (ImGui::MenuItem("Controls & Manual", "F1")) {
+            ui.show_manual_modal = true;
+        }
+        if (ImGui::MenuItem("Keyboard Shortcuts Sheet")) {
+            ui.show_manual_modal = true;
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Preferences...", "Cmd+,")) {
+            ui.show_preferences_window = true;
+        }
+        ImGui::Separator();
+        ImGui::TextDisabled("Lucida Engine v0.1.0 (BlackLine)");
+        ImGui::EndMenu();
+    }
+
     DrawPlayToolbar(ui);
 
     ImGui::EndMainMenuBar();
@@ -369,49 +574,39 @@ void DebugUI::DrawPlayToolbar(UiState& ui) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 0.0f));
 
     if (ui.play_state == UiState::PlayState::Edit) {
-        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(48, 175, 90, 255));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(28, 120, 60, 255));
-        if (ImGui::Button(" > Play (Cmd+P) ", ImVec2(120, 0))) {
+        if (VectorIconButton("play_btn", VectorIcon::Play, "Play (Cmd+P)", ImVec2(125, 22), IM_COL32(38, 145, 75, 230))) {
             ui.request_play = true;
         }
-        ImGui::PopStyleColor(3);
+        DrawTooltip("Start Play Mode (Cmd+P / Ctrl+P)\nSnapshots world state and activates real-time Jolt physics.");
     } else {
-        // Stop button
-        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(185, 45, 45, 230));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(215, 60, 60, 255));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(155, 35, 35, 255));
-        if (ImGui::Button(" [ ] Stop ", ImVec2(70, 0))) {
+        // Stop button with subtle animated pulse when in play mode
+        float stop_pulse = 0.0f;
+        if (ui.enable_ui_animations) {
+            stop_pulse = iam_oscillate(ImGui::GetID("stop_btn_pulse"), 0.15f, 2.0f, iam_wave_sine, 0.0f, ImGui::GetIO().DeltaTime);
+        }
+        const int r_stop = std::clamp(static_cast<int>(185 + stop_pulse * 40.0f), 150, 240);
+        if (VectorIconButton("stop_btn", VectorIcon::Stop, "Stop", ImVec2(75, 22), IM_COL32(r_stop, 45, 45, 230))) {
             ui.request_stop = true;
         }
-        ImGui::PopStyleColor(3);
+        DrawTooltip("Stop Simulation (Cmd+P / Ctrl+P)\nRestores the entire scene to its exact pre-play state.");
 
         ImGui::SameLine();
         if (ui.play_state == UiState::PlayState::Playing) {
-            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(195, 145, 25, 230));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(225, 170, 35, 255));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(165, 125, 20, 255));
-            if (ImGui::Button(" || Pause ", ImVec2(75, 0))) {
+            if (VectorIconButton("pause_btn", VectorIcon::Pause, "Pause", ImVec2(75, 22), IM_COL32(195, 145, 25, 230))) {
                 ui.request_pause = true;
             }
-            ImGui::PopStyleColor(3);
+            DrawTooltip("Pause Simulation (Cmd+Shift+P / Ctrl+Shift+P)\nFreezes physics and gameplay ticks.");
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(48, 175, 90, 255));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(28, 120, 60, 255));
-            if (ImGui::Button(" > Resume ", ImVec2(75, 0))) {
+            if (VectorIconButton("resume_btn", VectorIcon::Play, "Resume", ImVec2(80, 22), IM_COL32(38, 145, 75, 230))) {
                 ui.request_play = true;
             }
-            ImGui::PopStyleColor(3);
+            DrawTooltip("Resume Simulation (Cmd+Shift+P / Ctrl+Shift+P)\nUnpauses physics simulation.");
 
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 105, 195, 230));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 130, 230, 255));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(35, 85, 165, 255));
-            if (ImGui::Button(" |> Step ", ImVec2(65, 0))) {
+            if (VectorIconButton("step_btn", VectorIcon::Step, "Step", ImVec2(70, 22), IM_COL32(45, 105, 195, 230))) {
                 ui.request_step = true;
             }
-            ImGui::PopStyleColor(3);
+            DrawTooltip("Step 1 Frame (Cmd+. / Ctrl+.)\nAdvances physics by exactly 1 tick (1/60s).");
         }
     }
 
@@ -512,17 +707,19 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
                                ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysUseWindowPadding,
                                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
             // Camera Source Selector
-            const char* cam_sources[] = { "🎥 Viewport", "🎬 Game Cam" };
+            const char* cam_sources[] = { "Fly Cam", "Game Cam" };
             int cur_cam = static_cast<int>(ui.camera_source);
-            ImGui::SetNextItemWidth(110.0f);
+            ImGui::SetNextItemWidth(100.0f);
             if (ImGui::Combo("##CamSource", &cur_cam, cam_sources, 2)) {
                 ui.camera_source = static_cast<UiState::CameraSource>(cur_cam);
             }
+            DrawTooltip("Camera Source: Choose between Viewport Fly Camera and in-scene Game Camera.");
 
             ImGui::SameLine(0, 4.0f);
-            if (ImGui::Button("View ▼")) {
+            if (VectorIconButton("vp_view", VectorIcon::DownArrow, "View", ImVec2(58, 22))) {
                 ImGui::OpenPopup("ViewPresetsPopup");
             }
+            DrawTooltip("View Presets: Snap camera to standard orthographic or isometric viewpoints.");
             if (ImGui::BeginPopup("ViewPresetsPopup")) {
                 if (ImGui::MenuItem("Top (Y+)"))        const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Top);
                 if (ImGui::MenuItem("Bottom (Y-)"))     const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Bottom);
@@ -538,11 +735,12 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
 
             if (ui.selection != kNullEntity) {
                 ImGui::SameLine(0, 4.0f);
-                if (ImGui::Button("🎯 Focus")) {
+                if (VectorIconButton("vp_focus", VectorIcon::Focus, "Focus", ImVec2(66, 22))) {
                     if (const LocalTransform* lt = world.Entities().Get<LocalTransform>(ui.selection)) {
                         const_cast<CameraController&>(camera).Focus(lt->position, 4.0f);
                     }
                 }
+                DrawTooltip("Focus (Hotkey: F): Instantly center and frame camera on the selected entity.");
             }
 
             ImGui::SameLine(0, 4.0f);
@@ -551,13 +749,19 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
 
             // Mode buttons
             const char* ops[] = { "Translate (T)", "Rotate (R)", "Scale (S)" };
+            const char* op_tips[] = {
+                "Translate Mode (T or 1): Move object along axes.",
+                "Rotate Mode (R or 2): Rotate object around axes.",
+                "Scale Mode (S or 3): Scale object along axes."
+            };
             for (int i = 0; i < 3; ++i) {
                 const bool sel = (ui.gizmo_operation == i);
-                if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(50, 110, 220, 240));
-                else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
-                if (ImGui::Button(ops[i])) ui.gizmo_operation = i;
-                ImGui::PopStyleColor();
-                ImGui::SameLine();
+                const ImU32 col = sel ? IM_COL32(50, 110, 220, 240) : 0;
+                if (VectorIconButton(ops[i], VectorIcon::None, ops[i], ImVec2(0, 22), col)) {
+                    ui.gizmo_operation = i;
+                }
+                DrawTooltip(op_tips[i]);
+                ImGui::SameLine(0, 3.0f);
             }
 
             ImGui::SameLine(0, 4.0f);
@@ -566,13 +770,18 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
 
             // Space buttons
             const char* spaces[] = { "Local", "World" };
+            const char* space_tips[] = {
+                "Local Space: Orient Gizmo along entity's local rotation axes.",
+                "World Space: Orient Gizmo along fixed global XYZ axes."
+            };
             for (int i = 0; i < 2; ++i) {
                 const bool sel = (ui.gizmo_space == i);
-                if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(40, 150, 90, 240));
-                else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
-                if (ImGui::Button(spaces[i])) ui.gizmo_space = i;
-                ImGui::PopStyleColor();
-                ImGui::SameLine();
+                const ImU32 col = sel ? IM_COL32(40, 150, 90, 240) : 0;
+                if (VectorIconButton(spaces[i], VectorIcon::None, spaces[i], ImVec2(0, 22), col)) {
+                    ui.gizmo_space = i;
+                }
+                DrawTooltip(space_tips[i]);
+                ImGui::SameLine(0, 3.0f);
             }
 
             ImGui::SameLine(0, 4.0f);
@@ -581,15 +790,17 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
 
             // Snap toggle button
             const bool snap_active = ui.snap_enabled;
-            if (snap_active) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 130, 40, 240));
-            else             ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
-            if (ImGui::Button("Snap")) ui.snap_enabled = !ui.snap_enabled;
-            ImGui::PopStyleColor();
+            const ImU32 snap_col = snap_active ? IM_COL32(200, 130, 40, 240) : 0;
+            if (VectorIconButton("vp_snap", VectorIcon::None, "Snap", ImVec2(0, 22), snap_col)) {
+                ui.snap_enabled = !ui.snap_enabled;
+            }
+            DrawTooltip("Toggle grid and angle snapping during transform manipulation.");
 
             if (ui.snap_enabled) {
                 ImGui::SameLine(0, 4.0f);
                 ImGui::SetNextItemWidth(45.0f);
                 ImGui::DragFloat("##snap_val", &ui.snap_position.x, 0.05f, 0.01f, 10.0f, "%.2f");
+                DrawTooltip("Position snap increment in meters.");
             }
 
             ImGui::SameLine(0, 4.0f);
@@ -598,21 +809,23 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
 
             // Stats HUD toggle button
             const bool stats_active = ui.show_stats_overlay;
-            if (stats_active) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(110, 60, 210, 240));
-            else              ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
-            if (ImGui::Button("Stats HUD")) ui.show_stats_overlay = !ui.show_stats_overlay;
-            ImGui::PopStyleColor();
+            const ImU32 stats_col = stats_active ? IM_COL32(110, 60, 210, 240) : 0;
+            if (VectorIconButton("vp_stats", VectorIcon::None, "Stats HUD", ImVec2(0, 22), stats_col)) {
+                ui.show_stats_overlay = !ui.show_stats_overlay;
+            }
+            DrawTooltip("Toggle real-time performance & ray statistics HUD overlay.");
 
             ImGui::SameLine(0, 4.0f);
             ImGui::TextDisabled("|");
             ImGui::SameLine(0, 4.0f);
 
-            // 3D Visualizers toggle button
+            // 3D Visualizers toggle button with Eye vector icon
             const bool viz_active = ui.show_visualizers;
-            if (viz_active) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(30, 160, 180, 240));
-            else            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
-            if (ImGui::Button("👁️ Overlays")) ui.show_visualizers = !ui.show_visualizers;
-            ImGui::PopStyleColor();
+            const ImU32 viz_col = viz_active ? IM_COL32(30, 160, 180, 240) : 0;
+            if (VectorIconButton("vp_overlays", VectorIcon::Eye, "Overlays", ImVec2(82, 22), viz_col)) {
+                ui.show_visualizers = !ui.show_visualizers;
+            }
+            DrawTooltip("Toggle 3D visualizers for light bounds, camera frustums, and bounding boxes.");
 
             ImGui::SameLine(0, 4.0f);
             ImGui::TextDisabled("|");
@@ -620,34 +833,70 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
 
             // Play Mode quick buttons in Viewport
             if (ui.play_state == UiState::PlayState::Edit) {
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
-                if (ImGui::Button("▶ Play")) ui.request_play = true;
-                ImGui::PopStyleColor();
+                if (VectorIconButton("vp_play", VectorIcon::Play, "Play", ImVec2(65, 22), IM_COL32(38, 145, 75, 230))) {
+                    ui.request_play = true;
+                }
+                DrawTooltip("Play Mode (Cmd+P / Ctrl+P): Snapshots scene and begins physics simulation.");
             } else {
-                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(185, 45, 45, 230));
-                if (ImGui::Button("⏹ Stop")) ui.request_stop = true;
-                ImGui::PopStyleColor();
+                if (VectorIconButton("vp_stop", VectorIcon::Stop, "Stop", ImVec2(65, 22), IM_COL32(185, 45, 45, 230))) {
+                    ui.request_stop = true;
+                }
+                DrawTooltip("Stop Mode (Cmd+P / Ctrl+P): Restores initial scene state.");
 
                 ImGui::SameLine(0, 4.0f);
                 if (ui.play_state == UiState::PlayState::Playing) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(195, 145, 25, 230));
-                    if (ImGui::Button("⏸ Pause")) ui.request_pause = true;
-                    ImGui::PopStyleColor();
+                    if (VectorIconButton("vp_pause", VectorIcon::Pause, "Pause", ImVec2(70, 22), IM_COL32(195, 145, 25, 230))) {
+                        ui.request_pause = true;
+                    }
+                    DrawTooltip("Pause Simulation (Cmd+Shift+P / Ctrl+Shift+P)");
                 } else {
-                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
-                    if (ImGui::Button("▶ Resume")) ui.request_play = true;
-                    ImGui::PopStyleColor();
+                    if (VectorIconButton("vp_resume", VectorIcon::Play, "Resume", ImVec2(75, 22), IM_COL32(38, 145, 75, 230))) {
+                        ui.request_play = true;
+                    }
+                    DrawTooltip("Resume Simulation (Cmd+Shift+P / Ctrl+Shift+P)");
 
                     ImGui::SameLine(0, 4.0f);
-                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 105, 195, 230));
-                    if (ImGui::Button("⏭ Step")) ui.request_step = true;
-                    ImGui::PopStyleColor();
+                    if (VectorIconButton("vp_step", VectorIcon::Step, "Step", ImVec2(65, 22), IM_COL32(45, 105, 195, 230))) {
+                        ui.request_step = true;
+                    }
+                    DrawTooltip("Step 1 Frame (Cmd+. / Ctrl+.)");
                 }
             }
         }
         ImGui::EndChild();
         ImGui::PopStyleVar(6);
         ImGui::PopStyleColor(2);
+
+        // ---- Top-Right Play State Badge with ImAnim pulsing animation ----
+        if (ui.play_state != UiState::PlayState::Edit) {
+            ImGui::SetCursorPos(ImVec2(img_offset.x + size.x - 120.0f, img_offset.y + 10.0f));
+            float alpha = 0.9f;
+            if (ui.enable_ui_animations) {
+                alpha = 0.75f + iam_oscillate(ImGui::GetID("badge_pulse"), 0.2f, 2.5f, iam_wave_sine, 0.0f, ImGui::GetIO().DeltaTime);
+            }
+            if (ui.play_state == UiState::PlayState::Playing) {
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.50f, 0.25f, alpha));
+                ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(50, 200, 100, 240));
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.65f, 0.45f, 0.10f, alpha));
+                ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(240, 180, 50, 240));
+            }
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
+            if (ImGui::BeginChild("PlayBadge", ImVec2(110.0f, 26.0f), 0, ImGuiWindowFlags_NoScrollbar)) {
+                if (ui.play_state == UiState::PlayState::Playing) {
+                    ImGui::TextColored(ImVec4(1, 1, 1, 1), "● PLAYING");
+                    DrawTooltip("Simulation is active. Physics & gameplay ticks are running in real-time.");
+                } else {
+                    ImGui::TextColored(ImVec4(1, 1, 1, 1), "⏸ PAUSED");
+                    DrawTooltip("Simulation is paused. Use Step (Cmd+.) to advance by 1 tick.");
+                }
+            }
+            ImGui::EndChild();
+            ImGui::PopStyleVar(3);
+            ImGui::PopStyleColor(2);
+        }
 
         // Draw Stats Overlay directly on Viewport if enabled
         if (ui.show_stats_overlay) {
@@ -1199,6 +1448,7 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
                 rb->type = static_cast<BodyType>(type_idx);
                 rb->body = BodyHandle{};
             }
+            DrawTooltip("Body Type:\n• Static: Immovable collider (ground, walls, obstacles)\n• Dynamic: Falls under gravity and reacts to collisions\n• Kinematic: Moved by script/transform without physical forces.");
 
             const char* shape_types[] = { "Box", "Sphere", "Capsule", "Plane", "Mesh" };
             int shape_idx = static_cast<int>(rb->shape);
@@ -1206,17 +1456,30 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
                 rb->shape = static_cast<ShapeType>(shape_idx);
                 rb->body = BodyHandle{};
             }
+            DrawTooltip("Collider Shape: Geometric collision primitive used in Jolt physics.");
 
             if (rb->type == BodyType::Dynamic) {
                 ImGui::DragFloat("Mass (kg)", &rb->mass, 0.1f, 0.01f, 10000.0f, "%.2f");
+                DrawTooltip("Mass in kilograms. Determines inertia and momentum in collisions.");
+
                 ImGui::DragFloat("Gravity Scale", &rb->gravity_scale, 0.05f, 0.0f, 10.0f, "%.2f");
+                DrawTooltip("Gravity multiplier. 1.0 = standard gravity (-9.81 m/s²).");
+
                 ImGui::SliderFloat("Linear Damping", &rb->linear_damping, 0.0f, 1.0f);
+                DrawTooltip("Air drag slowing linear velocity over time.");
+
                 ImGui::SliderFloat("Angular Damping", &rb->angular_damping, 0.0f, 1.0f);
+                DrawTooltip("Rotational drag slowing angular spin over time.");
             }
 
             ImGui::SliderFloat("Friction", &rb->friction, 0.0f, 1.0f);
+            DrawTooltip("Coulomb surface friction coefficient (0.0 = ice, 1.0 = rubber).");
+
             ImGui::SliderFloat("Restitution", &rb->restitution, 0.0f, 1.0f);
+            DrawTooltip("Restitution (Bounciness): 0.0 = completely inelastic, 1.0 = perfectly elastic bounce.");
+
             ImGui::Checkbox("Simulate", &rb->is_active);
+            DrawTooltip("Enable or disable physics simulation for this entity.");
 
             ImGui::Separator();
             if (ImGui::Button("Remove Physics", ImVec2(-1.0f, 22.0f))) {
@@ -1235,6 +1498,7 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
                 }
                 entities.Add<RigidBody>(ui.selection, rb);
             }
+            DrawTooltip("Attach a Jolt physics RigidBody component to this entity.");
             EndSection();
         }
     }
@@ -1246,8 +1510,10 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
             if (ImGui::Combo("Light Type", &type_idx, light_types, 4)) {
                 light->type = static_cast<LightType>(type_idx);
             }
+            DrawTooltip("Light Type:\n• Point: Radiates omnidirectionally in all directions\n• Directional: Parallel sunlight with soft shadows\n• Spot: Focused conical beam\n• Area: Rectangular diffuse light.");
 
             ImGui::ColorEdit3("Color", glm::value_ptr(light->color));
+            DrawTooltip("Light emission RGB color.");
 
             // Quick Color Temperature presets
             ImGui::TextDisabled("Color Temp:");
@@ -1261,7 +1527,10 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
             if (ImGui::SmallButton("Sky 9000K"))      light->color = Vec3(0.80f, 0.88f, 1.00f);
 
             ImGui::DragFloat("Intensity", &light->intensity, 0.5f, 0.0f, 10000.0f, "%.1f");
+            DrawTooltip("Luminous flux / emission intensity.");
+
             ImGui::DragFloat("Radius / Range", &light->radius, 0.05f, 0.01f, 100.0f, "%.2f");
+            DrawTooltip("Maximum distance of illumination reach.");
 
             if (light->type == LightType::Directional || light->type == LightType::Spot) {
                 ImGui::Separator();
@@ -1269,14 +1538,18 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
                 if (glm::length(light->direction) > 0.001f) {
                     light->direction = glm::normalize(light->direction);
                 }
+                DrawTooltip("Orientation direction vector of the light beam.");
             }
 
             if (light->type == LightType::Spot) {
                 ImGui::SliderFloat("Inner Cone", &light->inner_angle, 1.0f, 89.0f, "%.1f deg");
+                DrawTooltip("Full intensity inner beam cone angle in degrees.");
                 ImGui::SliderFloat("Outer Cone", &light->outer_angle, light->inner_angle, 90.0f, "%.1f deg");
+                DrawTooltip("Falloff outer boundary cone angle in degrees.");
             }
 
             ImGui::Checkbox("Cast Shadows", &light->cast_shadows);
+            DrawTooltip("Enable ray-traced soft shadow casting from this light.");
             EndSection();
         }
     }
@@ -1942,6 +2215,282 @@ void DebugUI::DrawViewportVisualizers(World& world, const UiState& ui, const Cam
             }
         }
     }
+}
+
+void DebugUI::DrawManualModal(UiState& ui) {
+    if (!ui.show_manual_modal) return;
+
+    ImGui::SetNextWindowSize(ImVec2(840, 580), ImGuiCond_FirstUseEver);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(18, 20, 26, 250));
+    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(65, 75, 95, 220));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 14));
+
+    if (ImGui::Begin("Manual & Controls Reference", &ui.show_manual_modal,
+                     ImGuiWindowFlags_NoCollapse)) {
+
+        if (ImGui::BeginTabBar("ManualTabs", ImGuiTabBarFlags_None)) {
+            // Tab 1: Navigation & Camera
+            if (ImGui::BeginTabItem("Navigation & Camera")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Viewport Navigation & Camera Fly Controls");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("NavTable", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
+                    ImGui::TableSetupColumn("Action / Control", ImGuiTableColumnFlags_WidthFixed, 220.0f);
+                    ImGui::TableSetupColumn("Key / Gesture & Description", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& entry : manual::kNavigationEntries) {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "%s", entry.label);
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted(entry.description);
+                    }
+
+                    ImGui::EndTable();
+                }
+                ImGui::EndTabItem();
+            }
+
+            // Tab 2: Gizmo & Transforms
+            if (ImGui::BeginTabItem("Gizmo & Editing")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Transform Gizmo & Scene Editing");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("GizmoTable", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
+                    ImGui::TableSetupColumn("Shortcut / Control", ImGuiTableColumnFlags_WidthFixed, 220.0f);
+                    ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& entry : manual::kGizmoEntries) {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "%s", entry.label);
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted(entry.description);
+                    }
+
+                    ImGui::EndTable();
+                }
+                ImGui::EndTabItem();
+            }
+
+            // Tab 3: Play Mode & Physics
+            if (ImGui::BeginTabItem("Play Mode & Physics")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Jolt Physics Simulation & Play Mode");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::TextWrapped("Lucida features an integrated Jolt Physics world with Play Mode state isolation. "
+                                   "When you click Play, the engine takes a non-destructive ECS World Snapshot. "
+                                   "On Stop, all entity transforms, velocities, and hierarchies are restored.");
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("PlayTable", 2, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
+                    ImGui::TableSetupColumn("Control / Shortcut", ImGuiTableColumnFlags_WidthFixed, 220.0f);
+                    ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& entry : manual::kPlayModeEntries) {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "%s", entry.label);
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted(entry.description);
+                    }
+
+                    ImGui::EndTable();
+                }
+                ImGui::EndTabItem();
+            }
+
+            // Tab 4: Materials & Rendering
+            if (ImGui::BeginTabItem("Materials & Rendering")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "PBR Materials & Ray Tracing Engine");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                for (const auto* bullet : manual::kRenderingBullets) {
+                    ImGui::BulletText("%s", bullet);
+                }
+                ImGui::EndTabItem();
+            }
+
+            // Tab 5: Keyboard Shortcuts Reference Sheet
+            if (ImGui::BeginTabItem("Hotkeys Reference")) {
+                static char search_filter[64] = "";
+                ImGui::Spacing();
+                ImGui::SetNextItemWidth(260.0f);
+                ImGui::InputTextWithHint("##filter", "Search hotkeys...", search_filter, sizeof(search_filter));
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Clear")) search_filter[0] = '\0';
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::BeginTable("HotkeysTable", 3, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, 300))) {
+                    ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+                    ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+                    ImGui::TableSetupColumn("Description", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableHeadersRow();
+
+                    for (const auto& hk : manual::kHotkeys) {
+                        if (search_filter[0] != '\0') {
+                            std::string f(search_filter);
+                            std::transform(f.begin(), f.end(), f.begin(), ::tolower);
+                            std::string all = std::string(hk.category) + " " + hk.shortcut + " " + hk.description;
+                            std::transform(all.begin(), all.end(), all.begin(), ::tolower);
+                            if (all.find(f) == std::string::npos) continue;
+                        }
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextDisabled("%s", hk.category);
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "%s", hk.shortcut);
+                        ImGui::TableNextColumn();
+                        ImGui::TextUnformatted(hk.description);
+                    }
+
+                    ImGui::EndTable();
+                }
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Close (ESC)", ImVec2(120, 26))) {
+            ui.show_manual_modal = false;
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
+}
+
+void DebugUI::DrawPreferencesWindow(UiState& ui, CameraController& camera, RenderSettings& settings) {
+    if (!ui.show_preferences_window) return;
+
+    ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(20, 22, 28, 250));
+    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(65, 75, 95, 220));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 12));
+
+    if (ImGui::Begin("⚙ Preferences & Settings", &ui.show_preferences_window)) {
+        if (ImGui::BeginTabBar("PrefTabs", ImGuiTabBarFlags_None)) {
+            // Tab 1: Camera & Viewport
+            if (ImGui::BeginTabItem("🎮 Viewport & Camera")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Camera Navigation Settings");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::SliderFloat("Fly Speed (m/s)", &camera.Tuning().fly_speed, 0.5f, 30.0f, "%.1f m/s");
+                DrawTooltip("Base movement speed when navigating with RMB + WASD.");
+
+                ImGui::SliderFloat("Sprint Multiplier", &camera.Tuning().sprint_mul, 1.5f, 5.0f, "%.1fx");
+                DrawTooltip("Multiplier applied to fly speed while holding Shift.");
+
+                ImGui::SliderFloat("Look Sensitivity", &camera.Tuning().look_sensitivity, 0.0005f, 0.010f, "%.4f");
+                DrawTooltip("Mouse rotation sensitivity.");
+
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Visual Overlays");
+                ImGui::Separator();
+                ImGui::Checkbox("Show 3D Visualizers by default", &ui.show_visualizers);
+                DrawTooltip("Render light bounding spheres, camera frustums, and bounding boxes in viewport.");
+                ImGui::Checkbox("Show Real-time Stats Overlay", &ui.show_stats_overlay);
+                DrawTooltip("Display FPS, ray count, bounce depth, and timing overlay inside the viewport.");
+
+                ImGui::EndTabItem();
+            }
+
+            // Tab 2: Gizmo & Snapping
+            if (ImGui::BeginTabItem("📐 Gizmo & Snapping")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Gizmo Snapping Increments");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::Checkbox("Enable Snapping", &ui.snap_enabled);
+                DrawTooltip("Toggle grid and angle snapping during transform manipulation.");
+
+                ImGui::DragFloat("Position Snap Step (m)", &ui.snap_position.x, 0.05f, 0.01f, 10.0f, "%.2f m");
+                DrawTooltip("Grid increment for position translation.");
+                ui.snap_position.y = ui.snap_position.x;
+                ui.snap_position.z = ui.snap_position.x;
+
+                ImGui::DragFloat("Rotation Snap Step (°)", &ui.snap_rotation, 1.0f, 1.0f, 90.0f, "%.1f°");
+                DrawTooltip("Angle increment for rotation (e.g. 15°, 45°, 90°).");
+
+                ImGui::DragFloat("Scale Snap Step", &ui.snap_scale, 0.05f, 0.01f, 2.0f, "%.2f");
+                DrawTooltip("Scale factor increment.");
+
+                ImGui::EndTabItem();
+            }
+
+            // Tab 3: Interface & Animations (ImAnim)
+            if (ImGui::BeginTabItem("✨ Interface & Animations")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "ImAnim UI Motion & Transitions");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::Checkbox("Enable UI Animations (ImAnim)", &ui.enable_ui_animations);
+                DrawTooltip("Enable smooth tweening, button lift transitions, and pulsating status badges.");
+
+                if (ui.enable_ui_animations) {
+                    ImGui::SliderFloat("Animation Speed Scale", &ui.animation_speed, 0.25f, 3.0f, "%.2fx");
+                    DrawTooltip("Global animation speed factor. 1.0x is standard speed.");
+                    iam_set_global_time_scale(ui.animation_speed);
+                }
+
+                ImGui::Checkbox("Show Interactive Tooltips on Hover", &ui.show_tooltips);
+                DrawTooltip("Show explanatory tooltips and hotkey hints when hovering over editor controls.");
+
+                ImGui::EndTabItem();
+            }
+
+            // Tab 4: Renderer Defaults
+            if (ImGui::BeginTabItem("🌄 Renderer Defaults")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Rendering Quality Defaults");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::SliderFloat("Render Resolution Scale", &settings.render_scale, 0.25f, 2.0f, "%.2fx");
+                DrawTooltip("Internal rendering resolution multiplier relative to viewport panel.");
+
+                ImGui::SliderInt("Max Ray Tracing Depth", &settings.max_depth, 1, 16);
+                DrawTooltip("Maximum recursion depth for specular reflections and glass refractions.");
+
+                ImGui::Checkbox("Volumetric Height Fog", &settings.fog);
+                DrawTooltip("Enable atmospheric distance fog.");
+
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Done", ImVec2(100, 24))) {
+            ui.show_preferences_window = false;
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(2);
 }
 
 } // namespace lucida
