@@ -35,7 +35,7 @@ constexpr std::array<Binding, 16> kBindings{{
     {SDL_SCANCODE_SPACE,  Action::Jump},
     {SDL_SCANCODE_LCTRL,  Action::Crouch},
     {SDL_SCANCODE_C,      Action::Crouch},
-    {SDL_SCANCODE_TAB,    Action::ToggleMenu},
+    {SDL_SCANCODE_TAB,    Action::ToggleEditMode},
     {SDL_SCANCODE_ESCAPE, Action::ToggleMenu},
     {SDL_SCANCODE_V,      Action::ToggleFog},
     {SDL_SCANCODE_F,      Action::ToggleGameMode},

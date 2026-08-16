@@ -9,6 +9,7 @@
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-blue.svg">
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
   <img alt="Renderer" src="https://img.shields.io/badge/renderer-Metal%20ray%20tracing-orange.svg">
+  <a href="https://github.com/BlackLineInteractive/Lucida/actions"><img alt="CI Multi-Platform Matrix" src="https://github.com/BlackLineInteractive/Lucida/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 <p align="center">
@@ -88,9 +89,7 @@ cmake --build build -j
 | macOS 13+ | Universal (x86\_64 + arm64) | Metal + MetalFX | `LUCIDA_MACOS_UNIVERSAL=ON` |
 | Linux (Debian / Ubuntu) | x86\_64 | OpenGL 4.3 compute | Backend not yet ported to `IRenderBackend` |
 | Linux (Debian / Ubuntu) | arm64 (RPi 5, Jetson) | OpenGL ES 3.1 compute | Same — stub only |
-| Linux (Debian / Ubuntu) | x86 (32-bit) | OpenGL 4.3 compute | Same — stub only |
 | Windows 10+ | x86\_64 | OpenGL 4.3 / Vulkan | Stub only (M13) |
-| Windows 10+ | x86 (32-bit) | OpenGL 4.3 | Stub only |
 | Windows 10+ | arm64 (Snapdragon X) | Vulkan | Stub only (M13) |
 
 Core, runtime, resource, physics, input and framework build on all targets. Exactly one
@@ -106,22 +105,14 @@ cmake -B build -G Ninja
 cmake --build build -j
 ```
 
-**Debian / Ubuntu (x86 / 32-bit)**
+**Windows (MSVC x86\_64)**
 
 ```bash
-sudo apt install build-essential cmake ninja-build libsdl2-dev:i386 libassimp-dev:i386 gcc-multilib
-cmake -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-x86.cmake
-cmake --build build -j
-```
-
-**Windows (MSVC x86\_64 or x86)**
-
-```bash
-cmake -B build -G "Visual Studio 17 2022" -A x64   # or -A Win32 for 32-bit
+cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config RelWithDebInfo
 ```
 
-**Windows (Clang-cl / arm64)**
+**Windows (MSVC arm64 / Snapdragon X)**
 
 ```bash
 cmake -B build -G "Visual Studio 17 2022" -A ARM64

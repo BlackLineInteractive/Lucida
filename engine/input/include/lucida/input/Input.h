@@ -15,7 +15,7 @@ namespace lucida {
 enum class Action : u8 {
     MoveForward, MoveBack, MoveLeft, MoveRight,
     Sprint, Jump, Crouch,
-    ToggleMenu, ToggleFog, ToggleGameMode, ToggleFullscreen,
+    ToggleMenu, ToggleFog, ToggleGameMode, ToggleFullscreen, ToggleEditMode,
     Count
 };
 
