@@ -60,4 +60,66 @@ void CameraController::FixedUpdate(const InputState& input, f32 dt) {
     }
 }
 
+void CameraController::LookAt(const Vec3& eye, const Vec3& target) {
+    m_camera.position = eye;
+    const Vec3 dir = target - eye;
+    const f32 len = glm::length(dir);
+    if (len > kEpsilon) {
+        const Vec3 ndir = dir / len;
+        m_camera.yaw   = std::atan2(ndir.z, ndir.x);
+        m_camera.pitch = std::asin(Clamp(ndir.y, -0.999f, 0.999f));
+    }
+}
+
+void CameraController::Focus(const Vec3& target, f32 distance) {
+    const f32 dist = std::max(distance, 1.0f);
+    const Vec3 fwd = m_camera.Forward();
+    m_camera.position = target - fwd * dist;
+}
+
+void CameraController::SetViewPreset(ViewPreset preset, const Vec3& target) {
+    const f32 dist = std::max(glm::length(m_camera.position - target), 6.0f);
+    switch (preset) {
+    case ViewPreset::Top:
+        m_camera.position = target + Vec3(0.0f, dist, 0.001f);
+        m_camera.pitch = -kHalfPi + 0.001f;
+        m_camera.yaw = -kHalfPi;
+        break;
+    case ViewPreset::Bottom:
+        m_camera.position = target - Vec3(0.0f, dist, 0.001f);
+        m_camera.pitch = kHalfPi - 0.001f;
+        m_camera.yaw = -kHalfPi;
+        break;
+    case ViewPreset::Front:
+        m_camera.position = target + Vec3(0.0f, 1.5f, dist);
+        LookAt(m_camera.position, target + Vec3(0.0f, 1.0f, 0.0f));
+        break;
+    case ViewPreset::Back:
+        m_camera.position = target - Vec3(0.0f, -1.5f, dist);
+        LookAt(m_camera.position, target + Vec3(0.0f, 1.0f, 0.0f));
+        break;
+    case ViewPreset::Right:
+        m_camera.position = target + Vec3(dist, 1.5f, 0.0f);
+        LookAt(m_camera.position, target + Vec3(0.0f, 1.0f, 0.0f));
+        break;
+    case ViewPreset::Left:
+        m_camera.position = target - Vec3(dist, -1.5f, 0.0f);
+        LookAt(m_camera.position, target + Vec3(0.0f, 1.0f, 0.0f));
+        break;
+    case ViewPreset::Isometric:
+        m_camera.position = target + Vec3(dist * 0.7f, dist * 0.7f, dist * 0.7f);
+        LookAt(m_camera.position, target);
+        break;
+    case ViewPreset::Reset:
+        m_camera.position = Vec3(0.0f, 3.0f, 8.0f);
+        LookAt(m_camera.position, Vec3(0.0f, 1.0f, 0.0f));
+        break;
+    }
+}
+
+void CameraController::AdjustSpeed(f32 delta) {
+    m_tuning.fly_speed = Clamp(m_tuning.fly_speed + delta, 0.5f, 50.0f);
+    m_tuning.walk_speed = Clamp(m_tuning.walk_speed + delta * 0.75f, 0.5f, 30.0f);
+}
+
 } // namespace lucida

@@ -62,6 +62,9 @@ inline Entity CreateLight(Registry& registry, const Vec3& position, const Vec3& 
 Entity CreateTerrain(Registry& registry, SceneAssets& assets, const TerrainComponent& config,
                      i32 material, const std::string& name = {});
 
+Entity CreateCamera(Registry& registry, const Vec3& position, f32 fov = 60.0f,
+                    ProjectionType proj = ProjectionType::Perspective, const std::string& name = {});
+
 const char* PrimitiveTypeName(PrimitiveType type);
 const char* LightTypeName(LightType type);
 

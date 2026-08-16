@@ -97,6 +97,20 @@ struct TerrainComponent {
     bool dirty       = false;    // Marks mesh needs regeneration
 };
 
+// Projection type for camera components
+enum class ProjectionType : u8 { Perspective = 0, Orthographic };
+
+// Camera component for in-scene game cameras
+struct CameraComponent {
+    ProjectionType projection = ProjectionType::Perspective;
+    f32 fov = 60.0f;           // Vertical FOV in degrees (perspective)
+    f32 ortho_size = 10.0f;    // Size in units (orthographic)
+    f32 near_clip = 0.1f;
+    f32 far_clip = 1000.0f;
+    bool is_primary = true;    // Main active scene camera
+    f32 exposure = 1.0f;       // Exposure adjustment
+};
+
 // Marks the entity the viewport camera follows. Zero or one per world.
 struct CameraTag {};
 

@@ -20,24 +20,20 @@
 
 ---
 
-A modular real-time ray tracing engine, aimed narrowly at **procedural materials and
-selective ray tracing** - spending rays only where they are visible so ray-traced games
-run on ordinary hardware.
+A modular real-time ray tracing **Graphics and Game Engine**, aimed narrowly at **procedural materials and selective ray tracing** - spending rays only where they are visible so ray-traced games run on ordinary hardware.
 
-Architecture follows three sources strictly: **Game Engine Architecture** (Gregory) for
-layering and subsystem inventory, **Game Programming Patterns** (Nystrom) for the
-patterns inside those layers, **Data-Oriented Design** (Fabian) for memory layout.
+Architecture follows three sources strictly: **Game Engine Architecture** (Gregory) for layering and subsystem inventory, **Game Programming Patterns** (Nystrom) for the patterns inside those layers, **Data-Oriented Design** (Fabian) for memory layout.
 
 * Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 * Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
 * Frame and memory budgets, and where a small engine beats a large one: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
 
 <p align="center">
-  <img src="media/0.1.png" alt="Lucida Engine" width="100%">
+  <img src="media/0.2.png" alt="Lucida Engine 0.2 Viewport" width="100%">
 </p>
 
 <p align="center">
-  <img src="media/0.1(2).png" alt="Lucida Engine" width="100%">
+  <img src="media/0.2(2).png" alt="Lucida Engine 0.2 Editor" width="100%">
 </p>
 
 ## Where it stands
@@ -159,15 +155,17 @@ looking at a window.
 
 ### Controls
 
-| Keys | Action |
+| Keys / Mouse | Action |
 | --- | --- |
-| W A S D | move |
-| Shift | sprint |
-| Space / Ctrl | jump and crouch (walk) or up and down (fly) |
-| F | toggle walk / fly |
-| Tab, Esc | menu and cursor |
-| V | fog |
-| F11 | fullscreen |
+| RMB + Mouse | Look around in Viewport / Game mode |
+| RMB + W A S D | Fly camera movement |
+| RMB + Q / E | Fly down / up |
+| RMB + Shift | Sprint speed boost |
+| RMB + Scroll | Adjust camera fly speed on the fly |
+| F | Focus camera on selected object |
+| T / R / S (1 / 2 / 3) | Switch Gizmo mode (Translate / Rotate / Scale) |
+| Tab / Esc | Toggle UI overlay and cursor capture |
+| F11 | Toggle Fullscreen |
 
 ---
 

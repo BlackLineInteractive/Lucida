@@ -241,7 +241,28 @@ public:
         } else {
             m_platform->SetMouseCaptured(false);
         }
-        m_renderer->SetCamera(m_camera.Camera());
+
+        CameraState active_camera = m_camera.Camera();
+
+        if (m_ui_state.camera_source == UiState::CameraSource::GameCamera) {
+            // Find active in-scene camera entity
+            for (auto [e, cam, lt] : world.Entities().View<CameraComponent, LocalTransform>().each()) {
+                if (cam.is_primary) {
+                    active_camera.position = lt.position;
+                    const Vec3 fwd = lt.rotation * Vec3(0, 0, -1);
+                    const f32 len = glm::length(fwd);
+                    if (len > kEpsilon) {
+                        const Vec3 ndir = fwd / len;
+                        active_camera.yaw   = std::atan2(ndir.z, ndir.x);
+                        active_camera.pitch = std::asin(Clamp(ndir.y, -0.999f, 0.999f));
+                    }
+                    active_camera.fov_y = glm::radians(cam.fov);
+                    break;
+                }
+            }
+        }
+
+        m_renderer->SetCamera(active_camera);
 
         i32 w = 0, h = 0;
         m_platform->GetDrawableSize(w, h);

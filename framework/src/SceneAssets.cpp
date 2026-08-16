@@ -244,4 +244,19 @@ Entity CreateTerrain(Registry& registry, SceneAssets& assets, const TerrainCompo
     return entity;
 }
 
+Entity CreateCamera(Registry& registry, const Vec3& position, f32 fov,
+                    ProjectionType proj, const std::string& name) {
+    const Entity entity = registry.Create(name.empty() ? (proj == ProjectionType::Perspective ? "Main Camera" : "Ortho Camera") : name);
+    registry.Get<LocalTransform>(entity)->position = position;
+    CameraComponent cam{};
+    cam.fov = fov;
+    cam.projection = proj;
+    cam.is_primary = true;
+    registry.Add<CameraComponent>(entity, cam);
+    registry.Add<Visibility>(entity, Visibility{true});
+    registry.Raw().emplace_or_replace<SceneGraphNode>(entity);
+    registry.Add<LocalBounds>(entity, LocalBounds{Vec3(-0.3f), Vec3(0.3f)});
+    return entity;
+}
+
 } // namespace lucida

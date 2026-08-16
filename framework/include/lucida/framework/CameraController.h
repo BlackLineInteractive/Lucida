@@ -13,6 +13,10 @@ namespace lucida {
 
 enum class CameraMode : u8 { Fly, Walk };
 
+enum class ViewPreset : u8 {
+    Top, Bottom, Front, Back, Right, Left, Isometric, Reset
+};
+
 struct CameraTuning {
     f32 look_sensitivity = 0.003f;
     f32 walk_speed  = 4.5f;
@@ -23,6 +27,7 @@ struct CameraTuning {
     f32 eye_height  = 0.0f;    // standing eye level above the floor plane
     f32 crouch_drop = 0.5f;
     f32 pitch_limit = 1.5f;    // radians
+    f32 fov_degrees = 60.0f;
 };
 
 class CameraController {
@@ -40,6 +45,12 @@ public:
     void ToggleMode() { SetMode(m_mode == CameraMode::Fly ? CameraMode::Walk : CameraMode::Fly); }
 
     CameraTuning& Tuning() { return m_tuning; }
+    const CameraTuning& Tuning() const { return m_tuning; }
+
+    void LookAt(const Vec3& eye, const Vec3& target);
+    void Focus(const Vec3& target, f32 distance = 5.0f);
+    void SetViewPreset(ViewPreset preset, const Vec3& target = Vec3(0.0f));
+    void AdjustSpeed(f32 delta);
 
 private:
     CameraState  m_camera;

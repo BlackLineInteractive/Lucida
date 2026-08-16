@@ -58,6 +58,13 @@ struct UiState {
     scenes::BuiltIn scene = scenes::BuiltIn::Empty;
     bool request_scene_reload = false;
     std::string pending_model_path;   // non-empty when the user picked a file
+
+    // Camera view source: Editor Viewport Camera vs In-Scene Game Camera
+    enum class CameraSource : u8 { Viewport = 0, GameCamera };
+    CameraSource camera_source = CameraSource::Viewport;
+
+    // Viewport 3D line gizmo & frustum visualizers (cameras, lights, bounds)
+    bool show_visualizers = true;
 };
 
 class DebugUI {
@@ -82,10 +89,12 @@ private:
                       const RenderStats& stats, const RenderSettings& settings, const FrameTime& time);
     void DrawHierarchy(World& world, UiState& ui, SceneAssets& assets);
     void DrawSceneGraph(World& world, UiState& ui, Entity root_or_null);
-    void DrawInspector(World& world, UiState& ui, SceneAssets& assets);
+    void DrawInspector(World& world, UiState& ui, SceneAssets& assets, CameraController& camera);
     void DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSettings& settings, CameraController& camera);
     void DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect,
                    const ImVec2& image_min, const ImVec2& image_size);
+    void DrawViewportVisualizers(World& world, const UiState& ui, const CameraController& camera, f32 aspect,
+                                 const ImVec2& image_min, const ImVec2& image_size);
     void DrawStatsPanel(World& world, const SceneAssets& assets, const RenderStats& stats,
                         const FrameTime& time, const RenderSettings& settings, const UiState& ui);
     void DrawStatsOverlay(World& world, const SceneAssets& assets, const RenderStats& stats,

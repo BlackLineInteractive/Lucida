@@ -119,7 +119,7 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
     if (ui.show_viewport && viewport_texture)
         DrawViewport(world, ui, viewport_texture, viewport_aspect, camera, assets, stats, settings, time);
     if (ui.show_hierarchy) DrawHierarchy(world, ui, assets); // Calls DrawSceneGraph
-    if (ui.show_inspector) DrawInspector(world, ui, assets);
+    if (ui.show_inspector) DrawInspector(world, ui, assets, camera);
     if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
     if (ui.show_stats_panel)       DrawStatsPanel(world, assets, stats, time, settings, ui);
 
@@ -245,11 +245,23 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             rmb_started_in_viewport = false;
         ui.viewport_rmb = rmb_started_in_viewport;
 
-        // Hotkeys for Gizmo mode (when viewport is hovered and not flying camera)
+        // Hotkeys for Gizmo mode and Camera Focus (when viewport is hovered and not flying camera)
         if (image_hovered && !ui.viewport_rmb) {
             if (ImGui::IsKeyPressed(ImGuiKey_T, false) || ImGui::IsKeyPressed(ImGuiKey_1, false)) ui.gizmo_operation = 0;
             if (ImGui::IsKeyPressed(ImGuiKey_R, false) || ImGui::IsKeyPressed(ImGuiKey_2, false)) ui.gizmo_operation = 1;
             if (ImGui::IsKeyPressed(ImGuiKey_S, false) || ImGui::IsKeyPressed(ImGuiKey_3, false)) ui.gizmo_operation = 2;
+            
+            // F hotkey to Focus on selected entity
+            if (ImGui::IsKeyPressed(ImGuiKey_F, false) && ui.selection != kNullEntity) {
+                if (const LocalTransform* lt = world.Entities().Get<LocalTransform>(ui.selection)) {
+                    const_cast<CameraController&>(camera).Focus(lt->position, 4.0f);
+                }
+            }
+        }
+
+        // Adjust camera speed with Mouse Wheel while holding RMB (Unreal / Unity style)
+        if (ui.viewport_rmb && ImGui::GetIO().MouseWheel != 0.0f) {
+            const_cast<CameraController&>(camera).AdjustSpeed(ImGui::GetIO().MouseWheel * 1.0f);
         }
 
         // LMB click to select (no drag, not clicking/hovering gizmo handles).
@@ -266,7 +278,7 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             ui.selection = hit.entity;   // a miss clears the selection, as it should
         }
 
-        // ---- Gizmo Toolbar (Auto-resizing dark glass pill) ---------------
+        // ---- Viewport Toolbar (Auto-resizing dark glass pill) ---------------
         ImGui::SetCursorPos(ImVec2(img_offset.x + 10.0f, img_offset.y + 10.0f));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(14, 16, 22, 235));
         ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(55, 60, 75, 200));
@@ -280,6 +292,44 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
         if (ImGui::BeginChild("ViewportToolbar", ImVec2(0, 32.0f),
                                ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysUseWindowPadding,
                                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+            // Camera Source Selector
+            const char* cam_sources[] = { "🎥 Viewport", "🎬 Game Cam" };
+            int cur_cam = static_cast<int>(ui.camera_source);
+            ImGui::SetNextItemWidth(110.0f);
+            if (ImGui::Combo("##CamSource", &cur_cam, cam_sources, 2)) {
+                ui.camera_source = static_cast<UiState::CameraSource>(cur_cam);
+            }
+
+            ImGui::SameLine(0, 4.0f);
+            if (ImGui::Button("View ▼")) {
+                ImGui::OpenPopup("ViewPresetsPopup");
+            }
+            if (ImGui::BeginPopup("ViewPresetsPopup")) {
+                if (ImGui::MenuItem("Top (Y+)"))        const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Top);
+                if (ImGui::MenuItem("Bottom (Y-)"))     const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Bottom);
+                if (ImGui::MenuItem("Front (Z+)"))      const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Front);
+                if (ImGui::MenuItem("Back (Z-)"))       const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Back);
+                if (ImGui::MenuItem("Right (X+)"))      const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Right);
+                if (ImGui::MenuItem("Left (X-)"))       const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Left);
+                if (ImGui::MenuItem("Isometric"))       const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Isometric);
+                ImGui::Separator();
+                if (ImGui::MenuItem("Reset View"))      const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Reset);
+                ImGui::EndPopup();
+            }
+
+            if (ui.selection != kNullEntity) {
+                ImGui::SameLine(0, 4.0f);
+                if (ImGui::Button("🎯 Focus")) {
+                    if (const LocalTransform* lt = world.Entities().Get<LocalTransform>(ui.selection)) {
+                        const_cast<CameraController&>(camera).Focus(lt->position, 4.0f);
+                    }
+                }
+            }
+
+            ImGui::SameLine(0, 4.0f);
+            ImGui::TextDisabled("|");
+            ImGui::SameLine(0, 4.0f);
+
             // Mode buttons
             const char* ops[] = { "Translate (T)", "Rotate (R)", "Scale (S)" };
             for (int i = 0; i < 3; ++i) {
@@ -333,6 +383,17 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             else              ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
             if (ImGui::Button("Stats HUD")) ui.show_stats_overlay = !ui.show_stats_overlay;
             ImGui::PopStyleColor();
+
+            ImGui::SameLine(0, 4.0f);
+            ImGui::TextDisabled("|");
+            ImGui::SameLine(0, 4.0f);
+
+            // 3D Visualizers toggle button
+            const bool viz_active = ui.show_visualizers;
+            if (viz_active) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(30, 160, 180, 240));
+            else            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
+            if (ImGui::Button("👁️ Overlays")) ui.show_visualizers = !ui.show_visualizers;
+            ImGui::PopStyleColor();
         }
         ImGui::EndChild();
         ImGui::PopStyleVar(6);
@@ -341,6 +402,10 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
         // Draw Stats Overlay directly on Viewport if enabled
         if (ui.show_stats_overlay) {
             DrawStatsOverlay(world, assets, stats, time, settings, ui, image_min, size);
+        }
+
+        if (ui.show_visualizers) {
+            DrawViewportVisualizers(world, ui, camera, aspect, image_min, size);
         }
 
         DrawGizmo(world, ui, const_cast<CameraController&>(camera), aspect, image_min, size);
@@ -477,6 +542,16 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("Camera")) {
+            if (ImGui::MenuItem("Perspective Camera")) {
+                ui.selection = CreateCamera(entities, Vec3(0.0f, 2.0f, 6.0f), 60.0f, ProjectionType::Perspective, "Main Camera");
+            }
+            if (ImGui::MenuItem("Orthographic Camera")) {
+                ui.selection = CreateCamera(entities, Vec3(0.0f, 6.0f, 6.0f), 60.0f, ProjectionType::Orthographic, "Ortho Camera");
+            }
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("Light")) {
             if (ImGui::MenuItem("Point Light")) {
                 ui.selection = CreateLight(entities, LightType::Point, Vec3(0, 3, 0), Vec3(1.0f, 0.95f, 0.9f), 50.0f, 1.0f, Vec3(0,-1,0), "Point Light");
@@ -518,7 +593,7 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
     ImGui::End();
 }
 
-void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets) {
+void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, CameraController& camera) {
     if (!ImGui::Begin("Inspector", &ui.show_inspector)) {
         ImGui::End();
         return;
@@ -833,6 +908,42 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets) {
         }
     }
 
+    if (CameraComponent* cam = entities.Get<CameraComponent>(ui.selection)) {
+        if (BeginSection("Camera Component", true)) {
+            const char* proj_types[] = { "Perspective", "Orthographic" };
+            int cur_proj = static_cast<int>(cam->projection);
+            if (ImGui::Combo("Projection", &cur_proj, proj_types, 2)) {
+                cam->projection = static_cast<ProjectionType>(cur_proj);
+            }
+
+            if (cam->projection == ProjectionType::Perspective) {
+                ImGui::SliderFloat("Field of View", &cam->fov, 10.0f, 130.0f, "%.1f deg");
+            } else {
+                ImGui::DragFloat("Ortho Size", &cam->ortho_size, 0.1f, 0.1f, 100.0f, "%.1f m");
+            }
+
+            ImGui::DragFloat("Near Clip", &cam->near_clip, 0.01f, 0.001f, 10.0f, "%.3f m");
+            ImGui::DragFloat("Far Clip", &cam->far_clip, 1.0f, 10.0f, 10000.0f, "%.0f m");
+            ImGui::Checkbox("Main Scene Camera", &cam->is_primary);
+            ImGui::DragFloat("Exposure", &cam->exposure, 0.05f, 0.1f, 10.0f, "%.2f");
+
+            ImGui::Separator();
+            if (LocalTransform* lt = entities.Get<LocalTransform>(ui.selection)) {
+                if (ImGui::Button("🎬 Align Camera to View", ImVec2(-1.0f, 24.0f))) {
+                    lt->position = camera.Camera().position;
+                    const Vec3 fwd = camera.Camera().Forward();
+                    lt->rotation = glm::quatLookAt(fwd, Vec3(0, 1, 0));
+                }
+                if (ImGui::Button("🎥 Align View to Camera", ImVec2(-1.0f, 24.0f))) {
+                    const_cast<CameraController&>(camera).Camera().position = lt->position;
+                    const Vec3 fwd = lt->rotation * Vec3(0, 0, -1);
+                    const_cast<CameraController&>(camera).LookAt(lt->position, lt->position + fwd);
+                }
+            }
+            EndSection();
+        }
+    }
+
     if (Vehicle* vehicle = entities.Get<Vehicle>(ui.selection)) {
         if (BeginSection("Vehicle", true)) {
             ImGui::SliderFloat("Throttle", &vehicle->input.throttle, 0.0f, 1.0f);
@@ -896,11 +1007,29 @@ void DebugUI::DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSetti
     if (BeginSection("Navigation", true)) {
         const Vec3& p = camera.Camera().position;
         LabelledText("Position", "%.2f  %.2f  %.2f", p.x, p.y, p.z);
-        ImGui::SliderFloat("fly speed",   &camera.Tuning().fly_speed,  1.0f, 40.0f);
-        ImGui::SliderFloat("sprint mul",  &camera.Tuning().sprint_mul, 1.0f, 6.0f);
+        ImGui::SliderFloat("fly speed",   &camera.Tuning().fly_speed,  1.0f, 50.0f, "%.1f m/s");
+        ImGui::SliderFloat("sprint mul",  &camera.Tuning().sprint_mul, 1.0f, 6.0f, "%.1fx");
         ImGui::SliderFloat("sensitivity", &camera.Tuning().look_sensitivity, 0.0005f, 0.01f, "%.4f");
+        
+        f32 fov_deg = glm::degrees(camera.Camera().fov_y);
+        if (ImGui::SliderFloat("Field of View", &fov_deg, 30.0f, 120.0f, "%.0f deg")) {
+            const_cast<CameraController&>(camera).Camera().fov_y = glm::radians(fov_deg);
+        }
+
         ImGui::Separator();
-        ImGui::TextDisabled("RMB drag: look   WASD: move   Q/E: up/down   Shift: sprint");
+        ImGui::TextDisabled("View Presets:");
+        if (ImGui::Button("Top"))   const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Top);
+        ImGui::SameLine();
+        if (ImGui::Button("Front")) const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Front);
+        ImGui::SameLine();
+        if (ImGui::Button("Right")) const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Right);
+        ImGui::SameLine();
+        if (ImGui::Button("Iso"))   const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Isometric);
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) const_cast<CameraController&>(camera).SetViewPreset(ViewPreset::Reset);
+
+        ImGui::Separator();
+        ImGui::TextDisabled("RMB drag: look   WASD: move   Q/E: up/down   Shift: sprint   Wheel: speed");
         EndSection();
     }
 
@@ -1089,6 +1218,256 @@ void DebugUI::DrawStatsOverlay(World& world, const SceneAssets& assets, const Re
 
     std::snprintf(buf, sizeof(buf), "Rays: %d  |  Tris: %d", stats.ray_count, stats.tri_count);
     dl->AddText(cur, IM_COL32(170, 175, 190, 255), buf);
+}
+
+void DebugUI::DrawViewportVisualizers(World& world, const UiState& ui, const CameraController& camera, f32 aspect,
+                                     const ImVec2& image_min, const ImVec2& image_size) {
+    if (!ui.show_viewport || image_size.x <= 0 || image_size.y <= 0) return;
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    if (!draw_list) return;
+
+    const CameraState& cam = camera.Camera();
+    const Vec3 fwd   = cam.Forward();
+    const Vec3 right = cam.Right();
+    const Vec3 up    = cam.Up();
+
+    Mat4 view(1.0f);
+    view[0][0] = right.x; view[1][0] = right.y; view[2][0] = right.z; view[3][0] = -glm::dot(right, cam.position);
+    view[0][1] = up.x;    view[1][1] = up.y;    view[2][1] = up.z;    view[3][1] = -glm::dot(up,    cam.position);
+    view[0][2] = -fwd.x;  view[1][2] = -fwd.y;  view[2][2] = -fwd.z; view[3][2] =  glm::dot(fwd,  cam.position);
+    view[0][3] = 0;       view[1][3] = 0;       view[2][3] = 0;       view[3][3] = 1.0f;
+
+    Mat4 proj = glm::perspective(cam.fov_y, aspect, 0.01f, 1000.0f);
+    Mat4 view_proj = proj * view;
+
+    auto WorldToScreen = [&](const Vec3& p, ImVec2& out_screen) -> bool {
+        Vec4 clip = view_proj * Vec4(p, 1.0f);
+        if (clip.w <= 0.05f) return false;
+        Vec3 ndc = Vec3(clip) / clip.w;
+        if (ndc.z < -1.0f || ndc.z > 1.0f) return false;
+        out_screen.x = image_min.x + (ndc.x * 0.5f + 0.5f) * image_size.x;
+        out_screen.y = image_min.y + (-ndc.y * 0.5f + 0.5f) * image_size.y;
+        return true;
+    };
+
+    auto Draw3DLine = [&](const Vec3& a, const Vec3& b, ImU32 col, float thickness = 1.5f) {
+        ImVec2 sa, sb;
+        if (WorldToScreen(a, sa) && WorldToScreen(b, sb)) {
+            draw_list->AddLine(sa, sb, col, thickness);
+        }
+    };
+
+    auto Draw3DCircle = [&](const Vec3& center, const Vec3& normal, float radius, ImU32 col, int segments = 24, float thickness = 1.2f) {
+        Vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : Vec3(0, 1, 0);
+        Vec3 u = (std::abs(n.y) < 0.99f) ? glm::normalize(glm::cross(n, Vec3(0, 1, 0))) : Vec3(1, 0, 0);
+        Vec3 v = glm::cross(n, u);
+        ImVec2 prev_s;
+        bool has_prev = false;
+        ImVec2 first_s;
+        bool has_first = false;
+        for (int i = 0; i <= segments; ++i) {
+            float theta = (float(i) / float(segments)) * glm::two_pi<float>();
+            Vec3 pt = center + (u * std::cos(theta) + v * std::sin(theta)) * radius;
+            ImVec2 s;
+            if (WorldToScreen(pt, s)) {
+                if (has_prev) draw_list->AddLine(prev_s, s, col, thickness);
+                else { first_s = s; has_first = true; }
+                prev_s = s;
+                has_prev = true;
+            } else {
+                has_prev = false;
+            }
+        }
+        if (has_prev && has_first) {
+            draw_list->AddLine(prev_s, first_s, col, thickness);
+        }
+    };
+
+    Registry& entities = const_cast<World&>(world).Entities();
+
+    // 1. Camera Frustums
+    for (auto [e, cam_comp, lt] : entities.View<CameraComponent, LocalTransform>().each()) {
+        const bool selected = (e == ui.selection);
+        const ImU32 col = selected ? IM_COL32(80, 220, 255, 255) : IM_COL32(70, 180, 220, 180);
+        const float thick = selected ? 2.0f : 1.2f;
+
+        const Vec3 pos = lt.position;
+        const Vec3 c_fwd = lt.rotation * Vec3(0, 0, -1);
+        const Vec3 c_up  = lt.rotation * Vec3(0, 1, 0);
+        const Vec3 c_right = lt.rotation * Vec3(1, 0, 0);
+
+        const float d_near = 0.4f;
+        const float d_far  = 2.2f;
+        const float half_h = d_far * std::tan(glm::radians(cam_comp.fov * 0.5f));
+        const float half_w = half_h * 1.777f;
+
+        const float near_h = d_near * std::tan(glm::radians(cam_comp.fov * 0.5f));
+        const float near_w = near_h * 1.777f;
+
+        // 4 corners of far plane
+        const Vec3 far_center = pos + c_fwd * d_far;
+        const Vec3 f_tl = far_center - c_right * half_w + c_up * half_h;
+        const Vec3 f_tr = far_center + c_right * half_w + c_up * half_h;
+        const Vec3 f_br = far_center + c_right * half_w - c_up * half_h;
+        const Vec3 f_bl = far_center - c_right * half_w - c_up * half_h;
+
+        // 4 corners of near plane
+        const Vec3 near_center = pos + c_fwd * d_near;
+        const Vec3 n_tl = near_center - c_right * near_w + c_up * near_h;
+        const Vec3 n_tr = near_center + c_right * near_w + c_up * near_h;
+        const Vec3 n_br = near_center + c_right * near_w - c_up * near_h;
+        const Vec3 n_bl = near_center - c_right * near_w - c_up * near_h;
+
+        // Draw 4 pyramid rays from eye
+        Draw3DLine(pos, f_tl, col, thick);
+        Draw3DLine(pos, f_tr, col, thick);
+        Draw3DLine(pos, f_br, col, thick);
+        Draw3DLine(pos, f_bl, col, thick);
+
+        // Draw far quad
+        Draw3DLine(f_tl, f_tr, col, thick);
+        Draw3DLine(f_tr, f_br, col, thick);
+        Draw3DLine(f_br, f_bl, col, thick);
+        Draw3DLine(f_bl, f_tl, col, thick);
+
+        // Draw near quad
+        Draw3DLine(n_tl, n_tr, col, thick * 0.8f);
+        Draw3DLine(n_tr, n_br, col, thick * 0.8f);
+        Draw3DLine(n_br, n_bl, col, thick * 0.8f);
+        Draw3DLine(n_bl, n_tl, col, thick * 0.8f);
+
+        // Top orientation notch (triangle indicating "Up")
+        const Vec3 notch_peak = far_center + c_up * (half_h + 0.35f);
+        Draw3DLine(f_tl, notch_peak, col, thick);
+        Draw3DLine(f_tr, notch_peak, col, thick);
+    }
+
+    // 2. Light Visualizers
+    for (auto [e, light, lt] : entities.View<LightSource, LocalTransform>().each()) {
+        const bool selected = (e == ui.selection);
+        const Vec3 pos = lt.position;
+
+        if (light.type == LightType::Spot) {
+            const ImU32 col = selected ? IM_COL32(255, 225, 70, 255) : IM_COL32(230, 200, 50, 180);
+            const float thick = selected ? 2.0f : 1.2f;
+
+            Vec3 dir = light.direction;
+            if (glm::length(dir) < 0.001f) dir = Vec3(0, -1, 0);
+            else dir = glm::normalize(dir);
+
+            const float range = std::min(std::max(light.radius * 3.5f, 3.0f), 8.0f);
+            const float outer_rad = range * std::tan(glm::radians(light.outer_angle));
+            const float inner_rad = range * std::tan(glm::radians(light.inner_angle));
+
+            const Vec3 base_center = pos + dir * range;
+
+            // Perpendicular axes
+            Vec3 u = (std::abs(dir.y) < 0.99f) ? glm::normalize(glm::cross(dir, Vec3(0, 1, 0))) : Vec3(1, 0, 0);
+            Vec3 v = glm::cross(dir, u);
+
+            // Outer cone circle
+            Draw3DCircle(base_center, dir, outer_rad, col, 24, thick);
+            // Inner cone circle
+            Draw3DCircle(base_center, dir, inner_rad, col, 16, thick * 0.7f);
+
+            // 4 cone generator rays
+            Draw3DLine(pos, base_center + u * outer_rad, col, thick);
+            Draw3DLine(pos, base_center - u * outer_rad, col, thick);
+            Draw3DLine(pos, base_center + v * outer_rad, col, thick);
+            Draw3DLine(pos, base_center - v * outer_rad, col, thick);
+
+            // Center direction arrow
+            Draw3DLine(pos, base_center, col, thick * 0.8f);
+        }
+        else if (light.type == LightType::Directional) {
+            const ImU32 col = selected ? IM_COL32(255, 240, 90, 255) : IM_COL32(240, 220, 60, 190);
+            const float thick = selected ? 2.0f : 1.2f;
+
+            Vec3 dir = light.direction;
+            if (glm::length(dir) < 0.001f) dir = Vec3(0, -1, 0);
+            else dir = glm::normalize(dir);
+
+            // Sun disk
+            Draw3DCircle(pos, dir, 0.7f, col, 20, thick);
+
+            // Perpendicular axes
+            Vec3 u = (std::abs(dir.y) < 0.99f) ? glm::normalize(glm::cross(dir, Vec3(0, 1, 0))) : Vec3(1, 0, 0);
+            Vec3 v = glm::cross(dir, u);
+
+            const float ray_len = 2.5f;
+            // 4 parallel sunlight rays from disk edge
+            Vec3 r1 = pos + u * 0.7f;
+            Vec3 r2 = pos - u * 0.7f;
+            Vec3 r3 = pos + v * 0.7f;
+            Vec3 r4 = pos - v * 0.7f;
+
+            Draw3DLine(r1, r1 + dir * ray_len, col, thick);
+            Draw3DLine(r2, r2 + dir * ray_len, col, thick);
+            Draw3DLine(r3, r3 + dir * ray_len, col, thick);
+            Draw3DLine(r4, r4 + dir * ray_len, col, thick);
+            Draw3DLine(pos, pos + dir * (ray_len * 1.2f), col, thick * 1.5f);
+        }
+        else if (light.type == LightType::Point) {
+            const ImU32 col = selected ? IM_COL32(255, 210, 50, 255) : IM_COL32(240, 190, 40, 160);
+            const float thick = selected ? 1.8f : 1.0f;
+            const float rad = std::max(light.radius, 0.3f);
+
+            // 3 orthogonal circles (XY, XZ, YZ)
+            Draw3DCircle(pos, Vec3(0, 1, 0), rad, col, 24, thick);
+            Draw3DCircle(pos, Vec3(1, 0, 0), rad, col, 24, thick);
+            Draw3DCircle(pos, Vec3(0, 0, 1), rad, col, 24, thick);
+
+            // Center star icon
+            const float icon_d = 0.15f;
+            Draw3DLine(pos - Vec3(icon_d, 0, 0), pos + Vec3(icon_d, 0, 0), col, 2.0f);
+            Draw3DLine(pos - Vec3(0, icon_d, 0), pos + Vec3(0, icon_d, 0), col, 2.0f);
+            Draw3DLine(pos - Vec3(0, 0, icon_d), pos + Vec3(0, 0, icon_d), col, 2.0f);
+        }
+    }
+
+    // 3. Selected Entity Bounding Box Wireframe
+    if (ui.selection != kNullEntity) {
+        if (const LocalTransform* lt = entities.Get<LocalTransform>(ui.selection)) {
+            if (const LocalBounds* bounds = entities.Get<LocalBounds>(ui.selection)) {
+                const ImU32 col = IM_COL32(255, 175, 30, 220);
+                const float thick = 1.5f;
+
+                const Mat4 world_mat = lt->ToMatrix();
+                const Vec3 min = bounds->min;
+                const Vec3 max = bounds->max;
+
+                Vec3 c[8] = {
+                    Vec3(world_mat * Vec4(min.x, min.y, min.z, 1.0f)),
+                    Vec3(world_mat * Vec4(max.x, min.y, min.z, 1.0f)),
+                    Vec3(world_mat * Vec4(max.x, max.y, min.z, 1.0f)),
+                    Vec3(world_mat * Vec4(min.x, max.y, min.z, 1.0f)),
+                    Vec3(world_mat * Vec4(min.x, min.y, max.z, 1.0f)),
+                    Vec3(world_mat * Vec4(max.x, min.y, max.z, 1.0f)),
+                    Vec3(world_mat * Vec4(max.x, max.y, max.z, 1.0f)),
+                    Vec3(world_mat * Vec4(min.x, max.y, max.z, 1.0f))
+                };
+
+                // Bottom face
+                Draw3DLine(c[0], c[1], col, thick);
+                Draw3DLine(c[1], c[5], col, thick);
+                Draw3DLine(c[5], c[4], col, thick);
+                Draw3DLine(c[4], c[0], col, thick);
+
+                // Top face
+                Draw3DLine(c[3], c[2], col, thick);
+                Draw3DLine(c[2], c[6], col, thick);
+                Draw3DLine(c[6], c[7], col, thick);
+                Draw3DLine(c[7], c[3], col, thick);
+
+                // Vertical edges
+                Draw3DLine(c[0], c[3], col, thick);
+                Draw3DLine(c[1], c[2], col, thick);
+                Draw3DLine(c[5], c[6], col, thick);
+                Draw3DLine(c[4], c[7], col, thick);
+            }
+        }
+    }
 }
 
 } // namespace lucida
