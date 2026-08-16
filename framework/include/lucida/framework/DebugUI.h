@@ -87,17 +87,19 @@ public:
     // renderer is drawing straight to the window.
     void Build(World& world, SceneAssets& assets, UiState& ui, RenderSettings& settings,
                const RenderStats& stats, CameraController& camera, const FrameTime& time,
-               void* viewport_texture = nullptr, f32 viewport_aspect = 16.0f / 9.0f);
+               void* viewport_texture = nullptr, f32 viewport_aspect = 16.0f / 9.0f,
+               IRenderBackend* renderer = nullptr);
 
 private:
     void BuildDefaultLayout(unsigned dockspace_id);
-    void DrawMenuBar(UiState& ui);
+    void DrawMenuBar(World& world, SceneAssets& assets, UiState& ui);
     void DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
                       const CameraController& camera, const SceneAssets& assets,
                       const RenderStats& stats, const RenderSettings& settings, const FrameTime& time);
     void DrawHierarchy(World& world, UiState& ui, SceneAssets& assets);
     void DrawSceneGraph(World& world, UiState& ui, Entity root_or_null);
-    void DrawInspector(World& world, UiState& ui, SceneAssets& assets, CameraController& camera);
+    void DrawInspector(World& world, UiState& ui, SceneAssets& assets, CameraController& camera,
+                       IRenderBackend* renderer = nullptr);
     void DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSettings& settings, CameraController& camera);
     void DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect,
                    const ImVec2& image_min, const ImVec2& image_size);
@@ -110,12 +112,15 @@ private:
                          const ImVec2& image_min, const ImVec2& image_size);
     void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
                    const char* name);
+    void TrackMaterialEdit(SceneAssets& assets, i32 mat_index, const GPUMaterial& current,
+                           const char* name);
 
     CommandStack m_commands;
-    // Transform captured when a control was grabbed, so releasing it can push
-    // one undo entry for the whole drag instead of one per frame.
     LocalTransform m_drag_start;
     bool m_dragging = false;
+
+    GPUMaterial m_mat_drag_start{};
+    bool m_mat_dragging = false;
 
     f32  m_fps_ema = 60.0f;
     bool m_reset_layout = false;

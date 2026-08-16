@@ -145,7 +145,7 @@ public:
     bool OnInit(World& world) override {
         m_platform = CreatePlatformSDL2();
         WindowDesc window;
-        window.title      = "Lucida Sandbox";
+        window.title      = "Lucida Engine";
         window.width      = m_config.width;
         window.height     = m_config.height;
         window.fullscreen = m_config.fullscreen;
@@ -377,7 +377,7 @@ public:
                 ? f32(m_ui_state.viewport_width) / f32(m_ui_state.viewport_height)
                 : (h > 0 ? f32(w) / f32(h) : 16.0f / 9.0f);
         m_ui.Build(world, m_assets, m_ui_state, settings, m_renderer->Stats(), m_camera, time,
-                   as_panel ? m_renderer->ViewportTexture() : nullptr, aspect);
+                   as_panel ? m_renderer->ViewportTexture() : nullptr, aspect, m_renderer.get());
 
         m_renderer->ApplySettings(settings);
         if (m_ui_state.request_fullscreen) {
@@ -412,6 +412,8 @@ private:
         entities.Clear();
         m_car = kNullEntity;
         m_ui_state.selection = kNullEntity;
+        m_config.model_path.clear();
+        if (m_renderer) m_renderer->ClearMeshes();
 
         RenderScene loaded;
         if (!m_scene_path.empty() && LoadSceneFile(m_project.Resolve(m_scene_path), loaded)) {
@@ -460,7 +462,7 @@ private:
             const Entity e = CreatePrimitive(entities, PrimitiveType::Sphere,
                                              Vec3(s.center[0], s.center[1], s.center[2]),
                                              s.mat_index);
-            entities.Get<LocalTransform>(e)->scale = s.radius;
+            entities.Get<LocalTransform>(e)->scale = Vec3(s.radius);
         }
         for (const GPUCube& c : scene.cubes) {
             const Entity e = CreatePrimitive(entities, PrimitiveType::Box,
@@ -475,10 +477,7 @@ private:
             const Entity e = CreatePrimitive(entities, PrimitiveType::Plane,
                                              normal * p.d_offset, p.mat_index);
             entities.Get<PrimitiveShape>(e)->normal = normal;
-        }
-        for (const GPULight& l : scene.lights) {
-            CreateLight(entities, Vec3(l.position[0], l.position[1], l.position[2]),
-                        Vec3(l.color[0], l.color[1], l.color[2]), l.intensity, l.radius);
+            entities.Get<PrimitiveShape>(e)->offset = p.d_offset;
         }
     }
 
@@ -524,11 +523,19 @@ private:
         if (!handle.IsValid()) return;
 
         Registry& entities = world.Entities();
-        if (!entities.Valid(m_car)) m_car = entities.Create("model");
+        std::string model_name = std::filesystem::path(path).stem().string();
+        if (model_name.empty()) model_name = "Model";
+
+        if (!entities.Valid(m_car)) m_car = entities.Create(model_name);
+        else {
+            if (Name* n = entities.Get<Name>(m_car)) n->value = model_name;
+        }
 
         LocalTransform& local = *entities.Get<LocalTransform>(m_car);
         local.position = m_config.model_pos;
-        local.scale    = m_config.model_scale * 0.01f;
+        f32 s = (m_config.model_scale > 10.0f) ? (m_config.model_scale * 0.01f) : (m_config.model_scale > 0.001f ? m_config.model_scale : 1.0f);
+        local.scale    = Vec3(s);
+        m_config.model_scale = s;
 
         MeshInstance instance;
         instance.mesh     = handle;
@@ -539,9 +546,16 @@ private:
         // them onto the entity is what makes the thing clickable.
         entities.Add<LocalBounds>(m_car, LocalBounds{mesh.aabb_min, mesh.aabb_max});
 
+        // Instantiate child entities in the hierarchy for submeshes (e.g. Body, Wheels, Hood, Glass)
+        for (const auto& sm : mesh.submeshes) {
+            Entity child = entities.Create(sm.name);
+            entities.Add<Parent>(child, Parent{m_car});
+            entities.Add<LocalBounds>(child, LocalBounds{sm.aabb_min, sm.aabb_max});
+        }
+
         m_renderer->SetMeshOrigin(m_config.model_pos);
         m_config.model_path = m_project.MakeRelative(path);
-        LUCIDA_INFO(App, "world holds %zu entities", entities.Count());
+        LUCIDA_INFO(App, "world holds %zu entities (imported %zu submeshes)", entities.Count(), mesh.submeshes.size());
     }
 
     Config      m_config;

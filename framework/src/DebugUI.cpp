@@ -27,7 +27,16 @@
 namespace lucida {
 namespace {
 
+// Unit mode: 0 = meters, 1 = centimeters
+static int g_units_mode = 0;
+
+inline float ToDisplay(float v)   { return g_units_mode == 1 ? v * 100.0f : v; }
+inline float FromDisplay(float v) { return g_units_mode == 1 ? v * 0.01f : v; }
+inline const char* UnitSuffix()   { return g_units_mode == 1 ? " cm" : " m"; }
+inline float DragSpeed()          { return g_units_mode == 1 ? 1.0f : 0.01f; }
+
 // A vector row that reads as one control instead of three.
+// Converts to/from display units automatically when unit mode is active.
 bool Vec3Row(const char* label, Vec3& value, f32 speed = 0.01f) {
     ImGui::PushID(label);
     ImGui::TextUnformatted(label);
@@ -35,6 +44,38 @@ bool Vec3Row(const char* label, Vec3& value, f32 speed = 0.01f) {
     ImGui::SetNextItemWidth(-1.0f);
     const bool changed = ImGui::DragFloat3("##v", &value.x, speed);
     ImGui::PopID();
+    return changed;
+}
+
+// Position Vec3Row that applies unit conversion
+bool Vec3RowUnits(const char* label, Vec3& value) {
+    ImGui::PushID(label);
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(90.0f);
+    ImGui::SetNextItemWidth(-60.0f);
+    Vec3 disp(ToDisplay(value.x), ToDisplay(value.y), ToDisplay(value.z));
+    bool changed = ImGui::DragFloat3("##v", &disp.x, DragSpeed(), 0.0f, 0.0f,
+                                     g_units_mode == 1 ? "%.1f" : "%.3f");
+    if (changed) {
+        value.x = FromDisplay(disp.x);
+        value.y = FromDisplay(disp.y);
+        value.z = FromDisplay(disp.z);
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", UnitSuffix());
+    ImGui::PopID();
+    return changed;
+}
+
+// Single-float row with unit conversion (radius, height, etc.)
+bool DragFloatUnits(const char* label, float& value, float min_v = 0.001f, float max_v = 1000.0f) {
+    float disp = ToDisplay(value);
+    float spd  = DragSpeed();
+    bool changed = ImGui::DragFloat(label, &disp, spd, ToDisplay(min_v), ToDisplay(max_v),
+                                    g_units_mode == 1 ? "%.1f" : "%.3f");
+    if (changed) value = FromDisplay(disp);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", UnitSuffix());
     return changed;
 }
 
@@ -65,6 +106,19 @@ void DebugUI::TrackEdit(Registry& registry, Entity entity, const LocalTransform&
     }
 }
 
+void DebugUI::TrackMaterialEdit(SceneAssets& assets, i32 mat_index, const GPUMaterial& current,
+                                const char* name) {
+    if (ImGui::IsItemActivated()) {
+        m_mat_drag_start = current;
+        m_mat_dragging = true;
+    }
+    if (m_mat_dragging && ImGui::IsItemDeactivatedAfterEdit()) {
+        m_commands.Push(std::make_unique<MaterialEditCommand>(assets, mat_index, m_mat_drag_start,
+                                                              current, name));
+        m_mat_dragging = false;
+    }
+}
+
 void DebugUI::Init() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -80,7 +134,10 @@ void DebugUI::Shutdown() { ImGui::DestroyContext(); }
 
 void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettings& settings,
                     const RenderStats& stats, CameraController& camera,
-                    const FrameTime& time, void* viewport_texture, f32 viewport_aspect) {
+                    const FrameTime& time, void* viewport_texture, f32 viewport_aspect,
+                    IRenderBackend* renderer) {
+    LUCIDA_PROFILE("debug-ui");
+
     ImGui::NewFrame();
     ImGuizmo::BeginFrame();
 
@@ -92,34 +149,51 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
     const f32 fps = time.real_delta > 0.0f ? 1.0f / time.real_delta : 0.0f;
     m_fps_ema = m_fps_ema * 0.92f + fps * 0.08f;
 
-    // The layout every engine editor uses, because it works: viewport in the
-    // middle, the scene tree on the left, properties on the right, output along
-    // the bottom. Built once; after that ImGui restores it from imgui.ini, so a
-    // rearranged workspace survives a restart.
     const ImGuiID dockspace_id = ImGui::GetID("LucidaDockSpace");
     if (m_reset_layout || ImGui::DockBuilderGetNode(dockspace_id) == nullptr) {
         BuildDefaultLayout(dockspace_id);
         m_reset_layout = false;
     }
 
-    // The central node stays transparent, so closing the viewport panel shows
-    // the traced image behind the docks rather than a blank hole.
     ImGui::DockSpaceOverViewport(dockspace_id, ImGui::GetMainViewport(),
                                  ImGuiDockNodeFlags_PassthruCentralNode);
 
-    DrawMenuBar(ui);
-    // Undo before anything reads the world this frame, so the panels below show
-    // the restored state rather than the state that was just undone.
+    DrawMenuBar(world, assets, ui);
+
     const ImGuiIO& io = ImGui::GetIO();
     const bool modifier = io.KeySuper || io.KeyCtrl;   // Cmd on macOS, Ctrl elsewhere
     if (modifier && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
         if (io.KeyShift) m_commands.Redo(); else m_commands.Undo();
     }
+    if (modifier && ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+        m_commands.Redo();
+    }
+
+    // Global keyboard shortcuts outside text fields
+    if (!io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
+            if (ui.selection != kNullEntity && world.Entities().Valid(ui.selection)) {
+                Entity to_del = ui.selection;
+                ui.selection = kNullEntity;
+                m_commands.Execute(std::make_unique<DestroyEntityCommand>(world.Entities(), to_del, "Delete Entity"));
+            }
+        }
+        if (modifier && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
+            if (ui.selection != kNullEntity && world.Entities().Valid(ui.selection)) {
+                EntitySnapshot snap = EntitySnapshot::Capture(world.Entities(), ui.selection);
+                snap.name += "_copy";
+                snap.transform.position += Vec3(0.5f, 0.0f, 0.5f);
+                Entity dup = snap.Restore(world.Entities());
+                ui.selection = dup;
+                m_commands.Push(std::make_unique<CreateEntityCommand>(world.Entities(), dup, snap, "Duplicate Entity"));
+            }
+        }
+    }
 
     if (ui.show_viewport && viewport_texture)
         DrawViewport(world, ui, viewport_texture, viewport_aspect, camera, assets, stats, settings, time);
     if (ui.show_hierarchy) DrawHierarchy(world, ui, assets); // Calls DrawSceneGraph
-    if (ui.show_inspector) DrawInspector(world, ui, assets, camera);
+    if (ui.show_inspector) DrawInspector(world, ui, assets, camera, renderer);
     if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
     if (ui.show_stats_panel)       DrawStatsPanel(world, assets, stats, time, settings, ui);
 
@@ -156,7 +230,7 @@ void DebugUI::BuildDefaultLayout(unsigned dockspace_id) {
     ImGui::DockBuilderFinish(dockspace_id);
 }
 
-void DebugUI::DrawMenuBar(UiState& ui) {
+void DebugUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
     if (!ImGui::BeginMainMenuBar()) return;
 
     if (ImGui::BeginMenu("File")) {
@@ -168,6 +242,48 @@ void DebugUI::DrawMenuBar(UiState& ui) {
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Quit")) ui.request_quit = true;
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu("Edit")) {
+        char undo_label[64];
+        if (m_commands.CanUndo())
+            std::snprintf(undo_label, sizeof(undo_label), "Undo %s", m_commands.UndoName());
+        else
+            std::snprintf(undo_label, sizeof(undo_label), "Undo");
+
+        char redo_label[64];
+        if (m_commands.CanRedo())
+            std::snprintf(redo_label, sizeof(redo_label), "Redo %s", m_commands.RedoName());
+        else
+            std::snprintf(redo_label, sizeof(redo_label), "Redo");
+
+        if (ImGui::MenuItem(undo_label, "Cmd+Z", false, m_commands.CanUndo())) {
+            m_commands.Undo();
+        }
+        if (ImGui::MenuItem(redo_label, "Cmd+Shift+Z", false, m_commands.CanRedo())) {
+            m_commands.Redo();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Clear Undo History", nullptr, false, m_commands.CanUndo() || m_commands.CanRedo())) {
+            m_commands.Clear();
+        }
+        ImGui::Separator();
+        Registry& entities = world.Entities();
+        const bool has_selection = (ui.selection != kNullEntity && entities.Valid(ui.selection));
+        if (ImGui::MenuItem("Duplicate Selection", "Cmd+D", false, has_selection)) {
+            EntitySnapshot snap = EntitySnapshot::Capture(entities, ui.selection);
+            snap.name += "_copy";
+            snap.transform.position += Vec3(0.5f, 0.0f, 0.5f);
+            Entity dup = snap.Restore(entities);
+            ui.selection = dup;
+            m_commands.Push(std::make_unique<CreateEntityCommand>(entities, dup, snap, "Duplicate Entity"));
+        }
+        if (ImGui::MenuItem("Delete Selection", "Del", false, has_selection)) {
+            Entity to_del = ui.selection;
+            ui.selection = kNullEntity;
+            m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
+        }
         ImGui::EndMenu();
     }
 
@@ -458,33 +574,19 @@ void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
             if (ImGui::MenuItem("Unparent", nullptr, false, its_parent != kNullEntity)) {
                 entities.Remove<Parent>(entity);
             }
-            if (ImGui::MenuItem("Duplicate")) {
-                Entity dup = entities.Create(name.value + "_copy");
-                if (LocalTransform* lt = entities.Get<LocalTransform>(entity)) {
-                    *entities.Get<LocalTransform>(dup) = *lt;
-                    entities.Get<LocalTransform>(dup)->position += Vec3(0.5f, 0.0f, 0.5f);
-                }
-                if (PrimitiveShape* ps = entities.Get<PrimitiveShape>(entity)) {
-                    entities.Add<PrimitiveShape>(dup, *ps);
-                }
-                if (MaterialRef* mr = entities.Get<MaterialRef>(entity)) {
-                    entities.Add<MaterialRef>(dup, *mr);
-                }
-                if (LocalBounds* lb = entities.Get<LocalBounds>(entity)) {
-                    entities.Add<LocalBounds>(dup, *lb);
-                }
-                if (RigidBody* rb = entities.Get<RigidBody>(entity)) {
-                    entities.Add<RigidBody>(dup, *rb);
-                }
-                if (its_parent != kNullEntity) {
-                    entities.Add<Parent>(dup, Parent{its_parent});
-                }
+            if (ImGui::MenuItem("Duplicate", "Cmd+D")) {
+                EntitySnapshot snap = EntitySnapshot::Capture(entities, entity);
+                snap.name += "_copy";
+                snap.transform.position += Vec3(0.5f, 0.0f, 0.5f);
+                Entity dup = snap.Restore(entities);
                 ui.selection = dup;
+                m_commands.Push(std::make_unique<CreateEntityCommand>(entities, dup, snap, "Duplicate Entity"));
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Delete", "Delete")) {
-                if (ui.selection == entity) ui.selection = kNullEntity;
-                entities.Destroy(entity);
+            if (ImGui::MenuItem("Delete", "Del")) {
+                Entity to_del = entity;
+                if (ui.selection == to_del) ui.selection = kNullEntity;
+                m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
             }
             ImGui::EndPopup();
         }
@@ -499,7 +601,9 @@ void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_PAYLOAD")) {
                 Entity dropped = *static_cast<const Entity*>(payload->Data);
                 if (dropped != entity) {
-                    entities.Add<Parent>(dropped, Parent{entity});
+                    Entity before_parent = kNullEntity;
+                    if (const Parent* p = entities.Get<Parent>(dropped)) before_parent = p->entity;
+                    m_commands.Execute(std::make_unique<ReparentCommand>(entities, dropped, before_parent, entity));
                 }
             }
             ImGui::EndDragDropTarget();
@@ -530,7 +634,10 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
             const i32 mat_idx = assets.AddMaterial(
                 Material(DIFFUSE, {0.75f, 0.75f, 0.78f}, {0, 0, 0}, 0.5f, 0.0f),
                 PROC_NONE, mat_name);
-            ui.selection = CreatePrimitive(entities, type, Vec3(0,0,0), mat_idx, name);
+            Entity e = CreatePrimitive(entities, type, Vec3(0,0,0), mat_idx, name);
+            ui.selection = e;
+            EntitySnapshot snap = EntitySnapshot::Capture(entities, e);
+            m_commands.Push(std::make_unique<CreateEntityCommand>(entities, e, snap, std::string("Create ") + name));
         };
 
         if (ImGui::BeginMenu("3D Object")) {
@@ -603,7 +710,8 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
     ImGui::End();
 }
 
-void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, CameraController& camera) {
+void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, CameraController& camera,
+                            IRenderBackend* renderer) {
     if (!ImGui::Begin("Inspector", &ui.show_inspector)) {
         ImGui::End();
         return;
@@ -628,7 +736,15 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
 
     if (LocalTransform* local = entities.Get<LocalTransform>(ui.selection)) {
         if (BeginSection("Transform", true)) {
-            Vec3Row("Position", local->position);
+            // Unit mode toggle
+            ImGui::TextDisabled("Units:");
+            ImGui::SameLine();
+            if (ImGui::RadioButton("m",  &g_units_mode, 0)) {}
+            ImGui::SameLine();
+            if (ImGui::RadioButton("cm", &g_units_mode, 1)) {}
+            ImGui::Spacing();
+
+            Vec3RowUnits("Position", local->position);
             TrackEdit(entities, ui.selection, *local, "Move");
 
             Vec3 euler = glm::degrees(glm::eulerAngles(local->rotation));
@@ -637,10 +753,27 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
             }
             TrackEdit(entities, ui.selection, *local, "Rotate");
 
-            ImGui::TextUnformatted("Scale");
-            ImGui::SameLine(90.0f);
-            ImGui::SetNextItemWidth(-1.0f);
-            ImGui::DragFloat("##scale", &local->scale, 0.01f, 0.001f, 1000.0f);
+            {
+                static bool s_uniform_scale = false;
+                ImGui::TextUnformatted("Scale");
+                ImGui::SameLine(90.0f);
+                ImGui::SetNextItemWidth(-50.0f);
+                if (s_uniform_scale) {
+                    float u_scale = local->scale.x;
+                    if (ImGui::DragFloat("##scale_u", &u_scale, 0.01f, 0.001f, 1000.0f, "%.3f")) {
+                        local->scale = Vec3(u_scale);
+                    }
+                } else {
+                    ImGui::DragFloat3("##scale_xyz", &local->scale.x, 0.01f, 0.001f, 1000.0f, "%.3f");
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton(s_uniform_scale ? "XYZ" : "Lock")) {
+                    s_uniform_scale = !s_uniform_scale;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(s_uniform_scale ? "Switch to non-uniform 3-axis (X, Y, Z) scale" : "Lock to uniform scale across all 3 axes");
+                }
+            }
             TrackEdit(entities, ui.selection, *local, "Scale");
             EndSection();
         }
@@ -655,20 +788,20 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
             }
 
             if (shape->type == PrimitiveType::Sphere) {
-                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
+                DragFloatUnits("Radius", shape->size.x);
             } else if (shape->type == PrimitiveType::Box) {
-                Vec3Row("Half Extents", shape->size);
+                Vec3RowUnits("Half Extents", shape->size);
             } else if (shape->type == PrimitiveType::Plane) {
                 Vec3Row("Normal", shape->normal);
-                ImGui::DragFloat("Offset", &shape->offset, 0.01f);
+                DragFloatUnits("Offset", shape->offset, -1000.0f, 1000.0f);
             } else if (shape->type == PrimitiveType::Cylinder || shape->type == PrimitiveType::Cone) {
-                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
-                ImGui::DragFloat("Height", &shape->cylinder_height, 0.01f);
+                DragFloatUnits("Radius", shape->size.x);
+                DragFloatUnits("Height", shape->cylinder_height);
             } else if (shape->type == PrimitiveType::Torus) {
-                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
-                ImGui::DragFloat("Inner Radius", &shape->inner_radius, 0.01f);
+                DragFloatUnits("Radius", shape->size.x);
+                DragFloatUnits("Inner Radius", shape->inner_radius);
             } else if (shape->type == PrimitiveType::Disk) {
-                ImGui::DragFloat("Radius", &shape->size.x, 0.01f);
+                DragFloatUnits("Radius", shape->size.x);
                 Vec3Row("Normal", shape->normal);
             }
             EndSection();
@@ -716,34 +849,47 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
                 // Material Presets
                 ImGui::TextDisabled("Presets:");
                 ImGui::SameLine();
+                // Material Presets
+                auto apply_preset = [&](const GPUMaterial& new_mat, const char* preset_name) {
+                    GPUMaterial before = m;
+                    m = new_mat;
+                    m_commands.Push(std::make_unique<MaterialEditCommand>(assets, mat_ref->index, before, m, preset_name));
+                };
+
                 if (ImGui::SmallButton("Gold")) {
-                    m.type = 1; m.albedo[0]=1.0f; m.albedo[1]=0.76f; m.albedo[2]=0.33f;
-                    m.roughness=0.15f; m.metallic=1.0f;
+                    GPUMaterial preset = m; preset.type = 1; preset.albedo[0]=1.0f; preset.albedo[1]=0.76f; preset.albedo[2]=0.33f;
+                    preset.roughness=0.15f; preset.metallic=1.0f;
+                    apply_preset(preset, "Material: Gold");
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Chrome")) {
-                    m.type = 1; m.albedo[0]=0.95f; m.albedo[1]=0.95f; m.albedo[2]=0.95f;
-                    m.roughness=0.05f; m.metallic=1.0f;
+                    GPUMaterial preset = m; preset.type = 1; preset.albedo[0]=0.95f; preset.albedo[1]=0.95f; preset.albedo[2]=0.95f;
+                    preset.roughness=0.05f; preset.metallic=1.0f;
+                    apply_preset(preset, "Material: Chrome");
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Copper")) {
-                    m.type = 1; m.albedo[0]=0.95f; m.albedo[1]=0.64f; m.albedo[2]=0.54f;
-                    m.roughness=0.20f; m.metallic=1.0f;
+                    GPUMaterial preset = m; preset.type = 1; preset.albedo[0]=0.95f; preset.albedo[1]=0.64f; preset.albedo[2]=0.54f;
+                    preset.roughness=0.20f; preset.metallic=1.0f;
+                    apply_preset(preset, "Material: Copper");
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Glass")) {
-                    m.type = 2; m.albedo[0]=1.0f; m.albedo[1]=1.0f; m.albedo[2]=1.0f;
-                    m.roughness=0.0f; m.metallic=0.0f; m.refractive_index=1.52f;
+                    GPUMaterial preset = m; preset.type = 2; preset.albedo[0]=1.0f; preset.albedo[1]=1.0f; preset.albedo[2]=1.0f;
+                    preset.roughness=0.0f; preset.metallic=0.0f; preset.refractive_index=1.52f;
+                    apply_preset(preset, "Material: Glass");
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Neon")) {
-                    m.type = 3; m.albedo[0]=0.1f; m.albedo[1]=0.8f; m.albedo[2]=1.0f;
-                    m.emission[0]=1.5f; m.emission[1]=12.0f; m.emission[2]=15.0f;
+                    GPUMaterial preset = m; preset.type = 3; preset.albedo[0]=0.1f; preset.albedo[1]=0.8f; preset.albedo[2]=1.0f;
+                    preset.emission[0]=1.5f; preset.emission[1]=12.0f; preset.emission[2]=15.0f;
+                    apply_preset(preset, "Material: Neon");
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Rubber")) {
-                    m.type = 0; m.albedo[0]=0.12f; m.albedo[1]=0.12f; m.albedo[2]=0.13f;
-                    m.roughness=0.90f; m.metallic=0.0f;
+                    GPUMaterial preset = m; preset.type = 0; preset.albedo[0]=0.12f; preset.albedo[1]=0.12f; preset.albedo[2]=0.13f;
+                    preset.roughness=0.90f; preset.metallic=0.0f;
+                    apply_preset(preset, "Material: Rubber");
                 }
 
                 ImGui::Separator();
@@ -759,27 +905,37 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
                 }
 
                 const char* mat_types[] = { "Diffuse", "Metal", "Glass", "Emissive", "Checkerboard", "Water", "PBR" };
-                ImGui::Combo("Type", &m.type, mat_types, 7);
+                if (ImGui::Combo("Type", &m.type, mat_types, 7)) {
+                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Type");
+                }
 
-                ImGui::ColorEdit3("Albedo", m.albedo);
+                if (ImGui::ColorEdit3("Albedo", m.albedo)) {
+                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Albedo");
+                }
                 if (m.type == 4) { // Checkerboard
-                    ImGui::ColorEdit3("Albedo 2", m.albedo2);
+                    if (ImGui::ColorEdit3("Albedo 2", m.albedo2))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Material Albedo 2");
                 }
                 if (m.type == 3) { // Emissive
-                    ImGui::ColorEdit3("Emission", m.emission);
+                    if (ImGui::ColorEdit3("Emission", m.emission))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Material Emission");
                 }
 
-                ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f);
-                ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f);
+                if (ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f))
+                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Roughness");
+                if (ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f))
+                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Metallic");
                 if (m.type == 2 || m.type == 5) { // Glass or Water
-                    ImGui::SliderFloat("IOR", &m.refractive_index, 1.0f, 3.0f);
+                    if (ImGui::SliderFloat("IOR", &m.refractive_index, 1.0f, 3.0f))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Material IOR");
                 }
 
                 const char* proc_types[] = {
                     "None", "Marble", "Wood", "Rust", "Tiles", "Brushed", "Hex",
                     "Rough Ramp", "Patina", "Concrete", "Perlin Noise", "Voronoi Cells"
                 };
-                ImGui::Combo("Pattern", &m.proc_id, proc_types, 12);
+                if (ImGui::Combo("Pattern", &m.proc_id, proc_types, 12))
+                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Pattern");
             }
             EndSection();
         }
@@ -787,17 +943,126 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
 
     if (const WorldTransform* world_transform = entities.Get<WorldTransform>(ui.selection)) {
         if (BeginSection("World", true)) {
-            const Vec3 position(world_transform->matrix[3]);
-            LabelledText("Position", "%.3f  %.3f  %.3f", position.x, position.y, position.z);
+            const Vec3 p(world_transform->matrix[3]);
+            if (g_units_mode == 1) {
+                LabelledText("Position", "%.1f  %.1f  %.1f cm",
+                             p.x * 100.0f, p.y * 100.0f, p.z * 100.0f);
+            } else {
+                LabelledText("Position", "%.3f  %.3f  %.3f m", p.x, p.y, p.z);
+            }
             ImGui::TextDisabled("Derived from the parent chain each frame.");
             EndSection();
         }
     }
 
-    if (const MeshInstance* mesh = entities.Get<MeshInstance>(ui.selection)) {
-        if (BeginSection("Mesh instance", true)) {
-            LabelledText("Mesh", "%u", mesh->mesh.index);
+    const MeshInstance* mesh = entities.Get<MeshInstance>(ui.selection);
+    if (!mesh) {
+        Entity cur = ui.selection;
+        while (const Parent* p = entities.Get<Parent>(cur)) {
+            if (p->entity == kNullEntity) break;
+            cur = p->entity;
+            if (const MeshInstance* parent_mesh = entities.Get<MeshInstance>(cur)) {
+                mesh = parent_mesh;
+                break;
+            }
+        }
+    }
+
+    if (mesh) {
+        if (BeginSection("Mesh & PBR Materials", true)) {
+            LabelledText("Mesh Handle", "%u", mesh->mesh.index);
             LabelledText("Instance", "%u", mesh->instance.index);
+
+            if (renderer && mesh->mesh.IsValid()) {
+                std::vector<GPUMaterial> mats = renderer->GetMeshMaterials(mesh->mesh);
+                if (!mats.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Materials (%zu slots):", mats.size());
+
+                    static int s_selected_mat = 0;
+                    if (s_selected_mat >= (int)mats.size()) s_selected_mat = 0;
+
+                    // Material slot combo
+                    char preview_buf[64];
+                    std::snprintf(preview_buf, sizeof(preview_buf), "Material Slot %d", s_selected_mat);
+                    if (ImGui::BeginCombo("Slot", preview_buf)) {
+                        for (int mi = 0; mi < (int)mats.size(); ++mi) {
+                            const bool is_sel = (s_selected_mat == mi);
+                            char label_buf[64];
+                            std::snprintf(label_buf, sizeof(label_buf), "Slot %d (Type %d)", mi, mats[mi].type);
+                            if (ImGui::Selectable(label_buf, is_sel)) s_selected_mat = mi;
+                            if (is_sel) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    GPUMaterial& m = mats[s_selected_mat];
+                    bool mat_changed = false;
+
+                    // Presets
+                    ImGui::TextDisabled("Quick Presets:");
+                    if (ImGui::SmallButton("Yellow 302")) {
+                        m.type = 6; m.albedo[0]=0.96f; m.albedo[1]=0.72f; m.albedo[2]=0.08f;
+                        m.roughness=0.15f; m.metallic=0.0f; mat_changed = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Red Flame")) {
+                        m.type = 6; m.albedo[0]=0.85f; m.albedo[1]=0.08f; m.albedo[2]=0.08f;
+                        m.roughness=0.12f; m.metallic=0.1f; mat_changed = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Blue Metallic")) {
+                        m.type = 6; m.albedo[0]=0.08f; m.albedo[1]=0.28f; m.albedo[2]=0.85f;
+                        m.roughness=0.18f; m.metallic=0.85f; mat_changed = true;
+                    }
+                    if (ImGui::SmallButton("Satin Black")) {
+                        m.type = 6; m.albedo[0]=0.03f; m.albedo[1]=0.03f; m.albedo[2]=0.03f;
+                        m.roughness=0.35f; m.metallic=0.1f; mat_changed = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Chrome Wheel")) {
+                        m.type = 1; m.albedo[0]=0.95f; m.albedo[1]=0.95f; m.albedo[2]=0.95f;
+                        m.roughness=0.02f; m.metallic=1.0f; mat_changed = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Tinted Glass")) {
+                        m.type = 2; m.albedo[0]=0.8f; m.albedo[1]=0.85f; m.albedo[2]=0.9f;
+                        m.roughness=0.0f; m.metallic=0.0f; m.refractive_index=1.52f; mat_changed = true;
+                    }
+
+                    ImGui::Separator();
+
+                    // Material Type dropdown
+                    const char* type_names[] = { "Diffuse", "Metal (Mirror)", "Glass (Refractive)", "Emissive", "Checkerboard", "Water", "PBR Standard" };
+                    int type_idx = m.type;
+                    if (type_idx < 0 || type_idx > 6) type_idx = 6;
+                    if (ImGui::Combo("Shading Type", &type_idx, type_names, 7)) {
+                        m.type = type_idx;
+                        mat_changed = true;
+                    }
+
+                    // Albedo / Color Picker
+                    if (ImGui::ColorEdit3("Albedo / Paint Color", m.albedo)) mat_changed = true;
+
+                    // Roughness & Metallic
+                    if (ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f, "%.3f")) mat_changed = true;
+                    if (ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f, "%.3f")) mat_changed = true;
+
+                    // Emissive
+                    if (m.type == 3 || (m.emission[0] + m.emission[1] + m.emission[2] > 0.001f)) {
+                        if (ImGui::ColorEdit3("Emission Color", m.emission)) mat_changed = true;
+                    }
+
+                    // Refractive index for glass
+                    if (m.type == 2) {
+                        if (ImGui::SliderFloat("IOR (Glass Refraction)", &m.refractive_index, 1.0f, 2.5f, "%.2f")) mat_changed = true;
+                    }
+
+                    if (mat_changed) {
+                        renderer->SetMeshMaterial(mesh->mesh, s_selected_mat, m);
+                    }
+                }
+            }
             EndSection();
         }
     }
@@ -1119,7 +1384,7 @@ void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32
         
         local->position = Vec3(translation[0], translation[1], translation[2]);
         local->rotation = Quat(glm::radians(Vec3(rotation[0], rotation[1], rotation[2])));
-        if (scale[0] > 0.001f) local->scale = scale[0];
+        local->scale    = Vec3(scale[0], scale[1], scale[2]);
 
         // Keep picking bounds in sync with scale
         if (PrimitiveShape* shape = registry.Get<PrimitiveShape>(ui.selection)) {

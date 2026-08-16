@@ -80,20 +80,23 @@ void PublishScene(Registry& registry, const SceneAssets& assets, RenderScene& ou
         // World transform, not local: a primitive parented to something else has
         // to follow it, and the hierarchy has already been resolved this frame.
         const Vec3 position(world.matrix[3]);
-        const f32  scale = glm::length(Vec3(world.matrix[0]));
+        const Vec3 scale_3d(glm::length(Vec3(world.matrix[0])),
+                            glm::length(Vec3(world.matrix[1])),
+                            glm::length(Vec3(world.matrix[2])));
+        const f32  scale = scale_3d.x;
 
         switch (shape.type) {
         case PrimitiveType::Sphere:
             out.AddSphere(position, shape.size.x * scale, material.index);
             break;
         case PrimitiveType::Box:
-            out.AddCube(position, shape.size * scale, material.index);
+            out.AddCube(position, shape.size * scale_3d, material.index);
             break;
         case PrimitiveType::Cylinder:
-            out.AddCylinder(position, shape.size.x * scale, shape.cylinder_height * scale, material.index);
+            out.AddCylinder(position, shape.size.x * scale, shape.cylinder_height * scale_3d.y, material.index);
             break;
         case PrimitiveType::Cone:
-            out.AddCone(position, shape.size.x * scale, shape.cylinder_height * scale, material.index);
+            out.AddCone(position, shape.size.x * scale, shape.cylinder_height * scale_3d.y, material.index);
             break;
         case PrimitiveType::Torus:
             out.AddTorus(position, shape.size.x * scale, shape.inner_radius * scale, material.index);

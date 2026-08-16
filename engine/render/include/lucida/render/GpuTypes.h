@@ -34,10 +34,8 @@ enum ProceduralPattern {
 enum MaterialFlags {
     MATFLAG_HAS_BASECOLOR_TEX = 1 << 0,
     MATFLAG_HAS_ORM_TEX       = 1 << 1,
-    // Set only when the base-colour texture really carries transparency: stb
-    // fills a missing alpha channel with 255, but a texture holding zeros would
-    // punch rays straight through solid geometry.
     MATFLAG_ALPHA_BLEND       = 1 << 2,
+    MATFLAG_HAS_NORMAL_TEX    = 1 << 3,  // tangent-space normal map present
 };
 
 // CPU-side material, used when authoring the built-in scenes. Converted to

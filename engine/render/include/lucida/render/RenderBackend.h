@@ -82,6 +82,8 @@ public:
     virtual void SetInstanceTransform(InstanceHandle instance, const Mat4& local_to_world) = 0;
     virtual void ClearInstances() = 0;
     virtual void ClearMeshes() = 0;
+    virtual std::vector<GPUMaterial> GetMeshMaterials(MeshHandle mesh) const { (void)mesh; return {}; }
+    virtual void SetMeshMaterial(MeshHandle mesh, int mat_index, const GPUMaterial& mat) { (void)mesh; (void)mat_index; (void)mat; }
 
     // Replaces whatever scene the backend held. Analytic geometry, materials,
     // lights and environment arrive together; meshes come separately through

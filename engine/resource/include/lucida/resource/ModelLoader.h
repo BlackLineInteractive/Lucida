@@ -12,7 +12,9 @@
 
 namespace lucida {
 
-// Centres the mesh and scales it so its largest dimension is target_size.
+// Loads model from disk. Centres horizontally and seats on y=0.
+// If target_size > 0 (default 2.0f), scales the mesh to target_size.
+// If target_size <= 0, preserves 1:1 scale while centering.
 MeshData LoadModel(const std::string& path, float target_size = 2.0f);
 
 void BuildBVH(std::vector<GPUTriangle>& tris,

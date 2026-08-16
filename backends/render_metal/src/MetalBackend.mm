@@ -142,10 +142,9 @@ class MetalBackend final : public IRenderBackend {
   id<MTLCommandQueue> m_queue = nil;
 
   // Pipeline states (one per demo version)
-  id<MTLComputePipelineState> m_pipeline02 = nil;
   id<MTLComputePipelineState> m_pipeline03 = nil;
-  id<MTLComputePipelineState> m_pipeline_fog = nil;
   id<MTLComputePipelineState> m_pipeline_present = nil;
+  id<MTLComputePipelineState> m_pipeline_fog = nil;
 
   // Scene GPU buffers (primitives)
   id<MTLBuffer> m_buf_mats = nil;
@@ -189,6 +188,7 @@ class MetalBackend final : public IRenderBackend {
   id<MTLTexture> m_tex_gi_norm = nil; // RGBA16F at fog res: shading normal
   id<MTLTexture> m_tex_mesh_arrays = nil;
   id<MTLTexture> m_tex_mesh_orm = nil;
+  id<MTLTexture> m_tex_mesh_norm = nil;
   NSMutableArray<id<MTLTexture>> *m_retired_textures = nil;
 
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 130000
@@ -544,13 +544,6 @@ public:
     m_uniforms.max_depth = 7;
 
     NSError *err = nil;
-    m_pipeline02 = CompileKernel("shaders/shader_v02.metal",
-                                 "raytrace_kernel", &err);
-    if (!m_pipeline02) {
-      LUCIDA_ERROR(Render, "shader v02: %s",
-                   err ? [[err localizedDescription] UTF8String] : "?");
-      return false;
-    }
     m_pipeline03 = CompileKernel("shaders/shader_v03.metal",
                                  "raytrace_kernel", &err);
     if (!m_pipeline03) {
@@ -743,6 +736,8 @@ public:
                     MTLPixelFormatRGBA8Unorm_sRGB, "Base colour");
     m_tex_mesh_orm = uploadArray(mesh.orm_array_data, mesh.orm_size,
                                  MTLPixelFormatRGBA8Unorm, "ORM");
+    m_tex_mesh_norm = uploadArray(mesh.norm_array_data, mesh.norm_size,
+                                  MTLPixelFormatRGBA8Unorm, "Normals");
     m_mesh_tex_dim = mesh.tex_size > 0 ? mesh.tex_size : 1;
     m_orm_tex_dim = mesh.orm_size > 0 ? mesh.orm_size : 1;
   }
@@ -824,6 +819,25 @@ public:
     m_instances_dirty = true;
   }
 
+  std::vector<GPUMaterial> GetMeshMaterials(MeshHandle mesh) const override {
+    if (!mesh.IsValid() || mesh.index >= m_mesh_slots.size()) return {};
+    const auto &slot = m_mesh_slots[mesh.index];
+    if (slot.mat_base + slot.mat_count > int(m_pool_mats.size())) return {};
+    return std::vector<GPUMaterial>(m_pool_mats.begin() + slot.mat_base,
+                                   m_pool_mats.begin() + slot.mat_base + slot.mat_count);
+  }
+
+  void SetMeshMaterial(MeshHandle mesh, int mat_index, const GPUMaterial &mat) override {
+    if (!mesh.IsValid() || mesh.index >= m_mesh_slots.size()) return;
+    const auto &slot = m_mesh_slots[mesh.index];
+    if (mat_index < 0 || mat_index >= slot.mat_count) return;
+    int idx = slot.mat_base + mat_index;
+    if (idx < 0 || idx >= int(m_pool_mats.size())) return;
+    m_pool_mats[idx] = mat;
+    m_buf_mesh_mats = MakePrivateBuffer(m_pool_mats.data(), m_pool_mats.size() * sizeof(GPUMaterial));
+    m_reset_history = true;
+  }
+
   void LoadMesh(const MeshData &mesh) {
     if (!mesh.valid || mesh.tri_pos.empty())
       return;
@@ -887,6 +901,7 @@ public:
     m_uniforms.num_instances = 0;
     m_tex_mesh_arrays = nil;
     m_tex_mesh_orm = nil;
+    m_tex_mesh_norm = nil;
     m_num_triangles = 0;
     m_uniforms.num_lights = 2; // restore the demo lights
     m_reset_history = true;
@@ -982,9 +997,15 @@ public:
       SetVec3(m_uniforms.camera_right, right);
       SetVec3(m_uniforms.camera_up, up);
       m_uniforms.time = float(std::fmod(time.elapsed, 10000.0));
+      bool has_active_mesh = m_mesh_loaded && !m_instances.empty() && m_buf_triangles;
+      m_uniforms.enable_triangles = has_active_mesh ? 1 : 0;
+      m_uniforms.num_triangles    = has_active_mesh ? m_num_triangles : 0;
+      m_uniforms.num_bvh_nodes    = has_active_mesh ? m_num_bvh_nodes : 0;
+      m_uniforms.num_instances    = int(m_instances.size());
       m_uniforms.enable_fog = m_fog ? 1 : 0;
       m_uniforms.enable_jitter = m_jitter ? 1 : 0;
       m_uniforms.samples_per_pixel = m_samples;
+      m_total_rays = m_ray_w * m_ray_h * m_samples;
 
       // View-projection matching the ray generation above, so the shader
       // can reproject world positions into the previous frame for motion
@@ -1053,11 +1074,7 @@ public:
 
       // --- Pass 2: ray tracing at m_ray_w x m_ray_h
       id<MTLComputeCommandEncoder> ce = [cmd computeCommandEncoder];
-      // v02 is the legacy Demo 0.2 kernel only; every later demo runs the
-      // current shader. Testing for ==1 sent Demo 0.4 down the old path, where
-      // none of the procedural material code exists.
-      [ce setComputePipelineState:(m_model == ShadingModel::Whitted ? m_pipeline02
-                                                  : m_pipeline03)];
+      [ce setComputePipelineState:m_pipeline03];
       [ce setTexture:m_tex_gbuffer atIndex:0];
       if (m_tex_mesh_arrays) {
         [ce setTexture:m_tex_mesh_arrays atIndex:1];
@@ -1072,6 +1089,8 @@ public:
       [ce setTexture:m_tex_gi_norm atIndex:8];
       [ce setTexture:(m_tex_mesh_orm ? m_tex_mesh_orm : m_tex_mesh_arrays)
              atIndex:6];
+      [ce setTexture:(m_tex_mesh_norm ? m_tex_mesh_norm : (m_tex_mesh_arrays ? m_tex_mesh_arrays : m_tex_gbuffer))
+             atIndex:9];
       bindScene(ce);
       [ce dispatchThreads:MTLSizeMake(m_ray_w, m_ray_h, 1)
           threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
@@ -1254,7 +1273,7 @@ public:
     s.cpu_frame_ms = 0.0f;
     s.gpu_frame_ms = float(m_gpu_ms_ema.load(std::memory_order_relaxed));
     s.ray_count = m_total_rays;
-    s.tri_count = m_num_triangles;
+    s.tri_count = (m_mesh_loaded && !m_instances.empty()) ? m_num_triangles : 0;
     return s;
   }
 

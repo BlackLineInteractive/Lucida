@@ -42,6 +42,8 @@ public:
 
 private:
     IRenderBackend* m_renderer = nullptr;
+    u64             m_last_topology = 0;
+    size_t          m_last_mesh_count = 0;
 };
 
 } // namespace lucida

@@ -71,19 +71,21 @@ static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat) {
     GPUMaterial m{};
     aiColor4D   col;
     float       fval;
+    aiString    name;
+
+    std::string mat_name;
+    if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_NAME, name)) {
+        mat_name = name.C_Str();
+        std::transform(mat_name.begin(), mat_name.end(), mat_name.begin(), ::tolower);
+    }
 
     // Base color / albedo
+    m.albedo[0] = 0.85f; m.albedo[1] = 0.85f; m.albedo[2] = 0.85f;
     if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_BASE_COLOR, col)) {
         m.albedo[0] = col.r; m.albedo[1] = col.g; m.albedo[2] = col.b;
     } else if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col)) {
         m.albedo[0] = col.r; m.albedo[1] = col.g; m.albedo[2] = col.b;
-    } else {
-        // Fallback
-        m.albedo[0] = 0.8f; m.albedo[1] = 0.8f; m.albedo[2] = 0.8f;
     }
-
-    // If it's pure white/gray/black (often means texture is missing), we keep it as is.
-    // Rainbow colors removed for realism.
 
     // Emissive
     if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, col) &&
@@ -92,27 +94,101 @@ static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat) {
         m.type = 3; // EMISSIVE
     }
 
-    // Metallic / roughness (glTF PBR).
-    //
-    // These are *factors*, and glTF defines both as 1.0 by default precisely
-    // because a metallicRoughness texture is expected to supply the real
-    // per-texel values. Sponza reports metallic=1, roughness=1 for all 26 of its
-    // materials. Taking the factors at face value classified the entire
-    // cathedral as METAL, which both looked wrong (the metal path has no diffuse
-    // term) and cost seven mirror bounces per pixel. The texture is loaded
-    // below; the factors only survive when there is no texture to override them.
+    // Opacity / Transmission / Glass detection
+    float opacity = 1.0f;
+    ai_mat->Get(AI_MATKEY_OPACITY, opacity);
+    float transmission = 0.0f;
+    ai_mat->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission);
+    float refracti = 1.5f;
+    ai_mat->Get(AI_MATKEY_REFRACTI, refracti);
+
+    // Metallic / roughness factors
     m.metallic  = 0.0f;
-    m.roughness = 0.85f;
+    m.roughness = 0.35f;
     if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_METALLIC_FACTOR,  fval)) m.metallic  = fval;
     if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, fval)) m.roughness = fval;
 
-    // Everything textured goes through the unified PBR path, which handles metal
-    // and dielectric from the metallic value rather than from a discrete type.
-    if (m.type != 3) m.type = 6;
+    // Intelligent physical classification based on semantic naming & PBR attributes
+    if (m.type != 3) {
+        if (opacity < 0.92f || transmission > 0.08f ||
+            mat_name.find("glass") != std::string::npos ||
+            mat_name.find("window") != std::string::npos ||
+            mat_name.find("windshield") != std::string::npos ||
+            mat_name.find("lens") != std::string::npos ||
+            mat_name.find("lightglass") != std::string::npos ||
+            mat_name.find("transparent") != std::string::npos) {
+            m.type = 2; // GLASS
+            m.refractive_index = (refracti > 1.0f) ? refracti : 1.52f;
+            m.roughness = 0.0f;
+            m.metallic = 0.0f;
+            if (m.albedo[0] < 0.05f && m.albedo[1] < 0.05f && m.albedo[2] < 0.05f) {
+                m.albedo[0] = 0.95f; m.albedo[1] = 0.98f; m.albedo[2] = 1.0f;
+            }
+        } else if (mat_name.find("chrome") != std::string::npos ||
+                   mat_name.find("mirror") != std::string::npos ||
+                   mat_name.find("nickel") != std::string::npos ||
+                   mat_name.find("badge") != std::string::npos ||
+                   (m.metallic > 0.75f && m.roughness < 0.15f)) {
+            m.type = 1; // METAL (Mirror)
+            m.metallic = 1.0f;
+            m.roughness = std::max(m.roughness, 0.02f);
+            if (m.albedo[0] < 0.1f && m.albedo[1] < 0.1f && m.albedo[2] < 0.1f) {
+                m.albedo[0] = m.albedo[1] = m.albedo[2] = 0.95f;
+            }
+        } else if (mat_name.find("tire") != std::string::npos ||
+                   mat_name.find("rubber") != std::string::npos) {
+            m.type = 6; // PBR
+            m.albedo[0] = m.albedo[1] = m.albedo[2] = 0.08f;
+            m.roughness = 0.85f;
+            m.metallic = 0.0f;
+        } else if (mat_name.find("plastic") != std::string::npos ||
+                   mat_name.find("trim") != std::string::npos) {
+            m.type = 6; // PBR
+            m.albedo[0] = m.albedo[1] = m.albedo[2] = 0.06f;
+            m.roughness = 0.35f;
+            m.metallic = 0.05f;
+        } else if (mat_name.find("carpaint") != std::string::npos ||
+                   mat_name.find("paint") != std::string::npos ||
+                   mat_name.find("body") != std::string::npos ||
+                   mat_name.find("chassis") != std::string::npos) {
+            m.type = 6; // PBR Car Paint
+            m.roughness = 0.12f; // Glossy clearcoat
+            m.metallic  = (m.metallic > 0.1f) ? m.metallic : 0.05f;
+        } else {
+            m.type = 6; // PBR
+        }
+    }
 
-    m.refractive_index = 1.5f;
+    m.refractive_index = (refracti > 1.0f) ? refracti : 1.5f;
     m.albedo2[0] = m.albedo2[1] = m.albedo2[2] = 0.1f;
     return m;
+}
+
+static bool GetBaseColorTexture(const aiMaterial* mat, aiString& out) {
+    // glTF 2.0 PBR base color (most common for GLB)
+    if (mat->GetTexture(aiTextureType_BASE_COLOR, 0, &out) == AI_SUCCESS) return true;
+    // Legacy fallback: traditional diffuse (OBJ, FBX, older glTF)
+    if (mat->GetTexture(aiTextureType_DIFFUSE, 0, &out) == AI_SUCCESS) return true;
+    // Some Assimp importers surface it under UNKNOWN slot 0
+    // (when the material has no other aiTextureType_UNKNOWN textures)
+    aiString tmp;
+    if (mat->GetTexture(aiTextureType_UNKNOWN, 0, &tmp) == AI_SUCCESS) {
+        // Only take it as base color if it doesn't look like an ORM map
+        std::string fname = tmp.C_Str();
+        std::transform(fname.begin(), fname.end(), fname.begin(), ::tolower);
+        bool is_orm = (fname.find("orm") != std::string::npos ||
+                       fname.find("rough") != std::string::npos ||
+                       fname.find("metal") != std::string::npos ||
+                       fname.find("occlusion") != std::string::npos ||
+                       fname.find("_mr") != std::string::npos ||
+                       fname.find("normal") != std::string::npos ||
+                       fname.find("norm") != std::string::npos ||
+                       fname.find("bump") != std::string::npos);
+        if (!is_orm) { out = tmp; return true; }
+    }
+    // Last resort: ambient/lightmap channel sometimes carries base color
+    if (mat->GetTexture(aiTextureType_AMBIENT, 0, &out) == AI_SUCCESS) return true;
+    return false;
 }
 
 // glTF packs occlusion/roughness/metallic into one image; Assimp surfaces it
@@ -121,10 +197,11 @@ static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat) {
 static bool GetORMTexture(const aiMaterial* mat, aiString& out, const char*& which) {
     if (mat->GetTexture(aiTextureType_METALNESS, 0, &out) == AI_SUCCESS)         { which = "METALNESS"; return true; }
     if (mat->GetTexture(aiTextureType_DIFFUSE_ROUGHNESS, 0, &out) == AI_SUCCESS) { which = "ROUGHNESS"; return true; }
+    if (mat->GetTexture(aiTextureType_AMBIENT_OCCLUSION, 0, &out) == AI_SUCCESS) { which = "OCCLUSION"; return true; }
 
     aiString normals, basecolor, specular, height;
     bool have_n = mat->GetTexture(aiTextureType_NORMALS, 0, &normals) == AI_SUCCESS;
-    bool have_b = mat->GetTexture(aiTextureType_DIFFUSE, 0, &basecolor) == AI_SUCCESS;
+    bool have_b = GetBaseColorTexture(mat, basecolor);
     bool have_s = mat->GetTexture(aiTextureType_SPECULAR, 0, &specular) == AI_SUCCESS;
     bool have_h = mat->GetTexture(aiTextureType_HEIGHT, 0, &height) == AI_SUCCESS;
 
@@ -142,6 +219,7 @@ static bool GetORMTexture(const aiMaterial* mat, aiString& out, const char*& whi
             fname.find("diff") != std::string::npos ||
             fname.find("albedo") != std::string::npos ||
             fname.find("color") != std::string::npos ||
+            fname.find("base")  != std::string::npos ||
             fname.find("spec") != std::string::npos) {
             return false;
         }
@@ -160,6 +238,25 @@ static bool GetORMTexture(const aiMaterial* mat, aiString& out, const char*& whi
     return false;
 }
 
+static bool GetNormalTexture(const aiMaterial* mat, aiString& out) {
+    // Proper normal map slot (glTF, FBX)
+    if (mat->GetTexture(aiTextureType_NORMALS, 0, &out) == AI_SUCCESS) return true;
+    // Some exporters store normals as HEIGHT (OBJ/MTL convention)
+    if (mat->GetTexture(aiTextureType_HEIGHT, 0, &out) == AI_SUCCESS) return true;
+    // UNKNOWN slot: accept only if name contains "norm" or "bump"
+    aiString tmp;
+    if (mat->GetTexture(aiTextureType_UNKNOWN, 0, &tmp) == AI_SUCCESS) {
+        std::string fname = tmp.C_Str();
+        std::transform(fname.begin(), fname.end(), fname.begin(), ::tolower);
+        if (fname.find("norm") != std::string::npos ||
+            fname.find("bump") != std::string::npos ||
+            fname.find("ddn")  != std::string::npos ||
+            fname.find("nrm")  != std::string::npos) {
+            out = tmp; return true;
+        }
+    }
+    return false;
+}
 
 void BuildBVH(std::vector<GPUTriangle>& tris,
               std::vector<GPUBVHNode>&  nodes,
@@ -268,10 +365,14 @@ MeshData LoadModel(const std::string& path, float target_size) {
     MeshData result;
 
     Assimp::Importer importer;
+    importer.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS, aiComponent_CAMERAS | aiComponent_LIGHTS | aiComponent_ANIMATIONS);
+    importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 66.0f);
+
     const aiScene* scene = importer.ReadFile(path,
-        aiProcess_Triangulate       |
-        aiProcess_GenSmoothNormals  |
-                aiProcess_FlipUVs           |
+        aiProcess_Triangulate           |
+        aiProcess_GenNormals            | // preserves author normals
+        aiProcess_CalcTangentSpace      | // generates tangents+bitangents for normal maps
+        aiProcess_FlipUVs               | // Metal texture space
         aiProcess_JoinIdenticalVertices |
         aiProcess_PreTransformVertices);
 
@@ -295,7 +396,7 @@ MeshData LoadModel(const std::string& path, float target_size) {
     int max_src = 0;
     for (unsigned int mi = 0; mi < scene->mNumMaterials; mi++) {
         aiString tp;
-        if (scene->mMaterials[mi]->GetTexture(aiTextureType_DIFFUSE, 0, &tp) != AI_SUCCESS) continue;
+        if (!GetBaseColorTexture(scene->mMaterials[mi], tp)) continue;
         int w = 0, h = 0, c = 0;
         if (tp.data[0] == '*') {
             int idx = atoi(&tp.data[1]);
@@ -315,16 +416,18 @@ MeshData LoadModel(const std::string& path, float target_size) {
         while (p * 2 <= v && p * 2 <= cap) p *= 2;
         return std::min(p, cap);
     };
-    const int tex_size = (max_src > 0) ? pow2_at_most(max_src, kMeshTexSizeMax) : 256;
-    const int orm_size = std::min(tex_size, kMeshOrmSizeMax);
+    const int tex_size  = (max_src > 0) ? pow2_at_most(max_src, kMeshTexSizeMax) : 256;
+    const int orm_size  = std::min(tex_size, kMeshOrmSizeMax);
+    const int norm_size = std::min(tex_size, kMeshNormSizeMax);
 
-    const size_t slice_texels = (size_t)tex_size * tex_size;
-    const size_t orm_texels   = (size_t)orm_size * orm_size;
-    result.tex_size = tex_size;
-    result.orm_size = orm_size;
+    const size_t slice_texels = (size_t)tex_size  * tex_size;
+    const size_t orm_texels   = (size_t)orm_size   * orm_size;
+    const size_t norm_texels  = (size_t)norm_size  * norm_size;
+    result.tex_size  = tex_size;
+    result.orm_size  = orm_size;
+    result.norm_size = norm_size;
     result.texture_array_data.resize(num_mats * slice_texels * 4, 255); // white default
-    // Default ORM: fully rough, fully dielectric - the safe reading for a
-    // material whose real values we could not find.
+    // Default ORM: fully rough, fully dielectric.
     result.orm_array_data.assign(num_mats * orm_texels * 4, 0);
     for (size_t i = 0; i < num_mats * orm_texels; i++) {
         result.orm_array_data[i*4+0] = 255;  // occlusion
@@ -332,10 +435,18 @@ MeshData LoadModel(const std::string& path, float target_size) {
         result.orm_array_data[i*4+2] = 0;    // metallic
         result.orm_array_data[i*4+3] = 255;
     }
+    // Default normal map: flat (0.5, 0.5, 1.0) = pointing straight up in tangent space.
+    result.norm_array_data.assign(num_mats * norm_texels * 4, 0);
+    for (size_t i = 0; i < num_mats * norm_texels; i++) {
+        result.norm_array_data[i*4+0] = 128;  // X = 0
+        result.norm_array_data[i*4+1] = 128;  // Y = 0
+        result.norm_array_data[i*4+2] = 255;  // Z = +1
+        result.norm_array_data[i*4+3] = 255;
+    }
 
     const char* dump_dir = getenv("RT_DUMP_TEXTURES");
     std::cout << "[ModelLoader] Texture arrays: base " << tex_size << "^2, ORM "
-              << orm_size << "^2 (largest source " << max_src << ")\n";
+              << orm_size << "^2, Norm " << norm_size << "^2 (largest source " << max_src << ")\n";
 
     result.materials.resize(scene->mNumMaterials);
 
@@ -391,7 +502,7 @@ MeshData LoadModel(const std::string& path, float target_size) {
 
             // ---- base colour
             aiString tex_path;
-            if (ai_mat->GetTexture(aiTextureType_DIFFUSE, 0, &tex_path) == AI_SUCCESS) {
+            if (GetBaseColorTexture(ai_mat, tex_path)) {
                 int tw = 0, th = 0;
                 uint8_t* pixels = decode_texture(tex_path, tw, th);
                 if (pixels) {
@@ -443,6 +554,20 @@ MeshData LoadModel(const std::string& path, float target_size) {
                 }
             }
 
+            // ---- tangent-space normal map
+            uint8_t* norm_dst = result.norm_array_data.data() + (size_t)mi * norm_texels * 4;
+            aiString norm_path;
+            if (GetNormalTexture(ai_mat, norm_path)) {
+                int tw = 0, th = 0;
+                uint8_t* pixels = decode_texture(norm_path, tw, th);
+                if (pixels) {
+                    ResizeBox(pixels, tw, th, norm_dst, norm_size, norm_size);
+                    stbi_image_free(pixels);
+                    gm.flags |= MATFLAG_HAS_NORMAL_TEX;
+                }
+            }
+            // If no normal map was found the default flat (128,128,255) is already in place.
+
             double br=0, bg=0, bb=0, ba=0, bopaque=0, wr=0, wg=0, wb=0, wsum=0;
             for (size_t i = 0; i < slice_texels; i++) {
                 br += dst[i*4+0]; bg += dst[i*4+1]; bb += dst[i*4+2]; ba += dst[i*4+3];
@@ -455,8 +580,8 @@ MeshData LoadModel(const std::string& path, float target_size) {
             if (wsum > 0) { wr /= wsum*255.0; wg /= wsum*255.0; wb /= wsum*255.0; }
 
             // Decide once, from the data, whether this material is see-through.
-            // Sponza's grime decals sit near 0.70; ordinary stone is exactly 0.
-            if (bopaque > 0.02) gm.flags |= MATFLAG_ALPHA_BLEND;
+            // Decals have substantial transparency (> 10%), ordinary stone/metal is ~0.
+            if (bopaque > 0.10) gm.flags |= MATFLAG_ALPHA_BLEND;
             result.materials[mi] = gm;
 
             double ar=0, ag=0, ab=0;
@@ -507,6 +632,13 @@ MeshData LoadModel(const std::string& path, float target_size) {
             int mat_idx = (int)mesh->mMaterialIndex;
             if (mat_idx >= (int)result.materials.size()) mat_idx = 0;
 
+            ModelSubmesh submesh{};
+            std::string sname = (mesh->mName.length > 0) ? mesh->mName.C_Str() : node->mName.C_Str();
+            if (sname.empty() || sname == "RootNode") sname = "part_" + std::to_string(result.submeshes.size() + 1);
+            submesh.name = sname;
+            submesh.tri_start = (int)result.triangles.size();
+            submesh.mat_index = mat_idx;
+
             for (unsigned int f = 0; f < mesh->mNumFaces; f++) {
                 const aiFace& face = mesh->mFaces[f];
                 if (face.mNumIndices != 3) continue;
@@ -538,6 +670,8 @@ MeshData LoadModel(const std::string& path, float target_size) {
                 tri.mat_index = mat_idx;
                 result.triangles.push_back(tri);
             }
+            submesh.tri_count = (int)result.triangles.size() - submesh.tri_start;
+            if (submesh.tri_count > 0) result.submeshes.push_back(submesh);
         }
         for (unsigned int c = 0; c < node->mNumChildren; c++)
             traverse(node->mChildren[c]);
@@ -576,16 +710,12 @@ MeshData LoadModel(const std::string& path, float target_size) {
     float cy = (mn[1] + mx[1]) * 0.5f;
     float cz = (mn[2] + mx[2]) * 0.5f;
     float max_dim = std::max({mx[0]-mn[0], mx[1]-mn[1], mx[2]-mn[2]});
-    float scale   = (max_dim > 1e-6f) ? (target_size / max_dim) : 1.0f;
+    float scale = (target_size > 0.0f && max_dim > 1e-6f) ? (target_size / max_dim) : 1.0f;
 
     std::cout << "[ModelLoader] " << result.triangles.size() << " tris, "
-              << result.materials.size() << " materials. "
-              << "Scale: " << scale << std::endl;
+              << result.materials.size() << " materials. Scale: " << scale << std::endl;
 
-    // Centre horizontally and scale, but seat the model on y = 0 rather than
-    // centring it vertically. Centring put half of Sponza below the origin, so
-    // the scene's floor plane sliced through the arcade at mid-height - which is
-    // most of why the model looked wrong once loaded.
+    // Centre horizontally and scale, seating the model on y = 0
     const float centre[3] = {cx, cy, cz};
     for (auto& t : result.triangles) {
         for (int k = 0; k < 3; k++) {
@@ -594,13 +724,28 @@ MeshData LoadModel(const std::string& path, float target_size) {
             t.v2[k] = (t.v2[k] - centre[k]) * scale;
         }
     }
-    const float base_y = (mn[1] - cy) * scale;   // lowest point after scaling
+    const float base_y = (mn[1] - cy) * scale;
     for (auto& t : result.triangles) {
         t.v0[1] -= base_y; t.v1[1] -= base_y; t.v2[1] -= base_y;
     }
 
-    result.aabb_min = Vec3((mn[0]-cx)*scale, 0.0f,                    (mn[2]-cz)*scale);
-    result.aabb_max = Vec3((mx[0]-cx)*scale, (mx[1]-mn[1])*scale,     (mx[2]-cz)*scale);
+    result.aabb_min = Vec3((mn[0]-cx)*scale, 0.0f,                (mn[2]-cz)*scale);
+    result.aabb_max = Vec3((mx[0]-cx)*scale, (mx[1]-mn[1])*scale, (mx[2]-cz)*scale);
+
+    for (auto& sm : result.submeshes) {
+        if (sm.tri_count <= 0) continue;
+        float smn[3] = { 1e30f,  1e30f,  1e30f};
+        float smx[3] = {-1e30f, -1e30f, -1e30f};
+        for (int ti = sm.tri_start; ti < sm.tri_start + sm.tri_count; ti++) {
+            const auto& t = result.triangles[ti];
+            for (int k = 0; k < 3; k++) {
+                smn[k] = std::min({smn[k], t.v0[k], t.v1[k], t.v2[k]});
+                smx[k] = std::max({smx[k], t.v0[k], t.v1[k], t.v2[k]});
+            }
+        }
+        sm.aabb_min = Vec3(smn[0], smn[1], smn[2]);
+        sm.aabb_max = Vec3(smx[0], smx[1], smx[2]);
+    }
 
     // The aiScene (and, for a GLB, its embedded texture blobs) is the largest
     // live allocation at this point and nothing below needs it. Releasing it
@@ -630,6 +775,8 @@ MeshData LoadModel(const std::string& path, float target_size) {
     a.uv1[0] = t.uv1[0]; a.uv1[1] = t.uv1[1];
     a.uv2[0] = t.uv2[0]; a.uv2[1] = t.uv2[1];
     a.mat_index = t.mat_index;
+    p.pad0 = p.pad1 = p.pad2 = 0.0f;
+    a.pad0 = a.pad1 = a.pad2 = a.pad3 = 0.0f;
   }
   // The fat build-time array is dead now; on Sponza4k it is 735 MB.
   std::vector<GPUTriangle>().swap(result.triangles);

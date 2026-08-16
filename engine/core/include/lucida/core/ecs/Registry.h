@@ -37,11 +37,11 @@ struct Name {
 struct LocalTransform {
     Vec3 position{0.0f};
     Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
-    f32  scale = 1.0f;
+    Vec3 scale{1.0f, 1.0f, 1.0f};
 
     Mat4 ToMatrix() const {
         Mat4 m = glm::mat4_cast(rotation);
-        m[0] *= scale; m[1] *= scale; m[2] *= scale;
+        m[0] *= scale.x; m[1] *= scale.y; m[2] *= scale.z;
         m[3] = Vec4(position, 1.0f);
         return m;
     }

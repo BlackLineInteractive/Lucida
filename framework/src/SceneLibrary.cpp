@@ -35,11 +35,11 @@ void AddPrimitives(Registry& registry, const CommonMaterials& m) {
 
     const Entity glass = CreatePrimitive(registry, PrimitiveType::Sphere,
                                          {0.0f, 0.2f, -4.5f}, m.glass, "Glass ball");
-    registry.Get<LocalTransform>(glass)->scale = 1.2f;
+    registry.Get<LocalTransform>(glass)->scale = Vec3(1.2f);
 
     const Entity emitter = CreatePrimitive(registry, PrimitiveType::Sphere,
                                            {1.5f, 0.5f, -3.5f}, m.emitter, "Emitter");
-    registry.Get<LocalTransform>(emitter)->scale = 0.3f;
+    registry.Get<LocalTransform>(emitter)->scale = Vec3(0.3f);
 
     CreatePrimitive(registry, PrimitiveType::Box, {1.5f, -0.5f, -6.0f}, m.red, "Red box");
 
@@ -173,7 +173,7 @@ SceneAssets MaterialLab(Registry& registry) {
 
         const Entity ball = CreatePrimitive(registry, PrimitiveType::Sphere,
                                             {x, top + kRadius, -6.0f}, mat, stand.name);
-        registry.Get<LocalTransform>(ball)->scale = kRadius;
+        registry.Get<LocalTransform>(ball)->scale = Vec3(kRadius);
     }
 
     CreateLight(registry, {-6.0f, 9.0f, 1.0f}, {1.00f, 0.96f, 0.90f}, 90.0f, 1.5f, "Key light");

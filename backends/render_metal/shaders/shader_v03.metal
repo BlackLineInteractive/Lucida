@@ -16,6 +16,7 @@ constant float kBayer4[16] = {
 constant int MATFLAG_HAS_BASECOLOR_TEX = 1 << 0;
 constant int MATFLAG_HAS_ORM_TEX       = 1 << 1;
 constant int MATFLAG_ALPHA_BLEND       = 1 << 2;
+constant int MATFLAG_HAS_NORMAL_TEX    = 1 << 3;
 struct Sphere { packed_float3 center; float radius; int mat_index; int pad1, pad2, pad3; };
 struct Plane { packed_float3 normal; float d_offset; int mat_index; int pad1, pad2, pad3; };
 struct Cube { packed_float3 center; float pad1; packed_float3 half_size; int mat_index; };
@@ -1028,6 +1029,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                  device const Material* mesh_mats,
                  texture2d_array<float, access::sample> mesh_textures,
                  texture2d_array<float, access::sample> mesh_orm,
+                 texture2d_array<float, access::sample> mesh_normals,
                  texture2d<float, access::sample> aoTex,
                  texture2d<float, access::sample> giNormTex,
                  texture2d<float, access::sample> fogDepthTex,
@@ -1097,32 +1099,18 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 float cone_w  = hit.t * (2.0f * u.tan_half_fov / max(u.screen_height, 1.0f));
                 float grazing = max(abs(dot(hit.normal, cur.direction)), 0.1f);
                 float lod_base = log2(max(cone_w * hit.uv_density / grazing, 1e-9f));
+                float tex_lod = clamp(lod_base + log2(u.mesh_tex_dim) - 1.5f, 0.0f, 6.0f);
 
                 float2 uv = float2(hit.uv.x, hit.uv.y);
-                float4 tex_color = mesh_textures.sample(mesh_sampler, uv, hit.mat_index,
-                                                        level(max(lod_base + log2(u.mesh_tex_dim), 0.0f)));
-                mat.albedo = tex_color.xyz;
+                float4 tex_color = mesh_textures.sample(mesh_sampler, uv, hit.mat_index, level(tex_lod));
+                mat.albedo = (mat.flags & MATFLAG_HAS_BASECOLOR_TEX) ? (tex_color.xyz * mat.albedo) : tex_color.xyz;
 
                 // Alpha. Sponza's grime and banner decals are separate polygons
-                // laid over the walls, ~70% transparent, meant to blend. Ignoring
-                // alpha drew them as opaque grey slabs that hid the stonework
-                // behind - the flat polygonal patches on the walls. Continuing
-                // the ray with the complementary weight composites them properly;
-                // the existing ray stack already does exactly this job.
-                // Alpha, but only for materials the loader confirmed actually
-                // carry transparency. Applying this to every mesh material made
-                // solid walls see-through wherever their alpha channel happened
-                // to hold zeros.
+                // laid over the walls, ~70% transparent, meant to blend.
                 if (mat.flags & MATFLAG_ALPHA_BLEND) {
                     float alpha = tex_color.w;
                     float3 cont_o = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
 
-                    // A decal is not a bounce, so compositing through it must not
-                    // spend the reflection budget. Charging it one meant the depth
-                    // ran out on stacked grime and the ray was dropped, which read
-                    // as hard black patches. The stack size bounds the recursion
-                    // instead, and the ray advances past the hit every time, so it
-                    // always terminates.
                     if (alpha < 0.995f) {
                         if (sp < MAX_STACK) {
                             stack_ray[sp]     = make_ray(cont_o, cur.direction);
@@ -1135,13 +1123,21 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                     }
                 }
 
-                // Per-texel roughness/metallic. Without this the glTF factors
-                // (1,1 by default) made every surface a rough mirror.
+                // Per-texel roughness/metallic.
                 if (mat.flags & MATFLAG_HAS_ORM_TEX) {
-                    float4 orm = mesh_orm.sample(mesh_sampler, uv, hit.mat_index,
-                                                 level(max(lod_base + log2(u.orm_tex_dim), 0.0f)));
+                    float4 orm = mesh_orm.sample(mesh_sampler, uv, hit.mat_index, level(tex_lod));
                     mat.roughness = orm.y;
                     mat.metallic  = orm.z;
+                }
+
+                // Tangent-space normal mapping
+                if (mat.flags & MATFLAG_HAS_NORMAL_TEX) {
+                    float3 map_n = mesh_normals.sample(mesh_sampler, uv, hit.mat_index, level(tex_lod)).xyz * 2.0f - 1.0f;
+                    float3 Ngeom = hit.normal;
+                    float3 up_axis = abs(Ngeom.z) < 0.999f ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+                    float3 T = normalize(cross(up_axis, Ngeom));
+                    float3 B = cross(Ngeom, T);
+                    hit.normal = normalize(T * map_n.x + B * map_n.y + Ngeom * map_n.z);
                 }
             }
         } else {
@@ -1177,18 +1173,19 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
             float3 wp = hit.point;
             float tm = u.time;
 
-            float w1 = sin(wp.x * 8.0 + tm * 2.0) * 0.012;
-            float w2 = cos(wp.z * 7.0 + tm * 2.5) * 0.012;
-            float w3 = sin((wp.x * 0.7 + wp.z * 0.9) * 14.0 + tm * 3.5) * 0.006;
-            float w4 = cos(wp.x * 3.0 - wp.z * 4.0 + tm * 1.8) * 0.008;
-            float wave_h = w1 + w2 + w3 + w4;
+            float w1 = sin(wp.x * 6.0 + tm * 2.2) * 0.020;
+            float w2 = cos(wp.z * 5.0 + tm * 1.8) * 0.020;
+            float w3 = sin((wp.x * 0.7 + wp.z * 0.9) * 11.0 + tm * 3.2) * 0.010;
+            float wave_h = w1 + w2 + w3;
 
-            float dx = 8.0 * cos(wp.x * 8.0 + tm * 2.0) * 0.012
-                     + 14.0 * 0.7 * cos((wp.x * 0.7 + wp.z * 0.9) * 14.0 + tm * 3.5) * 0.006
-                     + 3.0 * -sin(wp.x * 3.0 - wp.z * 4.0 + tm * 1.8) * 0.008;
-            float dz = 7.0 * -sin(wp.z * 7.0 + tm * 2.5) * 0.012
-                     + 14.0 * 0.9 * cos((wp.x * 0.7 + wp.z * 0.9) * 14.0 + tm * 3.5) * 0.006
-                     + 4.0 * sin(wp.x * 3.0 - wp.z * 4.0 + tm * 1.8) * 0.008;
+            float dx = 6.0 * cos(wp.x * 6.0 + tm * 2.2) * 0.020
+                     + 11.0 * 0.7 * cos((wp.x * 0.7 + wp.z * 0.9) * 11.0 + tm * 3.2) * 0.010
+                     + 3.5 * -sin(wp.x * 3.5 - wp.z * 3.0 + tm * 2.4) * 0.008
+                     + 22.0 * 1.2 * cos((wp.x * 1.2 - wp.z * 0.8) * 22.0 + tm * 4.5) * 0.004;
+            float dz = 5.0 * -sin(wp.z * 5.0 + tm * 1.8) * 0.020
+                     + 11.0 * 0.9 * cos((wp.x * 0.7 + wp.z * 0.9) * 11.0 + tm * 3.2) * 0.010
+                     + 3.0 * sin(wp.x * 3.5 - wp.z * 3.0 + tm * 2.4) * 0.008
+                     - 22.0 * 0.8 * cos((wp.x * 1.2 - wp.z * 0.8) * 22.0 + tm * 4.5) * 0.004;
 
             float3 water_n = normalize(float3(-dx, 1.0, -dz));
 
@@ -1312,12 +1309,13 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                         float norm = (shininess + 8.0) / 25.13274;
                         float3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
                         float3 sun_spec = F * pow(NdotH, shininess) * norm * (1.0 - roughness * 0.7);
-                        direct += (diffuse_albedo + sun_spec)
-                                * sun_ndl * kSunColor * kSunIntensity * vis;
+                        float3 sun_diff = (diffuse_albedo * (1.0 / 3.14159265f)) * sun_ndl * kSunColor * 2.0f * vis;
+                        float3 sun_spec_term = sun_spec * sun_ndl * kSunColor * 2.0f * vis;
+                        direct += sun_diff + sun_spec_term;
                     }
                 }
                 float3 bent = (length(bounce) > 1e-3) ? normalize(bounce) : N;
-                indirect = sky_irradiance(bent) * ao;
+                indirect = sky_irradiance(bent) * (ao * 0.6f);
             } else {
                 ao = calc_analytic_ao(hit.point, N, spheres, cubes, u);
                 float3 sky_ambient = sky_color(N, u) * u.ambient_light * 0.5;
@@ -1730,6 +1728,7 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
                             texture2d_array<float, access::sample> mesh_orm [[texture(6)]],
                             texture2d<float, access::sample> aoTexture [[texture(7)]],
                             texture2d<float, access::sample> giNormTexture [[texture(8)]],
+                            texture2d_array<float, access::sample> mesh_normals [[texture(9)]],
                             device const Material* materials [[buffer(0)]],
                             device const Sphere*   spheres   [[buffer(1)]],
                             device const Plane*    planes    [[buffer(2)]],
@@ -1782,7 +1781,7 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
             int   fi = -1;
             color += trace_ray(r, materials, spheres, planes, cubes, cylinders, cones, tori, disks, lights,
                                bvh_nodes, triangles, tri_attrs, instances, mesh_mats, mesh_textures,
-                               mesh_orm, aoTexture, giNormTexture, fogDepthTexture,
+                               mesh_orm, mesh_normals, aoTexture, giNormTexture, fogDepthTexture,
                                (float2(gid) + 0.5) / float2(u.screen_width, u.screen_height),
                                u, fd, fi);
             if (dx == 0 && dy == 0) { center_dir = dir; center_fd = fd; center_inst = fi; }
