@@ -12,6 +12,22 @@
 
 namespace lucida {
 
+enum class MeshEditMode : u8 {
+    Object = 0,
+    Vertex,
+    Edge,
+    Face
+};
+
+enum class UVProjectionMode : u8 {
+    PlanarX = 0,
+    PlanarY,
+    PlanarZ,
+    Box,
+    Spherical,
+    Cylindrical
+};
+
 struct Vertex {
     Vec3 position{0.0f};
     Vec3 normal{0.0f, 1.0f, 0.0f};
@@ -26,11 +42,20 @@ struct TriangleFace {
     int material_index = 0;
 };
 
+struct MeshEdge {
+    uint32_t v0 = 0;
+    uint32_t v1 = 0;
+
+    bool operator==(const MeshEdge& other) const {
+        return (v0 == other.v0 && v1 == other.v1) || (v0 == other.v1 && v1 == other.v0);
+    }
+};
+
 struct EditableMesh {
     std::vector<Vertex> vertices;
     std::vector<TriangleFace> faces;
 
-    // Transforms & manipulation
+    // Whole Mesh Transforms & manipulation
     void Translate(const Vec3& offset);
     void Scale(const Vec3& scale);
     void RotateX(float angle_radians);
@@ -39,6 +64,22 @@ struct EditableMesh {
     void RecalculateNormals(bool smooth = true);
     void Subdivide();
     void Deform(const std::function<Vec3(const Vec3& pos)>& deformer);
+
+    // Sub-Element Manipulation (Vertices, Edges, Faces)
+    std::vector<MeshEdge> GetEdges() const;
+    void TranslateVertices(const std::vector<uint32_t>& indices, const Vec3& offset);
+    void ScaleVertices(const std::vector<uint32_t>& indices, const Vec3& scale, const Vec3& pivot = Vec3(0.0f));
+    void WeldVertices(float threshold = 1e-4f);
+
+    void SplitEdge(uint32_t v0, uint32_t v1);
+    void ExtrudeFace(uint32_t face_index, float distance);
+    void InsetFace(uint32_t face_index, float inset_amount);
+    void SubdivideFace(uint32_t face_index);
+    void FlipFaceNormal(uint32_t face_index);
+    void DeleteFace(uint32_t face_index);
+
+    // UV Mapping & Unwrapping
+    void GenerateUVs(UVProjectionMode mode, const Vec2& scale = Vec2(1.0f), const Vec2& offset = Vec2(0.0f));
 
     // Conversion to engine GPU-compatible MeshData with BVH
     MeshData BuildMeshData(int material_index = 0) const;

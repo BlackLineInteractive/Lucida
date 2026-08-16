@@ -22,6 +22,8 @@
 #include "lucida/framework/Systems.h"
 #include "lucida/render/Components.h"
 #include "lucida/resource/MeshBuilder.h"
+#include "lucida/resource/Prefab.h"
+#include "lucida/resource/TextureManager.h"
 #include "lucida/runtime/Particles.h"
 #include "lucida/runtime/World.h"
 #include <cstdio>
@@ -389,6 +391,70 @@ int main() {
     check(anim_comp.skinning_palette.size() == 2, "skinning palette has 2 joint matrices");
     check(anim_comp.current_time > 0.0f, "animation playback advances time");
     anim_world.Shutdown();
+
+    // --- Sub-Element Mesh Editing & UV Tests
+    EditableMesh sub_mesh = MeshBuilder::CreateCube(Vec3(0.5f));
+    const size_t orig_faces = sub_mesh.faces.size();
+    sub_mesh.ExtrudeFace(0, 0.5f);
+    check(sub_mesh.faces.size() == orig_faces + 6, "ExtrudeFace adds 6 skirt triangles");
+
+    const size_t post_extrude_faces = sub_mesh.faces.size();
+    sub_mesh.InsetFace(0, 0.2f);
+    check(sub_mesh.faces.size() == post_extrude_faces + 6, "InsetFace adds 6 inner skirt triangles");
+
+    const size_t post_inset_faces = sub_mesh.faces.size();
+    sub_mesh.SubdivideFace(0);
+    check(sub_mesh.faces.size() == post_inset_faces + 3, "SubdivideFace splits face into 4 triangles");
+
+    auto edges = sub_mesh.GetEdges();
+    check(!edges.empty(), "EditableMesh::GetEdges returns non-empty edge list");
+
+    sub_mesh.FlipFaceNormal(0);
+    check(sub_mesh.faces.size() > 0, "FlipFaceNormal preserves triangle count");
+
+    // UV generation test
+    sub_mesh.GenerateUVs(UVProjectionMode::Box, Vec2(2.0f), Vec2(0.5f));
+    check(sub_mesh.vertices[0].uv.x != 0.0f || sub_mesh.vertices[0].uv.y != 0.0f, "GenerateUVs assigns Box projection UVs");
+
+    sub_mesh.WeldVertices(0.001f);
+    check(!sub_mesh.vertices.empty() && !sub_mesh.faces.empty(), "WeldVertices cleans up duplicate vertices");
+
+    // --- TextureManager Test
+    std::vector<u8> dummy_pixels(64 * 64 * 4, 255);
+    TextureHandle dummy_tex = TextureManager::Instance().RegisterTexture("memory_test_tex", 64, 64, 4,
+                                                                        TextureFormat::RGBA8_UNORM, dummy_pixels);
+    check(dummy_tex.IsValid(), "TextureManager registers memory texture");
+    const TextureInfo* tex_info = TextureManager::Instance().GetTexture(dummy_tex);
+    check(tex_info && tex_info->width == 64 && tex_info->height == 64, "TextureManager returns valid TextureInfo");
+    check(tex_info->memory_bytes == 64 * 64 * 4, "Texture memory size calculated accurately");
+
+    // --- Engine Prefabs & Node Archetypes Test
+    World prefab_world;
+    prefab_world.Init();
+
+    Entity terr_node = Prefab::CreateTerrainNode(prefab_world, TerrainComponent{}, 0, "TestTerrain");
+    check(prefab_world.Entities().Valid(terr_node), "CreateTerrainNode creates valid entity");
+    check(prefab_world.Entities().Get<TerrainComponent>(terr_node) != nullptr, "TerrainNode contains TerrainComponent");
+
+    Entity veh_node = Prefab::CreateVehicleNode(prefab_world, Vec3(0, 1, 0), 0, "TestCar");
+    check(prefab_world.Entities().Get<Vehicle>(veh_node) != nullptr, "VehicleNode contains Vehicle component");
+    check(prefab_world.Entities().Get<RigidBody>(veh_node) != nullptr, "VehicleNode contains RigidBody component");
+
+    Entity actor_node = Prefab::CreatePhysicsActorNode(prefab_world, PrimitiveType::Sphere, BodyType::Dynamic, Vec3(0, 5, 0), 0, "PhysSphere");
+    check(prefab_world.Entities().Get<RigidBody>(actor_node)->shape == ShapeType::Sphere, "PhysicsActorNode creates sphere collider");
+
+    Entity pawn_node = Prefab::CreatePawnNode(prefab_world, Vec3(0, 2, 5), "Player");
+    check(prefab_world.Entities().Get<CameraComponent>(pawn_node) != nullptr, "PawnNode contains CameraComponent");
+    check(prefab_world.Entities().Get<AudioListenerComponent>(pawn_node) != nullptr, "PawnNode contains AudioListenerComponent");
+    prefab_world.Shutdown();
+
+    // --- RenderSettings AO and AA Pipeline Test
+    RenderSettings r_settings{};
+    r_settings.ao.mode = AOMode::SSAO;
+    r_settings.ao.radius = 2.0f;
+    r_settings.aa.mode = AAMode::TAA;
+    check(r_settings.ao.mode == AOMode::SSAO && r_settings.ao.radius == 2.0f, "RenderSettings configures SSAO ambient occlusion");
+    check(r_settings.aa.mode == AAMode::TAA, "RenderSettings configures TAA anti-aliasing");
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures;

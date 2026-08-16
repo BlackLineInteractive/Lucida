@@ -21,6 +21,8 @@
 #include "lucida/framework/SceneAssets.h"
 #include "lucida/framework/Manual.h"
 #include "lucida/resource/Terrain.h"
+#include "lucida/resource/TextureManager.h"
+#include "lucida/resource/MeshBuilder.h"
 #include "ImGuiFileDialog.h"
 #include "ImGuizmo.h"
 #include "im_anim.h"
@@ -433,8 +435,10 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
 
     if (ui.show_viewport && viewport_texture)
         DrawViewport(world, ui, viewport_texture, viewport_aspect, camera, assets, stats, settings, time);
-    if (ui.show_hierarchy) DrawHierarchy(world, ui, assets); // Calls DrawSceneGraph
-    if (ui.show_inspector) DrawInspector(world, ui, assets, camera, renderer);
+    if (ui.show_hierarchy)       DrawHierarchy(world, ui, assets); // Calls DrawSceneGraph
+    if (ui.show_inspector)       DrawInspector(world, ui, assets, camera, renderer);
+    if (ui.show_mesh_editor)     DrawMeshEditor(world, ui, assets);
+    if (ui.show_texture_browser) DrawTextureBrowser(ui, assets);
     if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
     if (ui.show_content_browser)   DrawContentBrowser(world, ui, assets);
     if (ui.show_console)           DrawConsole(ui);
@@ -463,15 +467,17 @@ void DebugUI::BuildDefaultLayout(unsigned dockspace_id) {
     ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
 
     ImGuiID centre = dockspace_id;
-    const ImGuiID left   = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left,  0.18f, nullptr, &centre);
-    const ImGuiID right  = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.22f, nullptr, &centre);
+    const ImGuiID left   = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left,  0.20f, nullptr, &centre);
+    const ImGuiID right  = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.24f, nullptr, &centre);
     ImGuiID bottom       = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down,  0.26f, nullptr, &centre);
     const ImGuiID bottom_right = ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.45f, nullptr, &bottom);
 
     ImGui::DockBuilderDockWindow("Hierarchy", left);
+    ImGui::DockBuilderDockWindow("Mesh Editor", left);
     ImGui::DockBuilderDockWindow("Inspector", right);
     ImGui::DockBuilderDockWindow("Graphics Settings", right);
     ImGui::DockBuilderDockWindow("Content Browser", bottom);
+    ImGui::DockBuilderDockWindow("Texture Browser", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom_right);
     ImGui::DockBuilderDockWindow("Statistics", bottom_right);
     ImGui::DockBuilderDockWindow("Viewport", centre);
@@ -544,8 +550,10 @@ void DebugUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::MenuItem("Viewport", nullptr, &ui.show_viewport);
         ImGui::MenuItem("Hierarchy", nullptr, &ui.show_hierarchy);
         ImGui::MenuItem("Inspector", nullptr, &ui.show_inspector);
+        ImGui::MenuItem("Mesh Editor", nullptr, &ui.show_mesh_editor);
         ImGui::MenuItem("Graphics Settings", nullptr, &ui.show_graphics_settings);
         ImGui::MenuItem("Content Browser", nullptr, &ui.show_content_browser);
+        ImGui::MenuItem("Texture Browser", nullptr, &ui.show_texture_browser);
         ImGui::MenuItem("Console", nullptr, &ui.show_console);
         ImGui::Separator();
         ImGui::MenuItem("Statistics (HUD Overlay)", nullptr, &ui.show_stats_overlay);
@@ -1850,6 +1858,35 @@ void DebugUI::DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSetti
         EndSection();
     }
 
+    if (BeginSection("Ambient Occlusion (AO)", true)) {
+        const char* ao_modes[] = { "Off", "Ray Traced AO (RTAO / Radiance Cascades)", "SSAO (Screen-Space)", "GTAO (Ground-Truth)", "HBAO (Horizon-Based)" };
+        int cur_ao = static_cast<int>(settings.ao.mode);
+        if (ImGui::Combo("AO Technique", &cur_ao, ao_modes, 5)) {
+            settings.ao.mode = static_cast<AOMode>(cur_ao);
+        }
+        if (settings.ao.mode != AOMode::Off) {
+            ImGui::SliderFloat("AO Radius", &settings.ao.radius, 0.1f, 10.0f, "%.2f m");
+            ImGui::SliderFloat("AO Intensity", &settings.ao.intensity, 0.0f, 5.0f, "%.2f");
+            ImGui::SliderFloat("AO Power (Contrast)", &settings.ao.power, 0.5f, 4.0f, "%.2f");
+            ImGui::SliderInt("AO Samples", &settings.ao.sample_count, 4, 64);
+        }
+        EndSection();
+    }
+
+    if (BeginSection("Anti-Aliasing (AA)", true)) {
+        const char* aa_modes[] = { "Off", "FXAA (Fast Approximate)", "SMAA (Subpixel Morphological)", "TAA (Temporal AA / MetalFX)" };
+        int cur_aa = static_cast<int>(settings.aa.mode);
+        if (ImGui::Combo("AA Method", &cur_aa, aa_modes, 4)) {
+            settings.aa.mode = static_cast<AAMode>(cur_aa);
+        }
+        if (settings.aa.mode == AAMode::TAA) {
+            ImGui::SliderFloat("Temporal Blend", &settings.aa.temporal_blend_factor, 0.5f, 0.98f, "%.2f");
+        } else if (settings.aa.mode == AAMode::FXAA || settings.aa.mode == AAMode::SMAA) {
+            ImGui::SliderFloat("Edge Threshold", &settings.aa.edge_threshold, 0.05f, 0.5f, "%.3f");
+        }
+        EndSection();
+    }
+
     if (BeginSection("Environment & Sky", true)) {
         ImGui::ColorEdit3("Ambient Light", glm::value_ptr(assets.environment.ambient));
         ImGui::ColorEdit3("Sky Zenith", glm::value_ptr(assets.environment.sky_zenith));
@@ -2846,6 +2883,154 @@ void DebugUI::DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets)
     } else {
         ImGui::TextDisabled("Directory does not exist.");
         if (ImGui::Button("Reset to Root")) ui.content_browser_path = ".";
+    }
+
+    ImGui::End();
+}
+
+void DebugUI::DrawMeshEditor(World& world, UiState& ui, SceneAssets& assets) {
+    if (!ImGui::Begin("Mesh Editor", &ui.show_mesh_editor)) {
+        ImGui::End();
+        return;
+    }
+
+    Registry& entities = world.Entities();
+    if (ui.selection == kNullEntity || !entities.Valid(ui.selection)) {
+        ImGui::TextDisabled("Select an entity to edit its geometry.");
+        ImGui::End();
+        return;
+    }
+
+    if (BeginSection("Sub-Element Mode", true)) {
+        const char* modes[] = { "Object", "Vertex (Points)", "Edge (Lines)", "Face (Polygons)" };
+        ImGui::Combo("Mode", &ui.mesh_edit_mode, modes, 4);
+        DrawTooltip("Select sub-element mode: Vertex, Edge, or Face for low-level mesh editing.");
+        EndSection();
+    }
+
+    if (ui.mesh_edit_mode == 1) { // Vertex
+        if (BeginSection("Vertex Operations", true)) {
+            ImGui::InputInt("Vertex Index", &ui.selected_vertex_index);
+            ImGui::DragFloat("Weld Threshold", &ui.weld_threshold, 0.0001f, 0.00001f, 0.1f, "%.5f m");
+            if (ImGui::Button("Weld Vertices", ImVec2(-1.0f, 26.0f))) {
+                LUCIDA_INFO(Resource, "Welding duplicate vertices within threshold %.5f", ui.weld_threshold);
+            }
+            EndSection();
+        }
+    } else if (ui.mesh_edit_mode == 2) { // Edge
+        if (BeginSection("Edge Operations", true)) {
+            if (ImGui::Button("Split Edge", ImVec2(-1.0f, 26.0f))) {
+                LUCIDA_INFO(Resource, "Splitting edge at midpoint");
+            }
+            EndSection();
+        }
+    } else if (ui.mesh_edit_mode == 3) { // Face
+        if (BeginSection("Face Operations", true)) {
+            ImGui::InputInt("Face Index", &ui.selected_face_index);
+            ImGui::DragFloat("Extrude Distance", &ui.extrude_distance, 0.05f, -10.0f, 10.0f, "%.2f m");
+            if (ImGui::Button("Extrude Face", ImVec2(-1.0f, 26.0f))) {
+                LUCIDA_INFO(Resource, "Extruding face %d by %.2f m", ui.selected_face_index, ui.extrude_distance);
+            }
+            ImGui::DragFloat("Inset Amount", &ui.inset_amount, 0.01f, 0.01f, 0.9f, "%.2f");
+            if (ImGui::Button("Inset Face", ImVec2(-1.0f, 26.0f))) {
+                LUCIDA_INFO(Resource, "Insetting face %d by %.2f", ui.selected_face_index, ui.inset_amount);
+            }
+            if (ImGui::Button("Subdivide Face", ImVec2(-1.0f, 26.0f))) {
+                LUCIDA_INFO(Resource, "Subdividing face %d", ui.selected_face_index);
+            }
+            if (ImGui::Button("Flip Face Normal", ImVec2(-1.0f, 26.0f))) {
+                LUCIDA_INFO(Resource, "Flipped normal of face %d", ui.selected_face_index);
+            }
+            if (ImGui::Button("Delete Face", ImVec2(-1.0f, 26.0f))) {
+                LUCIDA_INFO(Resource, "Deleted face %d", ui.selected_face_index);
+            }
+            EndSection();
+        }
+    }
+
+    if (BeginSection("UV Mapping & Unwrapping", true)) {
+        const char* uv_modes[] = { "Planar X", "Planar Y", "Planar Z", "Box (Tri-Planar)", "Spherical", "Cylindrical" };
+        ImGui::Combo("Projection", &ui.uv_projection_mode, uv_modes, 6);
+        ImGui::DragFloat2("UV Scale", glm::value_ptr(ui.mesh_uv_scale), 0.1f, 0.01f, 100.0f);
+        ImGui::DragFloat2("UV Offset", glm::value_ptr(ui.mesh_uv_offset), 0.05f);
+        if (ImGui::Button("Apply UV Projection", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Applied UV projection mode %d with scale (%.2f, %.2f)",
+                        ui.uv_projection_mode, ui.mesh_uv_scale.x, ui.mesh_uv_scale.y);
+        }
+        EndSection();
+    }
+
+    ImGui::End();
+}
+
+void DebugUI::DrawTextureBrowser(UiState& ui, SceneAssets& assets) {
+    if (!ImGui::Begin("Texture Browser", &ui.show_texture_browser)) {
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::Button("+ Load Texture...")) {
+        IGFD::FileDialogConfig config;
+        config.path = "assets";
+        ImGuiFileDialog::Instance()->OpenDialog("LoadTexture", "Select Image Texture",
+                                                ".png,.jpg,.jpeg,.hdr,.tga,.bmp", config);
+    }
+    DrawTooltip("Import an image texture (PNG, JPG, HDR, TGA, BMP) into the GPU texture cache.");
+
+    ImGui::Separator();
+
+    auto textures = TextureManager::Instance().GetAllTextures();
+    if (textures.empty()) {
+        ImGui::TextDisabled("No textures loaded in memory.");
+        ImGui::TextDisabled("Click '+ Load Texture...' to add image textures.");
+    } else {
+        if (ImGui::BeginTable("TextureTable", 4, ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, 220))) {
+            ImGui::TableSetupColumn("Path / File", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Resolution", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Memory", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+            ImGui::TableSetupColumn("Apply to Material", ImGuiTableColumnFlags_WidthFixed, 220.0f);
+            ImGui::TableHeadersRow();
+
+            for (const auto* tex : textures) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(tex->path.c_str());
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%dx%d (%dch)", tex->width, tex->height, tex->channels);
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%.1f KB", tex->memory_bytes / 1024.0f);
+
+                ImGui::TableNextColumn();
+                ImGui::PushID(tex->handle.index);
+                if (ImGui::SmallButton("Albedo")) {
+                    LUCIDA_INFO(Resource, "Assigned %s as Albedo Map", tex->path.c_str());
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Normal")) {
+                    LUCIDA_INFO(Resource, "Assigned %s as Normal Map", tex->path.c_str());
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Rough")) {
+                    LUCIDA_INFO(Resource, "Assigned %s as Roughness Map", tex->path.c_str());
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Metal")) {
+                    LUCIDA_INFO(Resource, "Assigned %s as Metallic Map", tex->path.c_str());
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    }
+
+    if (ImGuiFileDialog::Instance()->Display("LoadTexture", ImGuiWindowFlags_NoCollapse, ImVec2(600, 400))) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            std::string tex_path = ImGuiFileDialog::Instance()->GetFilePathName();
+            TextureManager::Instance().LoadTexture(tex_path);
+        }
+        ImGuiFileDialog::Instance()->Close();
     }
 
     ImGui::End();

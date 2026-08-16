@@ -45,6 +45,20 @@ struct Material {
     double roughness, metallic, refractive_index;
     MaterialType type;
 
+    // PBR Texture Maps & Channels
+    std::string albedo_map;
+    std::string normal_map;
+    std::string roughness_map;
+    std::string metallic_map;
+    std::string ao_map;
+    std::string emissive_map;
+
+    Vec2  uv_scale{1.0f, 1.0f};
+    Vec2  uv_offset{0.0f, 0.0f};
+    float normal_scale = 1.0f;
+    float ao = 1.0f;
+    float emissive_intensity = 1.0f;
+
     Material(MaterialType t = DIFFUSE, Vec3 alb = Vec3(0.8f), Vec3 emiss = Vec3(0.0f),
              double rough = 0.5, double metal = 0.0, double ri = 1.5, Vec3 alb2 = Vec3(0.1f))
         : albedo(alb), emission(emiss), albedo2(alb2), roughness(rough), metallic(metal),

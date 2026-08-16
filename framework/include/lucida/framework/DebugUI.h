@@ -33,10 +33,23 @@ struct UiState {
     bool show_viewport  = true;
     bool show_console   = true;
     bool show_content_browser = true;
+    bool show_mesh_editor     = true;
+    bool show_texture_browser = true;
 
     char hierarchy_search[128] = {0};
     char content_search[128]   = {0};
     std::string content_browser_path = "assets";
+
+    // Mesh Sub-Element Editing state
+    int   mesh_edit_mode        = 0; // 0: Object, 1: Vertex, 2: Edge, 3: Face
+    int   selected_vertex_index = 0;
+    int   selected_face_index   = 0;
+    f32   extrude_distance      = 0.5f;
+    f32   inset_amount          = 0.2f;
+    f32   weld_threshold        = 0.001f;
+    int   uv_projection_mode    = 3; // 0: PlanarX, 1: PlanarY, 2: PlanarZ, 3: Box, 4: Spherical, 5: Cylindrical
+    Vec2  mesh_uv_scale{1.0f, 1.0f};
+    Vec2  mesh_uv_offset{0.0f, 0.0f};
 
     bool request_quit       = false;
     bool request_fullscreen = false;
@@ -144,6 +157,8 @@ private:
     void DrawPreferencesWindow(UiState& ui, CameraController& camera, RenderSettings& settings);
     void DrawConsole(UiState& ui);
     void DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets);
+    void DrawMeshEditor(World& world, UiState& ui, SceneAssets& assets);
+    void DrawTextureBrowser(UiState& ui, SceneAssets& assets);
     void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
                    const char* name);
     void TrackMaterialEdit(SceneAssets& assets, i32 mat_index, const GPUMaterial& current,

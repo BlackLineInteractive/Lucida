@@ -172,6 +172,281 @@ void EditableMesh::Deform(const std::function<Vec3(const Vec3& pos)>& deformer) 
     RecalculateNormals(true);
 }
 
+std::vector<MeshEdge> EditableMesh::GetEdges() const {
+    std::vector<MeshEdge> edges;
+    auto add_edge = [&edges](uint32_t a, uint32_t b) {
+        MeshEdge e{std::min(a, b), std::max(a, b)};
+        if (std::find(edges.begin(), edges.end(), e) == edges.end()) {
+            edges.push_back(e);
+        }
+    };
+    for (const auto& f : faces) {
+        add_edge(f.i0, f.i1);
+        add_edge(f.i1, f.i2);
+        add_edge(f.i2, f.i0);
+    }
+    return edges;
+}
+
+void EditableMesh::TranslateVertices(const std::vector<uint32_t>& indices, const Vec3& offset) {
+    for (uint32_t idx : indices) {
+        if (idx < vertices.size()) {
+            vertices[idx].position += offset;
+        }
+    }
+    RecalculateNormals(true);
+}
+
+void EditableMesh::ScaleVertices(const std::vector<uint32_t>& indices, const Vec3& scale, const Vec3& pivot) {
+    for (uint32_t idx : indices) {
+        if (idx < vertices.size()) {
+            vertices[idx].position = pivot + (vertices[idx].position - pivot) * scale;
+        }
+    }
+    RecalculateNormals(true);
+}
+
+void EditableMesh::WeldVertices(float threshold) {
+    const float thresh_sq = threshold * threshold;
+    std::vector<uint32_t> remap(vertices.size());
+    std::vector<Vertex> new_verts;
+
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        int target = -1;
+        for (size_t j = 0; j < new_verts.size(); ++j) {
+            Vec3 diff = vertices[i].position - new_verts[j].position;
+            if (glm::dot(diff, diff) <= thresh_sq) {
+                target = static_cast<int>(j);
+                break;
+            }
+        }
+        if (target >= 0) {
+            remap[i] = static_cast<uint32_t>(target);
+        } else {
+            remap[i] = static_cast<uint32_t>(new_verts.size());
+            new_verts.push_back(vertices[i]);
+        }
+    }
+
+    std::vector<TriangleFace> new_faces;
+    for (auto f : faces) {
+        f.i0 = remap[f.i0];
+        f.i1 = remap[f.i1];
+        f.i2 = remap[f.i2];
+        // Only keep non-degenerate triangles
+        if (f.i0 != f.i1 && f.i1 != f.i2 && f.i2 != f.i0) {
+            new_faces.push_back(f);
+        }
+    }
+
+    vertices = std::move(new_verts);
+    faces = std::move(new_faces);
+    RecalculateNormals(true);
+}
+
+void EditableMesh::SplitEdge(uint32_t v0, uint32_t v1) {
+    if (v0 >= vertices.size() || v1 >= vertices.size()) return;
+
+    Vertex mid{};
+    mid.position = (vertices[v0].position + vertices[v1].position) * 0.5f;
+    mid.normal   = glm::normalize(vertices[v0].normal + vertices[v1].normal);
+    mid.uv       = (vertices[v0].uv + vertices[v1].uv) * 0.5f;
+    mid.tangent  = (vertices[v0].tangent + vertices[v1].tangent) * 0.5f;
+
+    const uint32_t mid_idx = static_cast<uint32_t>(vertices.size());
+    vertices.push_back(mid);
+
+    std::vector<TriangleFace> new_faces;
+    for (const auto& f : faces) {
+        bool has_v0 = (f.i0 == v0 || f.i1 == v0 || f.i2 == v0);
+        bool has_v1 = (f.i0 == v1 || f.i1 == v1 || f.i2 == v1);
+
+        if (has_v0 && has_v1) {
+            // Find third vertex
+            uint32_t v_other = f.i0;
+            if (v_other == v0 || v_other == v1) v_other = f.i1;
+            if (v_other == v0 || v_other == v1) v_other = f.i2;
+
+            new_faces.push_back({v0, mid_idx, v_other, f.material_index});
+            new_faces.push_back({mid_idx, v1, v_other, f.material_index});
+        } else {
+            new_faces.push_back(f);
+        }
+    }
+    faces = std::move(new_faces);
+    RecalculateNormals(true);
+}
+
+void EditableMesh::ExtrudeFace(uint32_t face_index, float distance) {
+    if (face_index >= faces.size()) return;
+
+    const TriangleFace orig = faces[face_index];
+    const Vertex& v0 = vertices[orig.i0];
+    const Vertex& v1 = vertices[orig.i1];
+    const Vertex& v2 = vertices[orig.i2];
+
+    Vec3 face_normal = glm::normalize(glm::cross(v1.position - v0.position, v2.position - v0.position));
+
+    Vertex nv0 = v0; nv0.position += face_normal * distance;
+    Vertex nv1 = v1; nv1.position += face_normal * distance;
+    Vertex nv2 = v2; nv2.position += face_normal * distance;
+
+    const uint32_t j0 = static_cast<uint32_t>(vertices.size());
+    const uint32_t j1 = j0 + 1;
+    const uint32_t j2 = j0 + 2;
+
+    vertices.push_back(nv0);
+    vertices.push_back(nv1);
+    vertices.push_back(nv2);
+
+    // Update top face
+    faces[face_index] = {j0, j1, j2, orig.material_index};
+
+    // Add side quad skirts (2 triangles each)
+    // Side 0 (orig.i0 -> orig.i1)
+    faces.push_back({orig.i0, orig.i1, j1, orig.material_index});
+    faces.push_back({orig.i0, j1, j0, orig.material_index});
+
+    // Side 1 (orig.i1 -> orig.i2)
+    faces.push_back({orig.i1, orig.i2, j2, orig.material_index});
+    faces.push_back({orig.i1, j2, j1, orig.material_index});
+
+    // Side 2 (orig.i2 -> orig.i0)
+    faces.push_back({orig.i2, orig.i0, j0, orig.material_index});
+    faces.push_back({orig.i2, j0, j2, orig.material_index});
+
+    RecalculateNormals(true);
+}
+
+void EditableMesh::InsetFace(uint32_t face_index, float inset_amount) {
+    if (face_index >= faces.size()) return;
+
+    const TriangleFace orig = faces[face_index];
+    const Vertex& v0 = vertices[orig.i0];
+    const Vertex& v1 = vertices[orig.i1];
+    const Vertex& v2 = vertices[orig.i2];
+
+    const Vec3 center = (v0.position + v1.position + v2.position) / 3.0f;
+    const float t = Clamp(inset_amount, 0.0f, 0.95f);
+
+    Vertex nv0 = v0; nv0.position = glm::mix(v0.position, center, t);
+    Vertex nv1 = v1; nv1.position = glm::mix(v1.position, center, t);
+    Vertex nv2 = v2; nv2.position = glm::mix(v2.position, center, t);
+
+    const uint32_t j0 = static_cast<uint32_t>(vertices.size());
+    const uint32_t j1 = j0 + 1;
+    const uint32_t j2 = j0 + 2;
+
+    vertices.push_back(nv0);
+    vertices.push_back(nv1);
+    vertices.push_back(nv2);
+
+    faces[face_index] = {j0, j1, j2, orig.material_index};
+
+    faces.push_back({orig.i0, orig.i1, j1, orig.material_index});
+    faces.push_back({orig.i0, j1, j0, orig.material_index});
+
+    faces.push_back({orig.i1, orig.i2, j2, orig.material_index});
+    faces.push_back({orig.i1, j2, j1, orig.material_index});
+
+    faces.push_back({orig.i2, orig.i0, j0, orig.material_index});
+    faces.push_back({orig.i2, j0, j2, orig.material_index});
+
+    RecalculateNormals(true);
+}
+
+void EditableMesh::SubdivideFace(uint32_t face_index) {
+    if (face_index >= faces.size()) return;
+
+    const TriangleFace f = faces[face_index];
+
+    auto make_mid = [this](uint32_t a, uint32_t b) -> uint32_t {
+        Vertex mid{};
+        mid.position = (vertices[a].position + vertices[b].position) * 0.5f;
+        mid.normal   = glm::normalize(vertices[a].normal + vertices[b].normal);
+        mid.uv       = (vertices[a].uv + vertices[b].uv) * 0.5f;
+        mid.tangent  = (vertices[a].tangent + vertices[b].tangent) * 0.5f;
+        uint32_t idx = static_cast<uint32_t>(vertices.size());
+        vertices.push_back(mid);
+        return idx;
+    };
+
+    uint32_t m01 = make_mid(f.i0, f.i1);
+    uint32_t m12 = make_mid(f.i1, f.i2);
+    uint32_t m20 = make_mid(f.i2, f.i0);
+
+    faces[face_index] = {f.i0, m01, m20, f.material_index};
+    faces.push_back({f.i1, m12, m01, f.material_index});
+    faces.push_back({f.i2, m20, m12, f.material_index});
+    faces.push_back({m01, m12, m20, f.material_index});
+
+    RecalculateNormals(true);
+}
+
+void EditableMesh::FlipFaceNormal(uint32_t face_index) {
+    if (face_index >= faces.size()) return;
+    std::swap(faces[face_index].i1, faces[face_index].i2);
+    RecalculateNormals(true);
+}
+
+void EditableMesh::DeleteFace(uint32_t face_index) {
+    if (face_index < faces.size()) {
+        faces.erase(faces.begin() + face_index);
+    }
+}
+
+void EditableMesh::GenerateUVs(UVProjectionMode mode, const Vec2& scale, const Vec2& offset) {
+    Vec3 aabb_min(1e20f);
+    Vec3 aabb_max(-1e20f);
+    for (const auto& v : vertices) {
+        aabb_min = glm::min(aabb_min, v.position);
+        aabb_max = glm::max(aabb_max, v.position);
+    }
+    const Vec3 extent = glm::max(aabb_max - aabb_min, Vec3(1e-4f));
+
+    for (auto& v : vertices) {
+        Vec3 norm_p = (v.position - aabb_min) / extent;
+        Vec2 uv(0.0f);
+
+        switch (mode) {
+        case UVProjectionMode::PlanarX:
+            uv = Vec2(norm_p.z, norm_p.y);
+            break;
+        case UVProjectionMode::PlanarY:
+            uv = Vec2(norm_p.x, norm_p.z);
+            break;
+        case UVProjectionMode::PlanarZ:
+            uv = Vec2(norm_p.x, norm_p.y);
+            break;
+        case UVProjectionMode::Box: {
+            Vec3 abs_norm = glm::abs(v.normal);
+            if (abs_norm.x >= abs_norm.y && abs_norm.x >= abs_norm.z) {
+                uv = Vec2(norm_p.z, norm_p.y);
+            } else if (abs_norm.y >= abs_norm.x && abs_norm.y >= abs_norm.z) {
+                uv = Vec2(norm_p.x, norm_p.z);
+            } else {
+                uv = Vec2(norm_p.x, norm_p.y);
+            }
+            break;
+        }
+        case UVProjectionMode::Spherical: {
+            Vec3 dir = glm::normalize(v.position - (aabb_min + aabb_max) * 0.5f);
+            uv.x = 0.5f + std::atan2(dir.z, dir.x) / (2.0f * kPi);
+            uv.y = 0.5f - std::asin(Clamp(dir.y, -1.0f, 1.0f)) / kPi;
+            break;
+        }
+        case UVProjectionMode::Cylindrical: {
+            Vec3 dir = glm::normalize(Vec3(v.position.x - (aabb_min.x + aabb_max.x) * 0.5f, 0.0f, v.position.z - (aabb_min.z + aabb_max.z) * 0.5f));
+            uv.x = 0.5f + std::atan2(dir.z, dir.x) / (2.0f * kPi);
+            uv.y = norm_p.y;
+            break;
+        }
+        }
+
+        v.uv = uv * scale + offset;
+    }
+}
+
 MeshData EditableMesh::BuildMeshData(int material_index) const {
     MeshData result{};
     if (vertices.empty() || faces.empty()) return result;

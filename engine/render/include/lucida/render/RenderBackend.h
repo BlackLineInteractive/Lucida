@@ -31,6 +31,35 @@ struct SurfaceDesc {
     i32   height = 0;
 };
 
+enum class AOMode : u8 {
+    Off = 0,
+    RayTracedAO, // RTAO / Radiance Cascades Cone AO
+    SSAO,        // Screen-Space Ambient Occlusion
+    GTAO,        // Ground-Truth Ambient Occlusion
+    HBAO         // Horizon-Based Ambient Occlusion
+};
+
+struct AOSettings {
+    AOMode mode         = AOMode::RayTracedAO;
+    f32    radius       = 1.5f;
+    f32    intensity    = 1.0f;
+    f32    power        = 1.5f;
+    i32    sample_count = 16;
+};
+
+enum class AAMode : u8 {
+    Off = 0,
+    FXAA,
+    SMAA,
+    TAA
+};
+
+struct AASettings {
+    AAMode mode                  = AAMode::TAA;
+    f32    temporal_blend_factor = 0.9f;
+    f32    edge_threshold        = 0.125f;
+};
+
 struct RenderSettings {
     i32  samples      = 1;
     i32  max_depth    = 5;
@@ -38,6 +67,9 @@ struct RenderSettings {
     f32  render_scale = 1.0f;   // 1.0 native, 0.5 quarter the pixels
     bool fog          = false;
     bool vsync        = true;
+
+    AOSettings ao;
+    AASettings aa;
 };
 
 struct RenderStats {

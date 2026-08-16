@@ -4,6 +4,8 @@
 add_library(lucida_resource STATIC
     src/ModelLoader.cpp
     src/MeshBuilder.cpp
+    src/TextureManager.cpp
+    src/Prefab.cpp
     src/SceneSerializer.cpp
     src/Project.cpp
     src/Terrain.cpp
@@ -13,5 +15,5 @@ add_library(lucida::resource ALIAS lucida_resource)
 
 target_include_directories(lucida_resource PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(lucida_resource
-    PUBLIC  lucida::core lucida::render
+    PUBLIC  lucida::core lucida::render lucida::physics lucida::audio
     PRIVATE lucida_bvh lucida_stb lucida_json ${LUCIDA_ASSIMP_TARGET})
