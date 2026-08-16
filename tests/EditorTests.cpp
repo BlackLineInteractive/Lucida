@@ -11,8 +11,10 @@
 #include "lucida/backend/JoltBackend.h"
 #include "lucida/framework/Commands.h"
 #include "lucida/framework/Picking.h"
+#include "lucida/framework/Script.h"
 #include "lucida/framework/Systems.h"
 #include "lucida/render/Components.h"
+#include "lucida/resource/MeshBuilder.h"
 #include "lucida/runtime/World.h"
 #include <cstdio>
 using namespace lucida;
@@ -212,8 +214,87 @@ int main() {
     const f32 y_ground = physics_world.Entities().Get<LocalTransform>(falling_ball)->position.y;
     check(y_ground > 0.0f && y_ground < 5.0f, "dynamic sphere falls and approaches ground");
 
+    // --- Physics Raycast Test
+    RaycastHit hit_down{};
+    bool hit_ok = phys_sys->Raycast(Vec3(0.0f, 20.0f, 0.0f), Vec3(0.0f, -1.0f, 0.0f), 50.0f, hit_down);
+    check(hit_ok && hit_down.has_hit, "physics raycast hits resting sphere or ground");
+    check(hit_down.distance > 10.0f && hit_down.distance < 20.5f, "raycast distance is physically accurate (~19.5m)");
+    check(hit_down.point.y >= -0.1f && hit_down.point.y <= 2.0f, "raycast hit point is near surface");
+
+    // --- Sensor / Trigger & Script System Test
+    ScriptSystem* script_sys = physics_world.AddSystem<ScriptSystem>();
+    script_sys->SetPaused(false);
+
+    Entity trigger_zone = physics_world.Entities().Create("trigger_zone");
+    physics_world.Entities().Get<LocalTransform>(trigger_zone)->position = Vec3(5.0f, 1.0f, 0.0f);
+    physics_world.Entities().Add<PrimitiveShape>(trigger_zone, PrimitiveShape{PrimitiveType::Box, Vec3(2.0f, 2.0f, 2.0f)});
+    RigidBody trig_rb{};
+    trig_rb.type = BodyType::Static;
+    trig_rb.shape = ShapeType::Box;
+    trig_rb.is_trigger = true;
+    physics_world.Entities().Add<RigidBody>(trigger_zone, trig_rb);
+
+    struct TestScript : public NativeScript {
+        int start_count = 0;
+        int update_count = 0;
+        int trigger_enter_count = 0;
+
+        void OnStart(World&, Entity) override { ++start_count; }
+        void OnUpdate(World&, Entity, float) override { ++update_count; }
+        void OnTriggerEnter(World&, Entity, Entity other) override { ++trigger_enter_count; }
+    };
+
+    auto& sc = physics_world.Entities().Add<ScriptComponent>(trigger_zone);
+    TestScript& ts = sc.Bind<TestScript>();
+
+    // Step physics & scripts
+    for (int f = 0; f < 5; ++f) {
+        physics_world.RunPhase(UpdatePhase::Simulation, ft);
+    }
+    check(ts.start_count == 1, "script OnStart invoked exactly once");
+    check(ts.update_count == 5, "script OnUpdate invoked every active simulation frame");
+
     jolt->Shutdown();
     physics_world.Shutdown();
+
+    // --- MeshBuilder & Geometry System Test
+    auto plane = MeshBuilder::CreatePlane(4.0f, 4.0f, 4, 4);
+    check(plane.vertices.size() == 25, "plane 4x4 segments creates 25 vertices");
+    check(plane.faces.size() == 32, "plane 4x4 segments creates 32 triangle faces");
+
+    auto cube = MeshBuilder::CreateCube(Vec3(1.0f));
+    check(cube.vertices.size() == 24, "cube creates 24 face vertices with proper normals");
+    check(cube.faces.size() == 12, "cube creates 12 triangles");
+
+    auto proc_sphere = MeshBuilder::CreateSphere(1.0f, 8, 16);
+    check(proc_sphere.vertices.size() == 9 * 17, "sphere creates proper ring-sector vertices");
+    check(!proc_sphere.faces.empty(), "sphere creates non-empty face list");
+
+    auto cylinder = MeshBuilder::CreateCylinder(1.0f, 2.0f, 16);
+    check(!cylinder.vertices.empty() && !cylinder.faces.empty(), "cylinder created successfully");
+
+    auto torus = MeshBuilder::CreateTorus(1.0f, 0.25f, 16, 8);
+    check(!torus.vertices.empty() && !torus.faces.empty(), "torus created successfully");
+
+    // EditableMesh transformation & modifiers test
+    cube.Translate(Vec3(2.0f, 0.0f, 0.0f));
+    check(cube.vertices[0].position.x > 0.5f, "EditableMesh::Translate modifies vertex positions");
+
+    cube.Scale(Vec3(2.0f));
+    cube.RecalculateNormals(true);
+    check(glm::length(cube.vertices[0].normal) > 0.99f, "EditableMesh::RecalculateNormals normalizes vectors");
+
+    // Subdivide test
+    size_t prev_face_count = plane.faces.size();
+    plane.Subdivide();
+    check(plane.faces.size() == prev_face_count * 4, "EditableMesh::Subdivide quadruples triangle count");
+
+    // GPU MeshData conversion and BVH build
+    MeshData mesh_data = cube.BuildMeshData(1);
+    check(mesh_data.valid, "BuildMeshData creates valid GPU MeshData");
+    check(mesh_data.tri_pos.size() == 12, "MeshData has correct tri_pos count");
+    check(mesh_data.tri_attr.size() == 12, "MeshData has correct tri_attr count");
+    check(!mesh_data.bvh_nodes.empty(), "MeshData has generated BVH acceleration structure");
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures;

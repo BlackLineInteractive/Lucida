@@ -28,9 +28,37 @@ struct BodyDesc {
     Vec3 half_extent{0.5f};   // box: half sizes; sphere/capsule: x is the radius
     Vec3 position{0.0f};
     Quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
-    f32  mass       = 1.0f;
-    f32  friction   = 0.5f;
+    f32  mass        = 1.0f;
+    f32  friction    = 0.5f;
     f32  restitution = 0.0f;
+    bool is_sensor   = false;  // Trigger volume: detects overlaps without physical collision
+    uint32_t user_data = 0;   // Entity ID or application context
+};
+
+struct RaycastHit {
+    bool        has_hit = false;
+    uint32_t    user_data = 0;
+    BodyHandle  body;
+    Vec3        point{0.0f};
+    Vec3        normal{0.0f, 1.0f, 0.0f};
+    f32         distance = 0.0f;
+};
+
+struct ContactPoint {
+    Vec3 position{0.0f};
+    Vec3 normal{0.0f, 1.0f, 0.0f};
+    f32  distance = 0.0f;
+    f32  impulse  = 0.0f;
+};
+
+struct CollisionEvent {
+    enum class Type : u8 { Begin, End, TriggerEnter, TriggerExit };
+    Type        type = Type::Begin;
+    BodyHandle  body_a;
+    BodyHandle  body_b;
+    uint32_t    user_data_a = 0;
+    uint32_t    user_data_b = 0;
+    ContactPoint contact;
 };
 
 // Driver intent, not forces. What a throttle of 0.7 means is the backend's job.
@@ -81,6 +109,14 @@ public:
     virtual void       DestroyBody(BodyHandle body) = 0;
     virtual Transform  GetBodyTransform(BodyHandle body) const = 0;
     virtual void       SetBodyTransform(BodyHandle body, const Transform& transform) = 0;
+
+    virtual void       AddImpulse(BodyHandle body, const Vec3& impulse) = 0;
+    virtual void       AddForce(BodyHandle body, const Vec3& force) = 0;
+    virtual void       SetLinearVelocity(BodyHandle body, const Vec3& velocity) = 0;
+    virtual Vec3       GetLinearVelocity(BodyHandle body) const = 0;
+
+    virtual bool       CastRay(const Vec3& origin, const Vec3& direction, f32 max_distance, RaycastHit& out_hit) const = 0;
+    virtual void       PopCollisionEvents(std::vector<CollisionEvent>& out_events) = 0;
 
     virtual VehicleHandle CreateVehicle(const VehicleDesc& desc) = 0;
     virtual void          SetVehicleInput(VehicleHandle vehicle, const VehicleInput& input) = 0;

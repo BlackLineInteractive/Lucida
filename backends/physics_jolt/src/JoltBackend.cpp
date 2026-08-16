@@ -47,6 +47,26 @@ public:
         m_world.SetBodyTransform(body, transform);
     }
 
+    void AddImpulse(BodyHandle body, const Vec3& impulse) override {
+        m_world.AddImpulse(body, impulse);
+    }
+    void AddForce(BodyHandle body, const Vec3& force) override {
+        m_world.AddForce(body, force);
+    }
+    void SetLinearVelocity(BodyHandle body, const Vec3& velocity) override {
+        m_world.SetLinearVelocity(body, velocity);
+    }
+    Vec3 GetLinearVelocity(BodyHandle body) const override {
+        return m_world.GetLinearVelocity(body);
+    }
+
+    bool CastRay(const Vec3& origin, const Vec3& direction, f32 max_distance, RaycastHit& out_hit) const override {
+        return m_world.CastRay(origin, direction, max_distance, out_hit);
+    }
+    void PopCollisionEvents(std::vector<CollisionEvent>& out_events) override {
+        m_world.PopCollisionEvents(out_events);
+    }
+
     // --- vehicle ------------------------------------------------------------
     VehicleHandle CreateVehicle(const VehicleDesc&) override {
         if (!m_world.is_initialised) return VehicleHandle{};

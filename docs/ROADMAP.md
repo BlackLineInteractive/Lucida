@@ -378,6 +378,19 @@ The editor chrome moved to M21; what is left here is text that is not ImGui's.
 Not for Bullet's sake, but to prove the physics abstraction is one. Finish
 `CreateBody` in the Jolt backend along the way.
 
+### M24 - Lucida Procedural Animation System (LPAS) - "Euphoria-Grade Active Ragdolls & Bio-Mechanics"
+
+A real-time procedural animation and dynamic motor control system inspired by NaturalMotion Euphoria (GTA IV / Red Dead Redemption):
+* **Bio-Mechanical Skeleton & Actuators**: Articulated multi-body ragdoll with joint angle limits, muscle stiffness, and PD/PID joint torque motors driven by Jolt Physics constraints.
+* **Dynamic Balance & Center of Mass (CoM)**: Inverted pendulum / Zero-Moment Point (ZMP) controllers for real-time dynamic balance, stumbling recovery, procedural stepping, and slope adaptation.
+* **Physical Reflexes & Self-Preservation**:
+  - Procedural flinching, head/torso protection against incoming kinematic/dynamic impacts.
+  - Dynamic reaching and grabbing onto ledges, vehicles, and environmental obstacles upon losing balance.
+  - Natural fall bracing and dynamic roll recovery.
+* **Hybrid Kinematic-to-Physical Blending**: Seamless bi-directional transition between keyframed animation clips and fully driven physical active ragdoll states.
+* **Terrain & Foot IK**: Raycast/shape-cast ground alignment with procedural gait modulation over irregular geometry.
+* **Done when:** pushing a humanoid character down stairs or hitting them with a moving vehicle produces non-repetitive, physically plausible stumble, brace, and recovery motions entirely without canned death/impact animations.
+
 ---
 
 ## Order and dependencies
@@ -386,7 +399,7 @@ Not for Bullet's sake, but to prove the physics abstraction is one. Finish
 M7 done  M7b done  M10 (ECS)  M20 (project)  M21 (editor)  M22 (play)  M23 (ship)
 
                                                        M17 (scripting)
-                           M19 (Bullet)
+                           M19 (Bullet)                M24 (LPAS / Euphoria)
 
 Graphics track, resumes once the editor can show it:
   M8 (quality tiers)  M9 (procedural materials)
@@ -399,8 +412,8 @@ Supporting, any time:
 
 Two different goals run through this list, and they are worth keeping apart:
 
-* **What makes it an engine** - M7, M7b, M10, M15, M17. Someone other than the author
-  can build a world in it without touching C++.
+* **What makes it an engine** - M7, M7b, M10, M15, M17, M24. Someone other than the author
+  can build a world in it without touching C++, with living characters and interactive physics.
 * **What makes it worth choosing** - M8, M9. Ray-traced graphics on hardware that has
   no ray tracing units.
 

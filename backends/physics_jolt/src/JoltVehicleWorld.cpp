@@ -36,6 +36,9 @@
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CastResult.h>
 // ── Vehicle ────────────────────────────────────────────────────────────────
 #include <Jolt/Physics/Vehicle/VehicleConstraint.h>
 #include <Jolt/Physics/Vehicle/VehicleCollisionTester.h>
@@ -128,6 +131,17 @@ struct PhysicsWorld::Impl {
     std::vector<BodyRecord> bodies;
     std::vector<lucida::u32> free_body_indices;
 
+    std::vector<lucida::CollisionEvent> collision_events;
+
+    lucida::BodyHandle FindHandle(JPH::BodyID id) const {
+        for (size_t i = 0; i < bodies.size(); ++i) {
+            if (bodies[i].active && bodies[i].id == id) {
+                return lucida::BodyHandle{static_cast<lucida::u32>(i), bodies[i].generation};
+            }
+        }
+        return lucida::BodyHandle{};
+    }
+
     // Vehicle
     JPH::Ref<JPH::VehicleConstraint> vehicle;
     JPH::WheeledVehicleController*   controller = nullptr; // owned by vehicle
@@ -143,6 +157,62 @@ struct PhysicsWorld::Impl {
 // ── helpers ──────────────────────────────────────────────────────────────────
 static glm::vec3 ToGLM(const JPH::Vec3& v)  { return {v.GetX(), v.GetY(), v.GetZ()}; }
 static glm::quat ToGLM(const JPH::Quat& q)  { return {q.GetW(), q.GetX(), q.GetY(), q.GetZ()}; }
+
+class JoltContactListener final : public JPH::ContactListener {
+public:
+    PhysicsWorld::Impl* impl = nullptr;
+
+    JPH::ValidateResult OnContactValidate(const JPH::Body& inBody1, const JPH::Body& inBody2,
+                                          JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult) override {
+        return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
+    }
+
+    void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2,
+                        const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings) override {
+        if (!impl) return;
+
+        lucida::CollisionEvent ev;
+        const bool is_sensor = inBody1.IsSensor() || inBody2.IsSensor();
+        ev.type = is_sensor ? lucida::CollisionEvent::Type::TriggerEnter : lucida::CollisionEvent::Type::Begin;
+        ev.user_data_a = static_cast<uint32_t>(inBody1.GetUserData());
+        ev.user_data_b = static_cast<uint32_t>(inBody2.GetUserData());
+        ev.body_a = impl->FindHandle(inBody1.GetID());
+        ev.body_b = impl->FindHandle(inBody2.GetID());
+
+        if (inManifold.mRelativeContactPointsOn1.size() > 0) {
+            JPH::RVec3 p = inManifold.GetWorldSpaceContactPointOn1(0);
+            ev.contact.position = ToGLM(p);
+            ev.contact.normal   = ToGLM(inManifold.mWorldSpaceNormal);
+            ev.contact.distance = inManifold.mPenetrationDepth;
+        }
+
+        impl->collision_events.push_back(ev);
+    }
+
+    void OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) override {
+        if (!impl || !impl->physics_system) return;
+
+        JPH::BodyLockRead lock1(impl->physics_system->GetBodyLockInterface(), inSubShapePair.GetBody1ID());
+        JPH::BodyLockRead lock2(impl->physics_system->GetBodyLockInterface(), inSubShapePair.GetBody2ID());
+
+        if (lock1.Succeeded() && lock2.Succeeded()) {
+            const JPH::Body& b1 = lock1.GetBody();
+            const JPH::Body& b2 = lock2.GetBody();
+
+            lucida::CollisionEvent ev;
+            const bool is_sensor = b1.IsSensor() || b2.IsSensor();
+            ev.type = is_sensor ? lucida::CollisionEvent::Type::TriggerExit : lucida::CollisionEvent::Type::End;
+            ev.user_data_a = static_cast<uint32_t>(b1.GetUserData());
+            ev.user_data_b = static_cast<uint32_t>(b2.GetUserData());
+            ev.body_a = impl->FindHandle(b1.GetID());
+            ev.body_b = impl->FindHandle(b2.GetID());
+
+            impl->collision_events.push_back(ev);
+        }
+    }
+};
+
+static JoltContactListener s_contact_listener;
 
 // ─────────────────────────────────────────────────── PhysicsWorld::Init ──────
 void PhysicsWorld::Init() {
@@ -172,6 +242,9 @@ void PhysicsWorld::Init() {
         *impl->bp_layer_iface,
         *impl->ob_bp_filter,
         *impl->obj_layer_filter);
+
+    s_contact_listener.impl = impl;
+    impl->physics_system->SetContactListener(&s_contact_listener);
 
     impl->physics_system->SetGravity(JPH::Vec3(0.0f, -9.81f, 0.0f));
 
@@ -542,6 +615,9 @@ lucida::BodyHandle PhysicsWorld::CreateBody(const lucida::BodyDesc& desc) {
         motion_type,
         layer);
 
+    bs.mIsSensor = desc.is_sensor;
+    bs.mUserData = static_cast<JPH::uint64>(desc.user_data);
+
     if (desc.type == lucida::BodyType::Dynamic) {
         bs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
         bs.mMassPropertiesOverride.mMass = std::max(0.01f, desc.mass);
@@ -618,4 +694,80 @@ void PhysicsWorld::SetBodyTransform(lucida::BodyHandle handle, const lucida::Tra
         JPH::RVec3(transform.position.x, transform.position.y, transform.position.z),
         JPH::Quat(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w),
         JPH::EActivation::Activate);
+}
+
+void PhysicsWorld::AddImpulse(lucida::BodyHandle handle, const lucida::Vec3& impulse) {
+    if (!is_initialised || !m_impl || !m_impl->physics_system || !handle.IsValid()) return;
+    if (handle.index >= m_impl->bodies.size()) return;
+
+    const auto& rec = m_impl->bodies[handle.index];
+    if (!rec.active || rec.generation != handle.generation) return;
+
+    m_impl->physics_system->GetBodyInterface().AddImpulse(rec.id, JPH::Vec3(impulse.x, impulse.y, impulse.z));
+}
+
+void PhysicsWorld::AddForce(lucida::BodyHandle handle, const lucida::Vec3& force) {
+    if (!is_initialised || !m_impl || !m_impl->physics_system || !handle.IsValid()) return;
+    if (handle.index >= m_impl->bodies.size()) return;
+
+    const auto& rec = m_impl->bodies[handle.index];
+    if (!rec.active || rec.generation != handle.generation) return;
+
+    m_impl->physics_system->GetBodyInterface().AddForce(rec.id, JPH::Vec3(force.x, force.y, force.z));
+}
+
+void PhysicsWorld::SetLinearVelocity(lucida::BodyHandle handle, const lucida::Vec3& velocity) {
+    if (!is_initialised || !m_impl || !m_impl->physics_system || !handle.IsValid()) return;
+    if (handle.index >= m_impl->bodies.size()) return;
+
+    const auto& rec = m_impl->bodies[handle.index];
+    if (!rec.active || rec.generation != handle.generation) return;
+
+    m_impl->physics_system->GetBodyInterface().SetLinearVelocity(rec.id, JPH::Vec3(velocity.x, velocity.y, velocity.z));
+}
+
+lucida::Vec3 PhysicsWorld::GetLinearVelocity(lucida::BodyHandle handle) const {
+    if (!is_initialised || !m_impl || !m_impl->physics_system || !handle.IsValid()) return lucida::Vec3(0.0f);
+    if (handle.index >= m_impl->bodies.size()) return lucida::Vec3(0.0f);
+
+    const auto& rec = m_impl->bodies[handle.index];
+    if (!rec.active || rec.generation != handle.generation) return lucida::Vec3(0.0f);
+
+    JPH::Vec3 v = m_impl->physics_system->GetBodyInterface().GetLinearVelocity(rec.id);
+    return ToGLM(v);
+}
+
+bool PhysicsWorld::CastRay(const lucida::Vec3& origin, const lucida::Vec3& direction, float max_distance, lucida::RaycastHit& out_hit) const {
+    out_hit = lucida::RaycastHit{};
+    if (!is_initialised || !m_impl || !m_impl->physics_system) return false;
+
+    JPH::RRayCast ray{
+        JPH::RVec3(origin.x, origin.y, origin.z),
+        JPH::Vec3(direction.x, direction.y, direction.z) * max_distance
+    };
+
+    JPH::RayCastResult result;
+    bool hit = m_impl->physics_system->GetNarrowPhaseQuery().CastRay(ray, result);
+    if (!hit) return false;
+
+    out_hit.has_hit = true;
+    out_hit.distance = result.mFraction * max_distance;
+    JPH::RVec3 hit_pos = ray.GetPointOnRay(result.mFraction);
+    out_hit.point = ToGLM(hit_pos);
+
+    JPH::BodyLockRead lock(m_impl->physics_system->GetBodyLockInterface(), result.mBodyID);
+    if (lock.Succeeded()) {
+        const JPH::Body& b = lock.GetBody();
+        out_hit.user_data = static_cast<uint32_t>(b.GetUserData());
+        JPH::Vec3 normal = b.GetWorldSpaceSurfaceNormal(result.mSubShapeID2, hit_pos);
+        out_hit.normal = ToGLM(normal);
+    }
+    out_hit.body = m_impl->FindHandle(result.mBodyID);
+    return true;
+}
+
+void PhysicsWorld::PopCollisionEvents(std::vector<lucida::CollisionEvent>& out_events) {
+    if (!m_impl) return;
+    out_events = std::move(m_impl->collision_events);
+    m_impl->collision_events.clear();
 }

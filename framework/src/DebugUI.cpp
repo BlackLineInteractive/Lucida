@@ -1481,6 +1481,9 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
             ImGui::Checkbox("Simulate", &rb->is_active);
             DrawTooltip("Enable or disable physics simulation for this entity.");
 
+            ImGui::Checkbox("Is Trigger (Sensor)", &rb->is_trigger);
+            DrawTooltip("Trigger Volume: Detects overlaps and fires OnTriggerEnter/Exit events without physical collision pushback.");
+
             ImGui::Separator();
             if (ImGui::Button("Remove Physics", ImVec2(-1.0f, 22.0f))) {
                 entities.Remove<RigidBody>(ui.selection);

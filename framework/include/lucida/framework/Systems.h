@@ -27,9 +27,29 @@ public:
     void SetPaused(bool paused) { m_paused = paused; }
     bool IsPaused() const { return m_paused; }
 
+    bool Raycast(const Vec3& origin, const Vec3& direction, f32 max_dist, RaycastHit& out_hit) const {
+        return m_physics.CastRay(origin, direction, max_dist, out_hit);
+    }
+    IPhysicsBackend& Backend() { return m_physics; }
+    const IPhysicsBackend& Backend() const { return m_physics; }
+
 private:
     IPhysicsBackend& m_physics;
     bool             m_paused = true;
+};
+
+// Gameplay script execution system. Runs NativeScript lifecycle on entities.
+class ScriptSystem final : public ISystem {
+public:
+    const char* Name() const override { return "script"; }
+    UpdatePhase Phase() const override { return UpdatePhase::Simulation; }
+    void Update(World& world, const FrameTime& time) override;
+
+    void SetPaused(bool paused) { m_paused = paused; }
+    bool IsPaused() const { return m_paused; }
+
+private:
+    bool m_paused = true;
 };
 
 // Presentation step. Pushes world transforms to the backend, and only for

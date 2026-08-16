@@ -191,6 +191,10 @@ public:
                 m_physics_system->SetPaused(m_ui_state.play_state != UiState::PlayState::Playing);
             }
         }
+        m_script_system = world.AddSystem<ScriptSystem>();
+        if (m_script_system) {
+            m_script_system->SetPaused(m_ui_state.play_state != UiState::PlayState::Playing);
+        }
         m_render_sync_system = world.AddSystem<RenderSyncSystem>(*m_renderer);
 
         if (!m_config.model_path.empty() && std::filesystem::exists(m_project.Resolve(m_config.model_path)))
@@ -303,6 +307,7 @@ public:
         if (m_step_tick) {
             m_step_tick = false;
             if (m_physics_system) m_physics_system->SetPaused(true);
+            if (m_script_system)  m_script_system->SetPaused(true);
         }
     }
 
@@ -319,11 +324,13 @@ public:
             }
             m_ui_state.play_state = UiState::PlayState::Playing;
             if (m_physics_system) m_physics_system->SetPaused(false);
+            if (m_script_system)  m_script_system->SetPaused(false);
         }
         if (m_ui_state.request_pause) {
             m_ui_state.request_pause = false;
             m_ui_state.play_state = UiState::PlayState::Paused;
             if (m_physics_system) m_physics_system->SetPaused(true);
+            if (m_script_system)  m_script_system->SetPaused(true);
             LUCIDA_INFO(App, "Play mode paused");
         }
         if (m_ui_state.request_step) {
@@ -331,12 +338,14 @@ public:
             m_ui_state.play_state = UiState::PlayState::Paused;
             m_step_tick = true;
             if (m_physics_system) m_physics_system->SetPaused(false);
+            if (m_script_system)  m_script_system->SetPaused(false);
             LUCIDA_INFO(App, "Play mode step single tick");
         }
         if (m_ui_state.request_stop) {
             m_ui_state.request_stop = false;
             m_ui_state.play_state = UiState::PlayState::Edit;
             if (m_physics_system) m_physics_system->SetPaused(true);
+            if (m_script_system)  m_script_system->SetPaused(true);
 
             // Leaving play mode: restore world snapshot
             m_play_snapshot.Restore(world.Entities());
@@ -606,6 +615,7 @@ private:
     std::unique_ptr<IRenderBackend>  m_renderer;
     std::unique_ptr<IPhysicsBackend> m_physics;
     PhysicsSystem*                   m_physics_system = nullptr;
+    ScriptSystem*                    m_script_system  = nullptr;
     RenderSyncSystem*                m_render_sync_system = nullptr;
 
     WorldSnapshot    m_play_snapshot;

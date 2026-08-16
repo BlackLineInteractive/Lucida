@@ -19,6 +19,7 @@ struct RigidBody {
     f32        angular_damping = 0.05f;
     f32        gravity_scale = 1.0f;
     bool       is_active = true;
+    bool       is_trigger = false; // Sensor volume: detects overlaps without physical collision response
 };
 
 // A driveable vehicle. Input is written by whatever controls it - the player,

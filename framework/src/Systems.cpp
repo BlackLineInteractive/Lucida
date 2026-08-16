@@ -8,6 +8,8 @@
 #include "lucida/render/Components.h"
 #include "lucida/runtime/World.h"
 
+#include "lucida/framework/Script.h"
+
 #include <cstring>
 
 namespace lucida {
@@ -26,6 +28,8 @@ void PhysicsSystem::Update(World& world, const FrameTime& time) {
             desc.mass = rb.mass;
             desc.friction = rb.friction;
             desc.restitution = rb.restitution;
+            desc.is_sensor = rb.is_trigger;
+            desc.user_data = static_cast<uint32_t>(entity);
 
             // Determine shape size from PrimitiveShape, LocalBounds, or fallback
             if (const PrimitiveShape* ps = entities.Get<PrimitiveShape>(entity)) {
@@ -63,7 +67,43 @@ void PhysicsSystem::Update(World& world, const FrameTime& time) {
     // 3. Step simulation
     m_physics.Step(time.delta);
 
-    // 4. Update Vehicle poses
+    // 4. Dispatch Collision & Trigger Events to Scripts
+    std::vector<CollisionEvent> events;
+    m_physics.PopCollisionEvents(events);
+    for (const auto& ev : events) {
+        Entity e_a = static_cast<Entity>(ev.user_data_a);
+        Entity e_b = static_cast<Entity>(ev.user_data_b);
+
+        if (ScriptComponent* sc_a = entities.Get<ScriptComponent>(e_a)) {
+            for (auto& script : sc_a->scripts) {
+                if (ev.type == CollisionEvent::Type::Begin) {
+                    script->OnCollisionEnter(world, e_a, e_b, ev.contact);
+                } else if (ev.type == CollisionEvent::Type::End) {
+                    script->OnCollisionExit(world, e_a, e_b);
+                } else if (ev.type == CollisionEvent::Type::TriggerEnter) {
+                    script->OnTriggerEnter(world, e_a, e_b);
+                } else if (ev.type == CollisionEvent::Type::TriggerExit) {
+                    script->OnTriggerExit(world, e_a, e_b);
+                }
+            }
+        }
+
+        if (ScriptComponent* sc_b = entities.Get<ScriptComponent>(e_b)) {
+            for (auto& script : sc_b->scripts) {
+                if (ev.type == CollisionEvent::Type::Begin) {
+                    script->OnCollisionEnter(world, e_b, e_a, ev.contact);
+                } else if (ev.type == CollisionEvent::Type::End) {
+                    script->OnCollisionExit(world, e_b, e_a);
+                } else if (ev.type == CollisionEvent::Type::TriggerEnter) {
+                    script->OnTriggerEnter(world, e_b, e_a);
+                } else if (ev.type == CollisionEvent::Type::TriggerExit) {
+                    script->OnTriggerExit(world, e_b, e_a);
+                }
+            }
+        }
+    }
+
+    // 5. Update Vehicle poses
     for (auto [entity, vehicle, local] : entities.View<Vehicle, LocalTransform>().each()) {
         if (!vehicle.handle.IsValid()) continue;
         const VehicleState state = m_physics.GetVehicleState(vehicle.handle);
@@ -71,12 +111,28 @@ void PhysicsSystem::Update(World& world, const FrameTime& time) {
         local.rotation = state.rotation;
     }
 
-    // 5. Update RigidBody poses (physics -> entity)
+    // 6. Update RigidBody poses (physics -> entity)
     for (auto [entity, rb, local] : entities.View<RigidBody, LocalTransform>().each()) {
         if (!rb.body.IsValid() || rb.type == BodyType::Static) continue;
         const Transform t = m_physics.GetBodyTransform(rb.body);
         local.position = t.position;
         local.rotation = t.rotation;
+    }
+}
+
+void ScriptSystem::Update(World& world, const FrameTime& time) {
+    if (m_paused) return;
+    LUCIDA_PROFILE("script");
+
+    Registry& entities = world.Entities();
+    for (auto [entity, sc] : entities.View<ScriptComponent>().each()) {
+        for (auto& script : sc.scripts) {
+            if (!script->is_started) {
+                script->OnStart(world, entity);
+                script->is_started = true;
+            }
+            script->OnUpdate(world, entity, time.delta);
+        }
     }
 }
 

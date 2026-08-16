@@ -268,6 +268,5 @@ now renders with a mesh standing in it.
 ### Debt taken on deliberately
 
 * `LoadMesh` survives beside `AddMesh`/`AddInstance` for compatibility and should go.
-* `IPhysicsBackend::CreateBody` is unimplemented in the Jolt backend: the ported world
-  knows only a vehicle and static ground.
+* `IPhysicsBackend::CreateBody` is implemented in the Jolt backend (Box, Sphere, Capsule, Cylinder, triggers, raycasting).
 * The GL and Vulkan backends sit in the tree in their inherited form and do not build.

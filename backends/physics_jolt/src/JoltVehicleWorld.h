@@ -56,6 +56,14 @@ public:
     lucida::Transform  GetBodyTransform(lucida::BodyHandle body) const;
     void               SetBodyTransform(lucida::BodyHandle body, const lucida::Transform& transform);
 
+    void               AddImpulse(lucida::BodyHandle body, const lucida::Vec3& impulse);
+    void               AddForce(lucida::BodyHandle body, const lucida::Vec3& force);
+    void               SetLinearVelocity(lucida::BodyHandle body, const lucida::Vec3& velocity);
+    lucida::Vec3       GetLinearVelocity(lucida::BodyHandle body) const;
+
+    bool               CastRay(const lucida::Vec3& origin, const lucida::Vec3& direction, float max_distance, lucida::RaycastHit& out_hit) const;
+    void               PopCollisionEvents(std::vector<lucida::CollisionEvent>& out_events);
+
     // ---- Outputs ----
     glm::vec3 car_pos   = glm::vec3(0.0f, 0.5f, 0.0f);
     glm::quat car_rot   = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -68,7 +76,8 @@ public:
 
     bool  is_initialised = false;
 
-private:
     struct Impl;
+
+private:
     Impl* m_impl = nullptr;
 };

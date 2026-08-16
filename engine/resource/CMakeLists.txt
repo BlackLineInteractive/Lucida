@@ -3,6 +3,7 @@
 
 add_library(lucida_resource STATIC
     src/ModelLoader.cpp
+    src/MeshBuilder.cpp
     src/SceneSerializer.cpp
     src/Project.cpp
     src/Terrain.cpp
