@@ -1,7 +1,7 @@
 // Lucida Engine
 // Copyright (C) 2026 BlackLine Interactive
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include "lucida/runtime/CharacterSystem.h"
+#include "lucida/framework/CharacterSystem.h"
 
 #include "lucida/runtime/GameplayComponents.h"
 #include "lucida/runtime/World.h"

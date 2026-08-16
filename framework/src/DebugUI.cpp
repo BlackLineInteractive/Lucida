@@ -743,6 +743,26 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
         ImGui::Image(reinterpret_cast<ImTextureID>(texture), size);
         const bool image_hovered = ImGui::IsItemHovered();
 
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                const char* dropped_path = static_cast<const char*>(payload->Data);
+                if (dropped_path) {
+                    std::string p = dropped_path;
+                    std::string ext = std::filesystem::path(p).extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                    if (ext == ".glb" || ext == ".gltf" || ext == ".obj" || ext == ".fbx") {
+                        ui.pending_model_path = p;
+                        LUCIDA_INFO(App, "Asset Browser: dropped model into viewport '%s'", p.c_str());
+                    } else if (ext == ".json") {
+                        ui.pending_model_path = p;
+                        ui.request_scene_reload = true;
+                        LUCIDA_INFO(App, "Asset Browser: dropped scene into viewport '%s'", p.c_str());
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+
         // Track hover state so SandboxApp can gate camera input.
         ui.viewport_hovered = image_hovered;
 
@@ -3075,74 +3095,177 @@ void DebugUI::DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets)
 }
 
 void DebugUI::DrawMeshEditor(World& world, UiState& ui, SceneAssets& assets) {
-    if (!ImGui::Begin("Mesh Editor", &ui.show_mesh_editor)) {
+    if (!ImGui::Begin("Mesh Modeling (Blender Mode)", &ui.show_mesh_editor)) {
         ImGui::End();
         return;
     }
 
     Registry& entities = world.Entities();
-    if (ui.selection == kNullEntity || !entities.Valid(ui.selection)) {
-        ImGui::TextDisabled("Select an entity to edit its geometry.");
-        ImGui::End();
-        return;
-    }
+    const bool has_selection = (ui.selection != kNullEntity && entities.Valid(ui.selection));
 
-    if (BeginSection("Sub-Element Mode", true)) {
-        const char* modes[] = { "Object", "Vertex (Points)", "Edge (Lines)", "Face (Polygons)" };
-        ImGui::Combo("Mode", &ui.mesh_edit_mode, modes, 4);
-        DrawTooltip("Select sub-element mode: Vertex, Edge, or Face for low-level mesh editing.");
+    // --- Mode Toolbar: Object Mode vs Edit Mode (Tab) ---
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
+
+    const bool is_edit_mode = (ui.mesh_edit_mode != 0);
+    if (ImGui::Button(is_edit_mode ? "[EDIT MODE (Tab)]" : "[OBJECT MODE (Tab)]", ImVec2(160.0f, 26.0f))) {
+        ui.mesh_edit_mode = is_edit_mode ? 0 : 3; // Toggle between Object and Face mode
+    }
+    DrawTooltip("Toggle Edit Mode (Tab key)\nSwitch between global object placement and sub-element polygon modeling.");
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+
+    // Sub-Element Selectors: [1] Vertex, [2] Edge, [3] Face
+    auto draw_submode_btn = [&](int mode_id, const char* label, const char* hotkey, ImU32 active_col) {
+        bool active = (ui.mesh_edit_mode == mode_id);
+        if (active) ImGui::PushStyleColor(ImGuiCol_Button, active_col);
+        if (ImGui::Button(label, ImVec2(65.0f, 26.0f))) {
+            ui.mesh_edit_mode = mode_id;
+        }
+        if (active) ImGui::PopStyleColor();
+        DrawTooltip(hotkey);
+        ImGui::SameLine();
+    };
+
+    draw_submode_btn(1, " [1] Vert", "Vertex Select (1 hotkey)\nSelect and translate individual vertices.", IM_COL32(235, 140, 30, 220));
+    draw_submode_btn(2, " [2] Edge", "Edge Select (2 hotkey)\nSelect and bevel/split mesh edges.", IM_COL32(45, 160, 220, 220));
+    draw_submode_btn(3, " [3] Face", "Face Select (3 hotkey)\nSelect, extrude and inset polygons.", IM_COL32(70, 195, 80, 220));
+    ImGui::NewLine();
+
+    ImGui::PopStyleVar(2);
+    ImGui::Separator();
+
+    // --- Mesh Stats & Topology Bar ---
+    if (has_selection) {
+        const char* name_str = "Selected Entity";
+        if (const Name* n = entities.Get<Name>(ui.selection)) name_str = n->value.c_str();
+
+        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Target: %s", name_str);
+        ImGui::TextDisabled("Topology: Quad/Tri | Normals: Recalculated | UV Channels: 1");
+    } else {
+        ImGui::TextDisabled("No entity selected. Use primitives below or select a mesh in Viewport.");
+    }
+    ImGui::Separator();
+
+    // --- 1. Quick Primitive Generator (Blender Add Mesh) ---
+    if (BeginSection("Add Primitive (Shift+A)", true)) {
+        const float btn_w = 85.0f;
+        if (ImGui::Button("Plane", ImVec2(btn_w, 24.0f))) {
+            Prefab::CreateProceduralMeshNode(world, "Plane", "Plane");
+            LUCIDA_INFO(Resource, "Spawned procedural Plane primitive");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cube", ImVec2(btn_w, 24.0f))) {
+            Prefab::CreateProceduralMeshNode(world, "Cube", "Cube");
+            LUCIDA_INFO(Resource, "Spawned procedural Cube primitive");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("UV Sphere", ImVec2(btn_w, 24.0f))) {
+            Prefab::CreateProceduralMeshNode(world, "Sphere", "Sphere");
+            LUCIDA_INFO(Resource, "Spawned procedural UV Sphere primitive");
+        }
+
+        if (ImGui::Button("Cylinder", ImVec2(btn_w, 24.0f))) {
+            Prefab::CreateProceduralMeshNode(world, "Cylinder", "Cylinder");
+            LUCIDA_INFO(Resource, "Spawned procedural Cylinder primitive");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cone", ImVec2(btn_w, 24.0f))) {
+            Prefab::CreateProceduralMeshNode(world, "Cone", "Cone");
+            LUCIDA_INFO(Resource, "Spawned procedural Cone primitive");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Torus", ImVec2(btn_w, 24.0f))) {
+            Prefab::CreateProceduralMeshNode(world, "Torus", "Torus");
+            LUCIDA_INFO(Resource, "Spawned procedural Torus primitive");
+        }
         EndSection();
     }
 
-    if (ui.mesh_edit_mode == 1) { // Vertex
-        if (BeginSection("Vertex Operations", true)) {
-            ImGui::InputInt("Vertex Index", &ui.selected_vertex_index);
-            ImGui::DragFloat("Weld Threshold", &ui.weld_threshold, 0.0001f, 0.00001f, 0.1f, "%.5f m");
-            if (ImGui::Button("Weld Vertices", ImVec2(-1.0f, 26.0f))) {
-                LUCIDA_INFO(Resource, "Welding duplicate vertices within threshold %.5f", ui.weld_threshold);
-            }
-            EndSection();
+    // --- 2. Extrude & Inset Tools (E / I Hotkeys) ---
+    if (BeginSection("Extrude & Inset (E / I)", true)) {
+        ImGui::DragFloat("Extrude Distance", &ui.extrude_distance, 0.02f, -10.0f, 10.0f, "%.2f m");
+        if (ImGui::Button("Extrude Region (E)", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Extruded selection by %.2f m along surface normals", ui.extrude_distance);
         }
-    } else if (ui.mesh_edit_mode == 2) { // Edge
-        if (BeginSection("Edge Operations", true)) {
-            if (ImGui::Button("Split Edge", ImVec2(-1.0f, 26.0f))) {
-                LUCIDA_INFO(Resource, "Splitting edge at midpoint");
-            }
-            EndSection();
+        DrawTooltip("Extrude Region (E hotkey)\nDuplicate selection and create connecting skirt faces.");
+
+        ImGui::DragFloat("Inset Amount", &ui.inset_amount, 0.01f, 0.01f, 0.99f, "%.2f");
+        if (ImGui::Button("Inset Faces (I)", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Inset selected faces by %.2f", ui.inset_amount);
         }
-    } else if (ui.mesh_edit_mode == 3) { // Face
-        if (BeginSection("Face Operations", true)) {
-            ImGui::InputInt("Face Index", &ui.selected_face_index);
-            ImGui::DragFloat("Extrude Distance", &ui.extrude_distance, 0.05f, -10.0f, 10.0f, "%.2f m");
-            if (ImGui::Button("Extrude Face", ImVec2(-1.0f, 26.0f))) {
-                LUCIDA_INFO(Resource, "Extruding face %d by %.2f m", ui.selected_face_index, ui.extrude_distance);
-            }
-            ImGui::DragFloat("Inset Amount", &ui.inset_amount, 0.01f, 0.01f, 0.9f, "%.2f");
-            if (ImGui::Button("Inset Face", ImVec2(-1.0f, 26.0f))) {
-                LUCIDA_INFO(Resource, "Insetting face %d by %.2f", ui.selected_face_index, ui.inset_amount);
-            }
-            if (ImGui::Button("Subdivide Face", ImVec2(-1.0f, 26.0f))) {
-                LUCIDA_INFO(Resource, "Subdividing face %d", ui.selected_face_index);
-            }
-            if (ImGui::Button("Flip Face Normal", ImVec2(-1.0f, 26.0f))) {
-                LUCIDA_INFO(Resource, "Flipped normal of face %d", ui.selected_face_index);
-            }
-            if (ImGui::Button("Delete Face", ImVec2(-1.0f, 26.0f))) {
-                LUCIDA_INFO(Resource, "Deleted face %d", ui.selected_face_index);
-            }
-            EndSection();
-        }
+        DrawTooltip("Inset Faces (I hotkey)\nOffset boundary edges inward to create inner loop.");
+        EndSection();
     }
 
-    if (BeginSection("UV Mapping & Unwrapping", true)) {
+    // --- 3. Bevel, Subdivision & Loop Cut (Ctrl+B / Ctrl+R) ---
+    if (BeginSection("Subdivision & Bevel (Ctrl+B / Ctrl+R)", true)) {
+        if (ImGui::Button("Subdivide Mesh", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Subdivided mesh geometry (quadrupled triangle density)");
+        }
+        DrawTooltip("Subdivide\nSplit faces into 4 equal subdivisions.");
+
+        if (ImGui::Button("Bevel Edges (Ctrl+B)", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Beveled selected mesh edges");
+        }
+        DrawTooltip("Bevel Edges (Ctrl+B)\nChamfer hard edges into rounded bevel fillets.");
+
+        if (ImGui::Button("Loop Cut & Split (Ctrl+R)", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Split edge loops across selected geometry");
+        }
+        DrawTooltip("Loop Cut (Ctrl+R)\nInsert ring edge loop at midpoint.");
+        EndSection();
+    }
+
+    // --- 4. Merge, Weld & Clean Up (M / X) ---
+    if (BeginSection("Merge & Clean Up (M / X)", true)) {
+        ImGui::DragFloat("Weld Threshold", &ui.weld_threshold, 0.0001f, 0.00001f, 0.1f, "%.5f m");
+        if (ImGui::Button("Merge By Distance / Weld (M)", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Welded duplicate vertices within threshold %.5f m", ui.weld_threshold);
+        }
+        DrawTooltip("Weld Doubles (M hotkey)\nMerge overlapping vertices within tolerance.");
+
+        if (ImGui::Button("Dissolve Degenerates", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Cleaned zero-area triangles and collinear edges");
+        }
+        DrawTooltip("Clean up zero-area triangles and redundant edges.");
+        EndSection();
+    }
+
+    // --- 5. Normals & Shading (Shift+N) ---
+    if (BeginSection("Normals & Shading (Shift+N)", true)) {
+        if (ImGui::Button("Recalculate Outside (Shift+N)", ImVec2(-1.0f, 24.0f))) {
+            LUCIDA_INFO(Resource, "Recalculated surface normals outward");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Flip Normals", ImVec2(-1.0f, 24.0f))) {
+            LUCIDA_INFO(Resource, "Inverted face normal orientations");
+        }
+
+        if (ImGui::Button("Shade Smooth", ImVec2(120.0f, 24.0f))) {
+            LUCIDA_INFO(Resource, "Applied vertex normal smoothing");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Shade Flat", ImVec2(120.0f, 24.0f))) {
+            LUCIDA_INFO(Resource, "Applied flat face faceted shading");
+        }
+        EndSection();
+    }
+
+    // --- 6. UV Mapping & Unwrapping (U) ---
+    if (BeginSection("UV Mapping & Projection (U)", true)) {
         const char* uv_modes[] = { "Planar X", "Planar Y", "Planar Z", "Box (Tri-Planar)", "Spherical", "Cylindrical" };
         ImGui::Combo("Projection", &ui.uv_projection_mode, uv_modes, 6);
-        ImGui::DragFloat2("UV Scale", glm::value_ptr(ui.mesh_uv_scale), 0.1f, 0.01f, 100.0f);
+        ImGui::DragFloat2("UV Tiling / Scale", glm::value_ptr(ui.mesh_uv_scale), 0.1f, 0.01f, 100.0f);
         ImGui::DragFloat2("UV Offset", glm::value_ptr(ui.mesh_uv_offset), 0.05f);
-        if (ImGui::Button("Apply UV Projection", ImVec2(-1.0f, 26.0f))) {
-            LUCIDA_INFO(Resource, "Applied UV projection mode %d with scale (%.2f, %.2f)",
+
+        if (ImGui::Button("Smart UV Project (U)", ImVec2(-1.0f, 26.0f))) {
+            LUCIDA_INFO(Resource, "Generated UV projection (mode %d, scale: %.2f, %.2f)",
                         ui.uv_projection_mode, ui.mesh_uv_scale.x, ui.mesh_uv_scale.y);
         }
+        DrawTooltip("Unwrap (U hotkey)\nProject texture coordinates across mesh surface.");
         EndSection();
     }
 

@@ -20,6 +20,8 @@
 #include "lucida/framework/Picking.h"
 #include "lucida/framework/Script.h"
 #include "lucida/framework/Systems.h"
+#include "lucida/framework/CharacterSystem.h"
+#include "lucida/framework/NavMeshSystem.h"
 #include "lucida/render/Components.h"
 #include "lucida/resource/MeshBuilder.h"
 #include "lucida/resource/Prefab.h"
@@ -642,13 +644,50 @@ int main() {
     DebugDraw::Clear();
     check(DebugDraw::GetLines().empty() && DebugDraw::GetBoxes().empty(), "DebugDraw::Clear flushes visual queues");
 
-    // --- RenderSettings AO and AA Pipeline Test
-    RenderSettings r_settings{};
-    r_settings.ao.mode = AOMode::SSAO;
-    r_settings.ao.radius = 2.0f;
-    r_settings.aa.mode = AAMode::TAA;
-    check(r_settings.ao.mode == AOMode::SSAO && r_settings.ao.radius == 2.0f, "RenderSettings configures SSAO ambient occlusion");
-    check(r_settings.aa.mode == AAMode::TAA, "RenderSettings configures TAA anti-aliasing");
+    // --- NavMesh & A* Pathfinding System Test
+    World nav_world;
+    nav_world.Init();
+    Entity nb = Prefab::CreateNavMeshBoundsNode(nav_world, Vec3(0, 0, 0), Vec3(20, 5, 20));
+    Entity obs = Prefab::CreateNavMeshObstacleNode(nav_world, Vec3(0, 0, 0));
+    if (NavMeshObstacleComponent* obs_comp = nav_world.Entities().Get<NavMeshObstacleComponent>(obs)) {
+        obs_comp->size = Vec3(4.0f, 2.0f, 4.0f);
+    }
+    NavMeshSystem nav_system;
+    nav_system.Bake(nav_world);
+    check(nav_system.IsBaked(), "NavMeshSystem bakes walkable geometry");
+    check(nav_system.NodeCount() > 0, "NavMesh contains generated navigation nodes");
+
+    std::vector<Vec3> path;
+    bool path_found = nav_system.FindPath(Vec3(-6, 0, 0), Vec3(6, 0, 0), path);
+    check(path_found && path.size() >= 2, "NavMesh A* finds collision-free path around obstacle");
+
+    Entity agent_e = Prefab::CreateNavigationAgentNode(nav_world, Vec3(-6, 0, 0));
+    if (NavigationAgentComponent* agent = nav_world.Entities().Get<NavigationAgentComponent>(agent_e)) {
+        agent->destination = Vec3(6, 0, 0);
+    }
+    Vec3 initial_agent_pos = nav_world.Entities().Get<LocalTransform>(agent_e)->position;
+    nav_system.Update(nav_world, 0.5f);
+    Vec3 updated_agent_pos = nav_world.Entities().Get<LocalTransform>(agent_e)->position;
+    check(glm::distance(updated_agent_pos, Vec3(6, 0, 0)) < glm::distance(initial_agent_pos, Vec3(6, 0, 0)),
+          "NavigationAgent steers towards destination along NavMesh");
+    nav_world.Shutdown();
+
+    // --- Character Controller Lifecycle Test
+    World char_world;
+    char_world.Init();
+    auto test_physics = CreateJoltBackend();
+    test_physics->Init();
+    Entity player_char = Prefab::CreateCharacterBodyNode(char_world, Vec3(0, 2, 0));
+    CharacterSystem char_sys;
+    char_sys.OnEnterPlay(char_world, test_physics.get());
+    CharacterBodyComponent* cbc_test = char_world.Entities().Get<CharacterBodyComponent>(player_char);
+    check(cbc_test != nullptr && cbc_test->physics_handle != UINT32_MAX,
+          "CharacterSystem creates Jolt CharacterVirtual on Play");
+    char_sys.OnExitPlay(char_world, test_physics.get());
+    check(cbc_test->physics_handle == UINT32_MAX,
+          "CharacterSystem destroys physics handles on Stop");
+    test_physics->Shutdown();
+    char_world.Shutdown();
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures;

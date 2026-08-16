@@ -6,7 +6,6 @@ add_library(lucida_runtime STATIC
     src/Engine.cpp
     src/Particles.cpp
     src/DebugDraw.cpp
-    src/CharacterSystem.cpp
 )
 add_library(lucida::runtime ALIAS lucida_runtime)
 

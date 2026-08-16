@@ -7,6 +7,8 @@ add_library(lucida_framework STATIC
     src/SceneLibrary.cpp
     src/Theme.cpp
     src/Systems.cpp
+    src/CharacterSystem.cpp
+    src/NavMeshSystem.cpp
     src/Commands.cpp
     src/Picking.cpp
     src/DebugUI.cpp

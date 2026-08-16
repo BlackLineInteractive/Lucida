@@ -2,10 +2,10 @@
 // Copyright (C) 2026 BlackLine Interactive
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
-// Character Controller System  (GEA ch. 12)
+// Character Controller System (GEA ch. 12)
 //
 // Each fixed tick (Play Mode only):
-//   1. Read PlayerInputComponent  -> desired move direction + jump flag.
+//   1. Read PlayerInputComponent -> desired move direction + jump flag.
 //   2. Compute velocity from CharacterMovementComponent (walk/run/jump).
 //   3. Call IPhysicsBackend::MoveCharacter -- the backend handles slide and step.
 //   4. Read back position -> write to LocalTransform.
@@ -15,7 +15,6 @@
 //                + PlayerInputComponent + LocalTransform
 
 #include "lucida/core/math/Math.h"
-
 #include <cstdint>
 
 namespace lucida {

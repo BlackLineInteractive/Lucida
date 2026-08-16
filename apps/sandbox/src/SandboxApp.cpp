@@ -28,7 +28,8 @@
 #include "lucida/resource/Project.h"
 #include "lucida/resource/SceneSerializer.h"
 #include "lucida/runtime/Engine.h"
-#include "lucida/runtime/CharacterSystem.h"
+#include "lucida/framework/CharacterSystem.h"
+#include "lucida/framework/NavMeshSystem.h"
 
 #include <stb_image_write.h>
 
@@ -302,9 +303,14 @@ public:
         return !m_ui_state.request_quit;
     }
 
-    void OnFixedUpdate(World&, const FrameTime& time) override {
+    void OnFixedUpdate(World& world, const FrameTime& time) override {
         LUCIDA_PROFILE("fixed");
         m_camera.FixedUpdate(m_input, time.delta);
+        if (m_ui_state.play_state == UiState::PlayState::Playing || m_step_tick) {
+            f32 scaled_dt = time.delta * m_ui_state.gameplay_time_scale;
+            m_character_system.Update(world, m_physics.get(), scaled_dt, m_camera.Camera().yaw);
+            m_navmesh_system.Update(world, scaled_dt);
+        }
         if (m_step_tick) {
             m_step_tick = false;
             if (m_physics_system) m_physics_system->SetPaused(true);
@@ -328,6 +334,8 @@ public:
             if (m_script_system)  m_script_system->SetPaused(false);
             // Character controller: create Jolt capsule for every CharacterBodyNode
             m_character_system.OnEnterPlay(world, m_physics.get());
+            // NavMesh: bake walkable geometry and obstacle graph
+            m_navmesh_system.Bake(world);
             // Switch viewport to game camera
             m_ui_state.camera_source = UiState::CameraSource::GameCamera;
         }
@@ -630,6 +638,7 @@ private:
     WorldSnapshot    m_play_snapshot;
     bool             m_step_tick = false;
     CharacterSystem  m_character_system;
+    NavMeshSystem    m_navmesh_system;
 
     CameraController m_camera;
     DebugUI          m_ui;

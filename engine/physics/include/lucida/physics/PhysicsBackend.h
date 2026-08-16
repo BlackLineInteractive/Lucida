@@ -96,6 +96,16 @@ struct VehicleState {
     i32 gear       = 0;
 };
 
+// Capsule dimensions and physics properties for IPhysicsBackend::CreateCharacter.
+struct CharacterDesc {
+    Vec3 position{0.0f};
+    f32  capsule_radius    = 0.40f;
+    f32  capsule_height    = 1.80f;  // total height including hemispheres
+    f32  step_height       = 0.35f;
+    f32  max_slope_deg     = 45.0f;
+    f32  mass              = 80.0f;
+};
+
 class IPhysicsBackend {
 public:
     virtual ~IPhysicsBackend() = default;
@@ -135,16 +145,6 @@ public:
     virtual bool            IsCharacterGrounded(CharacterHandle ch) const = 0;
 
     virtual const char* Name() const = 0;
-};
-
-// Capsule dimensions and physics properties for IPhysicsBackend::CreateCharacter.
-struct CharacterDesc {
-    Vec3 position{0.0f};
-    f32  capsule_radius    = 0.40f;
-    f32  capsule_height    = 1.80f;  // total height including hemispheres
-    f32  step_height       = 0.35f;
-    f32  max_slope_deg     = 45.0f;
-    f32  mass              = 80.0f;
 };
 
 } // namespace lucida

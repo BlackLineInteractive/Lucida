@@ -1,9 +1,7 @@
-<p align="center">
-  <img src="media/lucida.jpg" alt="Lucida Engine" width="100%">
-</p>
+<h1 align="center">Lucida — The New Era of Game Engines</h1>
 
 <p align="center">
-  <em>lucida</em> - the brightest star in a constellation.
+  <em>lucida</em> — the brightest star in a constellation.
 </p>
 
 <p align="center">
@@ -11,16 +9,21 @@
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-blue.svg">
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
   <img alt="Renderer" src="https://img.shields.io/badge/renderer-Metal%20ray%20tracing-orange.svg">
-  <a href="https://t.me/blacklineinteractive"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-2CA5E0?logo=telegram&logoColor=white"></a>
-  <a href="https://youtube.com/@blacklineinteractive"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-FF0000?logo=youtube&logoColor=white"></a>
-  <a href="https://discord.gg/uq2TxADhW"><img alt="Discord" src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/uq2TxADhW"><img alt="Discord" src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
+  <a href="https://t.me/blacklineinteractive"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"></a>
+  <a href="https://youtube.com/@blacklineinteractive"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
 </p>
 
 ---
 
-## What is Lucida?
+## The New Era of Game Engines
 
-A modular real-time ray tracing **Graphics and Game Engine**, aimed narrowly at **procedural materials and selective ray tracing** - spending rays only where they are visible so ray-traced games run on ordinary hardware.
+**Lucida** is a next-generation real-time ray tracing game engine engineered from first principles for deterministic Whitted ray tracing, Radiance Cascades Global Illumination, and Data-Oriented Design (DOD). 
+
+Built to deliver breathtaking visual fidelity, real-time procedural materials, active physical ragdolls, and hardware-accelerated temporal upscaling without relying on expensive dedicated RT cores.
 
 ---
 
