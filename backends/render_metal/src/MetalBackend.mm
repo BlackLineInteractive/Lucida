@@ -189,6 +189,7 @@ class MetalBackend final : public IRenderBackend {
   id<MTLTexture> m_tex_gi_norm = nil; // RGBA16F at fog res: shading normal
   id<MTLTexture> m_tex_mesh_arrays = nil;
   id<MTLTexture> m_tex_mesh_orm = nil;
+  NSMutableArray<id<MTLTexture>> *m_retired_textures = nil;
 
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 130000
   id<MTLFXTemporalScaler> m_temporal_scaler = nil;
@@ -438,7 +439,23 @@ class MetalBackend final : public IRenderBackend {
       return [m_device newTextureWithDescriptor:desc];
     };
 
-    m_tex_present = mktex(m_layer.pixelFormat, TargetWidth(), TargetHeight());
+    if (m_tex_present && ((int)m_tex_present.width != TargetWidth() || (int)m_tex_present.height != TargetHeight() || m_tex_present.pixelFormat != m_layer.pixelFormat)) {
+      if (m_retired_textures) [m_retired_textures addObject:m_tex_present];
+      m_tex_present = mktex(m_layer.pixelFormat, TargetWidth(), TargetHeight());
+    } else if (!m_tex_present) {
+      m_tex_present = mktex(m_layer.pixelFormat, TargetWidth(), TargetHeight());
+    }
+
+    if (m_retired_textures) {
+      if (m_tex_gbuffer) [m_retired_textures addObject:m_tex_gbuffer];
+      if (m_tex_depth)   [m_retired_textures addObject:m_tex_depth];
+      if (m_tex_motion)  [m_retired_textures addObject:m_tex_motion];
+      if (m_tex_fog)     [m_retired_textures addObject:m_tex_fog];
+      if (m_tex_fog_depth) [m_retired_textures addObject:m_tex_fog_depth];
+      if (m_tex_ao)      [m_retired_textures addObject:m_tex_ao];
+      if (m_tex_gi_norm) [m_retired_textures addObject:m_tex_gi_norm];
+    }
+
     m_tex_gbuffer = mktex(MTLPixelFormatRGBA16Float, m_ray_w, m_ray_h);
     m_tex_depth = mktex(MTLPixelFormatR32Float, m_ray_w, m_ray_h);
     m_tex_motion = mktex(MTLPixelFormatRG16Float, m_ray_w, m_ray_h);
@@ -453,28 +470,34 @@ class MetalBackend final : public IRenderBackend {
     m_have_prev_vp = false;
 
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 130000
+    m_temporal_scaler = nil;
     if (@available(macOS 13.0, *)) {
-      MTLFXTemporalScalerDescriptor *sdesc =
-          [MTLFXTemporalScalerDescriptor new];
-      sdesc.inputWidth = m_ray_w;
-      sdesc.inputHeight = m_ray_h;
-      sdesc.outputWidth = TargetWidth();
-      sdesc.outputHeight = TargetHeight();
-      sdesc.colorTextureFormat = MTLPixelFormatRGBA16Float;
-      sdesc.depthTextureFormat = MTLPixelFormatR32Float;
-      sdesc.motionTextureFormat = MTLPixelFormatRG16Float;
-      sdesc.outputTextureFormat = m_layer.pixelFormat;
-      sdesc.autoExposureEnabled = NO;
-      m_temporal_scaler = [sdesc newTemporalScalerWithDevice:m_device];
-      if (!m_temporal_scaler) {
-        LUCIDA_WARN(Render, "MetalFX temporal scaler unavailable for %dx%d -> %dx%d",
-                    m_ray_w, m_ray_h, m_render_w, m_render_h);
+      if (m_render_scale >= 0.50f && (m_ray_w * 2 >= TargetWidth()) && (m_ray_h * 2 >= TargetHeight())) {
+        @try {
+          MTLFXTemporalScalerDescriptor *sdesc =
+              [MTLFXTemporalScalerDescriptor new];
+          sdesc.inputWidth = m_ray_w;
+          sdesc.inputHeight = m_ray_h;
+          sdesc.outputWidth = TargetWidth();
+          sdesc.outputHeight = TargetHeight();
+          sdesc.colorTextureFormat = MTLPixelFormatRGBA16Float;
+          sdesc.depthTextureFormat = MTLPixelFormatR32Float;
+          sdesc.motionTextureFormat = MTLPixelFormatRG16Float;
+          sdesc.outputTextureFormat = m_layer.pixelFormat;
+          sdesc.autoExposureEnabled = NO;
+          m_temporal_scaler = [sdesc newTemporalScalerWithDevice:m_device];
+          if (m_temporal_scaler) {
+            m_temporal_scaler.motionVectorScaleX = 1.0f;
+            m_temporal_scaler.motionVectorScaleY = 1.0f;
+            m_temporal_scaler.depthReversed = NO;
+          }
+        } @catch (NSException *exception) {
+          m_temporal_scaler = nil;
+          LUCIDA_WARN(Render, "MetalFX temporal scaler threw exception for %dx%d -> %dx%d: %s",
+                      m_ray_w, m_ray_h, TargetWidth(), TargetHeight(),
+                      [exception.reason UTF8String]);
+        }
       }
-      // Motion vectors are written in input-texture pixels, and depth is
-      // a conventional near=0 / far=1 buffer.
-      m_temporal_scaler.motionVectorScaleX = 1.0f;
-      m_temporal_scaler.motionVectorScaleY = 1.0f;
-      m_temporal_scaler.depthReversed = NO;
     }
 #endif
     LUCIDA_INFO(Render, "targets: output %dx%d  rays %dx%d  fog %dx%d",
@@ -498,6 +521,7 @@ public:
       return false;
     }
     m_layer = (__bridge CAMetalLayer *)surface.native_layer;
+    m_retired_textures = [NSMutableArray new];
     m_layer.device = m_device;
     m_layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     m_layer.framebufferOnly = NO; // allow compute shader writes
@@ -1090,7 +1114,7 @@ public:
         [pe setComputePipelineState:m_pipeline_present];
         [pe setTexture:m_tex_gbuffer atIndex:0];
         [pe setTexture:m_tex_present atIndex:1];
-        [pe dispatchThreads:MTLSizeMake(m_render_w, m_render_h, 1)
+        [pe dispatchThreads:MTLSizeMake(TargetWidth(), TargetHeight(), 1)
             threadsPerThreadgroup:MTLSizeMake(8, 8, 1)];
         [pe endEncoding];
       }
@@ -1114,6 +1138,13 @@ public:
         [be endEncoding];
         wrote_drawable = true;
       }
+
+      // Retain textures until GPU execution finishes
+      NSMutableArray *retired = m_retired_textures;
+      m_retired_textures = [NSMutableArray new];
+      [cmd addCompletedHandler:^(id<MTLCommandBuffer>) {
+        [retired removeAllObjects];
+      }];
 
       // --- Render pass (ImGui overlay)
       m_rpdesc.colorAttachments[0].texture = drawable.texture;
