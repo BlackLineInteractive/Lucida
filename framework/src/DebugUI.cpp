@@ -680,6 +680,32 @@ void DebugUI::DrawPlayToolbar(UiState& ui) {
     }
 
     ImGui::PopStyleVar(2);
+
+    // Time-scale slider — visible only when not in Edit state
+    if (ui.play_state != UiState::PlayState::Edit) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+        ImGui::SliderFloat("##timescale", &ui.gameplay_time_scale, 0.1f, 4.0f, "%.1fx");
+        DrawTooltip("Time Scale\n0.1x = slow motion  |  1.0x = real-time  |  4.0x = fast forward");
+        ImGui::PopStyleVar();
+
+        // Status badge on right side
+        const char* badge_text = (ui.play_state == UiState::PlayState::Playing) ? "  PLAYING  " : "  PAUSED  ";
+        ImU32 badge_col = (ui.play_state == UiState::PlayState::Playing)
+            ? IM_COL32(38, 155, 70, 220) : IM_COL32(195, 145, 25, 220);
+        ImVec2 badge_size = ImGui::CalcTextSize(badge_text);
+        float right_x = ImGui::GetWindowWidth() - badge_size.x - 16.0f;
+        if (right_x > ImGui::GetCursorPosX() + 4.0f) ImGui::SameLine(right_x);
+        else ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Button,        badge_col);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, badge_col);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  badge_col);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+        ImGui::SmallButton(badge_text);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+    }
 }
 
 void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
@@ -2951,6 +2977,32 @@ void DebugUI::DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets)
 
     ImGui::Separator();
 
+    // Favorites sidebar + main content in a two-column layout
+    ImGui::Columns(2, "cb_layout", true);
+    ImGui::SetColumnWidth(0, 140.0f);
+
+    // --- Favorites sidebar ---
+    ImGui::TextDisabled("Favorites");
+    ImGui::Separator();
+    static const struct { const char* label; const char* path; } kFavorites[] = {
+        { "[DIR] assets",          "assets"           },
+        { "[DIR] models",          "assets/models"    },
+        { "[DIR] textures",        "assets/textures"  },
+        { "[DIR] audio",           "assets/audio"     },
+        { "[DIR] scenes",          "scenes"           },
+    };
+    for (auto& fav : kFavorites) {
+        if (ImGui::Selectable(fav.label)) {
+            ui.content_browser_path = fav.path;
+        }
+    }
+    ImGui::Columns(1);
+    ImGui::NextColumn();
+
+    // Reset to two-column for the grid area
+    ImGui::Columns(1);
+    ImGui::Spacing();
+
     // Directory items list in responsive grid
     std::filesystem::path current_dir(ui.content_browser_path);
     std::error_code ec;
@@ -2962,13 +3014,14 @@ void DebugUI::DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets)
         if (ImGui::BeginTable("ContentGrid", columns)) {
             for (const auto& entry : std::filesystem::directory_iterator(current_dir, ec)) {
                 const auto& filename = entry.path().filename().string();
-                if (filename.empty() || filename[0] == '.') continue; // Skip hidden files
+                if (filename.empty() || filename[0] == '.') continue;
 
+                // Search filter
                 if (ui.content_search[0] != '\0') {
                     std::string fn = filename;
-                    std::string s = ui.content_search;
+                    std::string s  = ui.content_search;
                     std::transform(fn.begin(), fn.end(), fn.begin(), ::tolower);
-                    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+                    std::transform(s.begin(),  s.end(),  s.begin(),  ::tolower);
                     if (fn.find(s) == std::string::npos) continue;
                 }
 
@@ -2978,15 +3031,16 @@ void DebugUI::DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets)
                 const bool is_dir = entry.is_directory();
                 const std::string ext = entry.path().extension().string();
 
-                std::string icon = "[DOC]";
-                if (is_dir) icon = "[DIR]";
-                else if (ext == ".obj" || ext == ".gltf" || ext == ".glb" || ext == ".fbx") icon = "[MESH]";
-                else if (ext == ".png" || ext == ".jpg" || ext == ".hdr") icon = "[TEX]";
-                else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") icon = "[AUD]";
+                // File-type icon prefix
+                const char* icon = "[DOC]";
+                if      (is_dir) icon = "[DIR]";
+                else if (ext == ".obj"  || ext == ".gltf" || ext == ".glb" || ext == ".fbx") icon = "[MESH]";
+                else if (ext == ".png"  || ext == ".jpg"  || ext == ".jpeg"|| ext == ".hdr") icon = "[TEX]";
+                else if (ext == ".wav"  || ext == ".mp3"  || ext == ".ogg" || ext == ".flac") icon = "[AUD]";
                 else if (ext == ".json") icon = "[SCN]";
-                else if (ext == ".cpp" || ext == ".h" || ext == ".lua") icon = "[SCR]";
+                else if (ext == ".lua"  || ext == ".cpp"  || ext == ".h")   icon = "[SCR]";
 
-                std::string label = icon + " " + filename;
+                std::string label = std::string(icon) + " " + filename;
                 if (label.size() > 18) label = label.substr(0, 15) + "...";
 
                 if (ImGui::Button(label.c_str(), ImVec2(item_width, 36.0f))) {
@@ -2997,7 +3051,15 @@ void DebugUI::DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets)
                     }
                 }
                 if (ImGui::IsItemHovered()) {
-                    DrawTooltip(filename.c_str());
+                    DrawTooltip(entry.path().string().c_str());
+                }
+
+                // Drag source — payload is the full path string
+                if (!is_dir && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                    const std::string full_path = entry.path().string();
+                    ImGui::SetDragDropPayload("ASSET_PATH", full_path.c_str(), full_path.size() + 1);
+                    ImGui::Text("Drop: %s", label.c_str());
+                    ImGui::EndDragDropSource();
                 }
 
                 ImGui::PopID();

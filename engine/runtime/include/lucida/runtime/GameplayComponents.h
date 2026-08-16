@@ -313,11 +313,14 @@ struct WatercraftComponent {
 // =========================================================================
 
 struct CharacterBodyComponent {
-    f32  capsule_radius = 0.4f;
-    f32  capsule_height = 1.8f;
-    f32  step_height = 0.35f;
+    f32  capsule_radius     = 0.40f;
+    f32  capsule_height     = 1.80f;
+    f32  step_height        = 0.35f;
     f32  max_slope_angle_deg = 45.0f;
-    bool is_grounded = true;
+    bool is_grounded        = false;
+    // Opaque handle into IPhysicsBackend (CharacterHandle::value).
+    // UINT32_MAX means not yet created.
+    u32  physics_handle     = UINT32_MAX;
 };
 
 struct CharacterMovementComponent {
@@ -333,6 +336,10 @@ struct PlayerControllerComponent {
     f32  mouse_sensitivity = 1.0f;
     bool invert_y = false;
 };
+
+// Tag attached to entities spawned exclusively during Play Mode
+// (projectiles, spawned enemies, VFX). WorldSnapshot::Restore removes them.
+struct PlayStateComponent {};
 
 struct PlayerInputComponent {
     Vec2 move_axis{0.0f};

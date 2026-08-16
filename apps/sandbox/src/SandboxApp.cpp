@@ -28,6 +28,7 @@
 #include "lucida/resource/Project.h"
 #include "lucida/resource/SceneSerializer.h"
 #include "lucida/runtime/Engine.h"
+#include "lucida/runtime/CharacterSystem.h"
 
 #include <stb_image_write.h>
 
@@ -325,6 +326,10 @@ public:
             m_ui_state.play_state = UiState::PlayState::Playing;
             if (m_physics_system) m_physics_system->SetPaused(false);
             if (m_script_system)  m_script_system->SetPaused(false);
+            // Character controller: create Jolt capsule for every CharacterBodyNode
+            m_character_system.OnEnterPlay(world, m_physics.get());
+            // Switch viewport to game camera
+            m_ui_state.camera_source = UiState::CameraSource::GameCamera;
         }
         if (m_ui_state.request_pause) {
             m_ui_state.request_pause = false;
@@ -349,6 +354,10 @@ public:
 
             // Leaving play mode: restore world snapshot
             m_play_snapshot.Restore(world.Entities());
+            // Destroy character physics handles (entity IDs no longer valid)
+            m_character_system.OnExitPlay(world, m_physics.get());
+            // Switch back to editor camera
+            m_ui_state.camera_source = UiState::CameraSource::Viewport;
             m_fingerprint = 0; // force scene republish
             Republish(world);
             LUCIDA_INFO(App, "Play mode stopped (restored world snapshot)");
@@ -620,6 +629,7 @@ private:
 
     WorldSnapshot    m_play_snapshot;
     bool             m_step_tick = false;
+    CharacterSystem  m_character_system;
 
     CameraController m_camera;
     DebugUI          m_ui;

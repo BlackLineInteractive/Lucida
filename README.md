@@ -13,6 +13,7 @@
   <img alt="Renderer" src="https://img.shields.io/badge/renderer-Metal%20ray%20tracing-orange.svg">
   <a href="https://t.me/blacklineinteractive"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-2CA5E0?logo=telegram&logoColor=white"></a>
   <a href="https://youtube.com/@blacklineinteractive"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-FF0000?logo=youtube&logoColor=white"></a>
+  <a href="https://discord.gg/uq2TxADhW"><img alt="Discord" src="https://img.shields.io/badge/Discord-7289DA?logo=discord&logoColor=white"></a>
 </p>
 
 ---
@@ -22,14 +23,13 @@ A modular real-time ray tracing **Graphics and Game Engine**, aimed narrowly at 
 Architecture follows three primary reference books strictly:
 
 | # | Book | Author(s) | Used for |
-|---|------|-----------|----------|
+| --- | ------ | ----------- | ---------- |
 | 1 | **Game Engine Architecture** (3rd ed., 2018) | Jason Gregory | Layering model, subsystem inventory, memory management, the full engine feature checklist |
 | 2 | **Game Programming Patterns** (2014) | Robert Nystrom | Patterns inside each layer — Command, Observer, Service Locator, Object Pool, Component, Event Queue |
 | 3 | **Data-Oriented Design** (2018) | Richard Fabian | SoA memory layout, cache-friendly ECS, eliminating dynamic allocation in the hot path |
 | 4 | **Real-Time Rendering** (4th ed., 2018) | Akenine-Möller, Haines, Hoffman | Radiance Cascades, TLAS/BLAS two-level acceleration, BRDF derivation, PBR pipeline |
 | 5 | **Physically Based Rendering** (4th ed., 2023, PBRT) | Pharr, Jakob, Humphreys | Spectral transport, path integrator math, participating media — used as RT correctness reference |
 | 6 | **Mathematics for 3D Game Programming and Computer Graphics** (3rd ed.) | Eric Lengyel | Quaternion interpolation, frustum plane extraction, numerical stability of transforms |
-
 
 * Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 * Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
@@ -89,7 +89,7 @@ cmake --build build -j
 ### Platforms
 
 | Platform | Architecture | Renderer | Status |
-|----------|-------------|----------|--------|
+| ---------- | ------------- | ---------- | -------- |
 | macOS 13+ | x86\_64 (Intel) | Metal + MetalFX | Complete tracing path |
 | macOS 13+ | arm64 (Apple Silicon) | Metal + MetalFX | Complete tracing path |
 | macOS 13+ | Universal (x86\_64 + arm64) | Metal + MetalFX | `LUCIDA_MACOS_UNIVERSAL=ON` |
@@ -148,7 +148,6 @@ cmake --build build -j
 cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
 cmake --build build -j
 ```
-
 
 ### CMake options
 
@@ -221,12 +220,12 @@ looking at a window.
 
 ### Key Engine Features
 
-- **Unified Metal Compute Ray Tracer**: Deterministic Whitted RT with analytic soft shadows, directional sun casting, golden-angle hemisphere AO, multi-frequency trochoidal water waves, and volumetric fog.
-- **Hardware Upscaling**: Sub-pixel Halton jittering with per-instance Motion Vectors and Apple MetalFX Temporal Upscaling.
-- **Live PBR & Material Inspector**: 1-click automotive and metallic presets, live Albedo/Metallic/Roughness/Emission/IOR editing, and normal map support.
-- **Complete Scene Hierarchy**: Multi-part 3D model node tree extraction, drag-and-drop parenting, and 3D non-uniform scaling with uniform lock toggle.
-- **Global Undo / Redo Architecture**: Command pattern with `EntitySnapshot` component serialization covering all viewport and inspector interactions.
-- **Real-Time Lighting & Post-Processing**: Live sun positioning, sky irradiance, ACES/Reinhard/Filmic tonemapping, gamma correction, and Bayer dithering.
+* **Unified Metal Compute Ray Tracer**: Deterministic Whitted RT with analytic soft shadows, directional sun casting, golden-angle hemisphere AO, multi-frequency trochoidal water waves, and volumetric fog.
+* **Hardware Upscaling**: Sub-pixel Halton jittering with per-instance Motion Vectors and Apple MetalFX Temporal Upscaling.
+* **Live PBR & Material Inspector**: 1-click automotive and metallic presets, live Albedo/Metallic/Roughness/Emission/IOR editing, and normal map support.
+* **Complete Scene Hierarchy**: Multi-part 3D model node tree extraction, drag-and-drop parenting, and 3D non-uniform scaling with uniform lock toggle.
+* **Global Undo / Redo Architecture**: Command pattern with `EntitySnapshot` component serialization covering all viewport and inspector interactions.
+* **Real-Time Lighting & Post-Processing**: Live sun positioning, sky irradiance, ACES/Reinhard/Filmic tonemapping, gamma correction, and Bayer dithering.
 
 ---
 

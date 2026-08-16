@@ -18,6 +18,7 @@ namespace lucida {
 
 LUCIDA_DECLARE_HANDLE(BodyHandle);
 LUCIDA_DECLARE_HANDLE(VehicleHandle);
+LUCIDA_DECLARE_HANDLE(CharacterHandle);
 
 enum class BodyType : u8 { Static, Dynamic, Kinematic };
 enum class ShapeType : u8 { Box, Sphere, Capsule, Cylinder, Plane, Mesh };
@@ -123,7 +124,27 @@ public:
     virtual VehicleState  GetVehicleState(VehicleHandle vehicle) const = 0;
     virtual void          ResetVehicle(VehicleHandle vehicle) = 0;
 
+    // Character controller — capsule that slides, steps and reports grounded state.
+    // Uses Jolt CharacterVirtual; kept behind the interface so Bullet can implement
+    // the same five methods without changing any gameplay code.
+    virtual CharacterHandle CreateCharacter(const CharacterDesc& desc) = 0;
+    virtual void            DestroyCharacter(CharacterHandle ch) = 0;
+    // velocity is in world space, already scaled by dt externally (m/s).
+    virtual void            MoveCharacter(CharacterHandle ch, const Vec3& velocity, f32 dt) = 0;
+    virtual Vec3            GetCharacterPosition(CharacterHandle ch) const = 0;
+    virtual bool            IsCharacterGrounded(CharacterHandle ch) const = 0;
+
     virtual const char* Name() const = 0;
+};
+
+// Capsule dimensions and physics properties for IPhysicsBackend::CreateCharacter.
+struct CharacterDesc {
+    Vec3 position{0.0f};
+    f32  capsule_radius    = 0.40f;
+    f32  capsule_height    = 1.80f;  // total height including hemispheres
+    f32  step_height       = 0.35f;
+    f32  max_slope_deg     = 45.0f;
+    f32  mass              = 80.0f;
 };
 
 } // namespace lucida
