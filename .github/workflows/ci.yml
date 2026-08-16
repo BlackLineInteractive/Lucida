@@ -28,7 +28,7 @@ jobs:
             run_tests: true
           - name: "Universal (x86_64 + arm64)"
             os: macos-14
-            cmake_flags: "-DLUCIDA_MACOS_UNIVERSAL=ON -DLUCIDA_BUILD_TESTS=ON"
+            cmake_flags: "-DLUCIDA_MACOS_UNIVERSAL=ON -DLUCIDA_PREFER_SYSTEM_DEPS=OFF -DLUCIDA_BUILD_TESTS=ON"
             run_tests: false
 
     steps:
@@ -39,17 +39,15 @@ jobs:
 
       - name: Install dependencies (Homebrew)
         run: |
-          brew install sdl2 assimp ninja
+          brew install sdl2 assimp ninja || brew upgrade sdl2 assimp ninja || true
 
       - name: Configure CMake
         run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            ${{ matrix.cmake_flags }}
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ matrix.cmake_flags }}
 
       - name: Build engine & tools
         run: |
-          cmake --build build -j $(sysctl -n hw.ncpu)
+          cmake --build build --parallel
 
       - name: Run Test Suite
         if: matrix.run_tests
@@ -67,13 +65,11 @@ jobs:
       matrix:
         include:
           - name: "x86_64 (Native)"
-            arch: "x86_64"
-            cmake_flags: "-DLUCIDA_BUILD_TESTS=ON -DLUCIDA_RENDER_GL=OFF"
+            cmake_flags: "-DLUCIDA_BUILD_TESTS=ON"
             packages: "libsdl2-dev libassimp-dev ninja-build"
             run_tests: true
           - name: "ARM64 (Cross-compile aarch64)"
-            arch: "aarch64"
-            cmake_flags: "-DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DLUCIDA_BUILD_TESTS=OFF -DLUCIDA_RENDER_GL=OFF"
+            cmake_flags: "-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DLUCIDA_PREFER_SYSTEM_DEPS=OFF -DLUCIDA_BUILD_TESTS=OFF"
             packages: "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu ninja-build"
             run_tests: false
 
@@ -86,18 +82,15 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake git ${{ matrix.packages }}
+          sudo apt-get install -y --no-install-recommends build-essential cmake git ${{ matrix.packages }}
 
       - name: Configure CMake
         run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            ${{ matrix.cmake_flags }}
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ matrix.cmake_flags }}
 
       - name: Build engine & tools
         run: |
-          cmake --build build -j $(nproc)
+          cmake --build build --parallel
 
       - name: Run Test Suite
         if: matrix.run_tests
@@ -116,11 +109,11 @@ jobs:
         include:
           - name: "x64 (MSVC 2022)"
             arch_flag: "-A x64"
-            cmake_flags: "-DLUCIDA_BUILD_TESTS=ON -DLUCIDA_RENDER_GL=OFF"
+            cmake_flags: "-DLUCIDA_BUILD_TESTS=ON"
             run_tests: true
           - name: "ARM64 (MSVC Snapdragon / WOA)"
             arch_flag: "-A ARM64"
-            cmake_flags: "-DLUCIDA_BUILD_TESTS=OFF -DLUCIDA_RENDER_GL=OFF"
+            cmake_flags: "-DLUCIDA_BUILD_TESTS=OFF"
             run_tests: false
 
     steps:
@@ -130,16 +123,14 @@ jobs:
           submodules: recursive
 
       - name: Configure CMake
-        run: |
-          cmake -B build -G "Visual Studio 17 2022" ${{ matrix.arch_flag }} `
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo `
-            ${{ matrix.cmake_flags }}
+        shell: pwsh
+        run: cmake -B build -G "Visual Studio 17 2022" ${{ matrix.arch_flag }} -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ matrix.cmake_flags }}
 
       - name: Build engine & tools
-        run: |
-          cmake --build build --config RelWithDebInfo --parallel
+        shell: pwsh
+        run: cmake --build build --config RelWithDebInfo --parallel
 
       - name: Run Test Suite
         if: matrix.run_tests
-        run: |
-          .\build\tests\RelWithDebInfo\lucida_tests.exe
+        shell: pwsh
+        run: .\build\tests\RelWithDebInfo\lucida_tests.exe
