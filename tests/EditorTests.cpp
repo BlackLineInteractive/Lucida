@@ -495,9 +495,9 @@ int main() {
     Entity char_body = Prefab::CreateCharacterBodyNode(prefab_world, Vec3(0, 1, 0));
     check(prefab_world.Entities().Get<CharacterBodyComponent>(char_body) != nullptr, "CharacterBodyNode contains CharacterBodyComponent");
 
-    Entity ai_enemy = Prefab::CreateAIEnemyNode(prefab_world, Vec3(0, 1, 0));
-    check(prefab_world.Entities().Get<AIControllerComponent>(ai_enemy) != nullptr, "AIEnemyNode contains AIControllerComponent");
-    check(prefab_world.Entities().Get<BehaviorTreeComponent>(ai_enemy) != nullptr, "AIEnemyNode contains BehaviorTreeComponent");
+    Entity ai_enemy = Prefab::CreateAIControllerNode(prefab_world, Vec3(0, 1, 0));
+    check(prefab_world.Entities().Get<AIControllerComponent>(ai_enemy) != nullptr, "AIControllerNode contains AIControllerComponent");
+    check(prefab_world.Entities().Get<BehaviorTreeComponent>(ai_enemy) != nullptr, "AIControllerNode contains BehaviorTreeComponent");
 
     Entity nav_bounds = Prefab::CreateNavMeshBoundsNode(prefab_world, Vec3(0), Vec3(50));
     check(prefab_world.Entities().Get<NavMeshBoundsComponent>(nav_bounds) != nullptr, "NavMeshBoundsNode created");
@@ -525,6 +525,97 @@ int main() {
 
     Entity lod_node = Prefab::CreateLODGroupNode(prefab_world, Vec3(0));
     check(prefab_world.Entities().Get<LODGroupComponent>(lod_node) != nullptr, "LODGroupNode contains LODGroupComponent");
+
+    prefab_world.Shutdown();
+
+    // --- Extended Node Categories (new 107-node taxonomy)
+    // Vehicles
+    Entity wheeled_node = Prefab::CreateWheeledVehicleNode(prefab_world, Vec3(0,1,0), "TestCar");
+    check(prefab_world.Entities().Get<WheeledVehicleComponent>(wheeled_node) != nullptr, "WheeledVehicleNode created");
+    Entity tracked_node = Prefab::CreateTrackedVehicleNode(prefab_world, Vec3(0,1,0), "TestTank");
+    check(prefab_world.Entities().Get<TrackedVehicleComponent>(tracked_node) != nullptr, "TrackedVehicleNode created");
+    Entity aircraft_node = Prefab::CreateAircraftNode(prefab_world, Vec3(0,10,0));
+    check(prefab_world.Entities().Get<AircraftComponent>(aircraft_node) != nullptr, "AircraftNode created");
+    Entity watercraft_node = Prefab::CreateWatercraftNode(prefab_world, Vec3(0,0,0));
+    check(prefab_world.Entities().Get<WatercraftComponent>(watercraft_node) != nullptr, "WatercraftNode created");
+    Entity wheel_node = Prefab::CreateVehicleWheelNode(prefab_world, Vec3(0.8f,0.35f,1.5f));
+    check(prefab_world.Entities().Get<VehicleWheelComponent>(wheel_node) != nullptr, "VehicleWheelNode created");
+
+    // Animation & Kinematics
+    Entity bone_node = Prefab::CreateBoneNode(prefab_world, "Spine_01");
+    check(prefab_world.Entities().Get<BoneNodeComponent>(bone_node)->bone_name == "Spine_01", "BoneNode stores bone name");
+    Entity socket_node = Prefab::CreateSocketNode(prefab_world, "Hand_R");
+    check(prefab_world.Entities().Get<BoneAttachmentComponent>(socket_node)->joint_name == "Hand_R", "SocketNode stores joint name");
+    Entity anim_player = Prefab::CreateAnimationPlayerNode(prefab_world, "Run");
+    check(prefab_world.Entities().Get<AnimationTreeComponent>(anim_player)->clip_a == "Run", "AnimationPlayerNode stores clip name");
+    Entity morph_node = Prefab::CreateMorphTargetNode(prefab_world);
+    check(prefab_world.Entities().Get<MorphTargetComponent>(morph_node) != nullptr, "MorphTargetNode created");
+
+    // AI & Navigation extended
+    Entity obstacle_node = Prefab::CreateNavMeshObstacleNode(prefab_world, Vec3(0,0,0));
+    check(prefab_world.Entities().Get<NavMeshObstacleComponent>(obstacle_node) != nullptr, "NavMeshObstacleNode created");
+    Entity nav_link = Prefab::CreateNavMeshLinkNode(prefab_world, Vec3(0,0,0), Vec3(0,2,3));
+    check(prefab_world.Entities().Get<NavMeshLinkComponent>(nav_link)->is_bidirectional, "NavMeshLinkNode is bidirectional");
+    Entity nav_agent = Prefab::CreateNavigationAgentNode(prefab_world, Vec3(0,0,0));
+    check(prefab_world.Entities().Get<NavigationAgentComponent>(nav_agent) != nullptr, "NavigationAgentNode created");
+    Entity fsm_node = Prefab::CreateFSMNode(prefab_world, "Idle");
+    check(prefab_world.Entities().Get<FSMComponent>(fsm_node)->current_state == "Idle", "FSMNode initialized to Idle state");
+    Entity blackboard = Prefab::CreateBlackboardNode(prefab_world);
+    check(prefab_world.Entities().Get<BlackboardComponent>(blackboard) != nullptr, "BlackboardNode created");
+
+    // Gameplay extended
+    Entity equip_node = Prefab::CreateEquipmentNode(prefab_world);
+    check(prefab_world.Entities().Get<EquipmentComponent>(equip_node) != nullptr, "EquipmentNode created");
+    Entity ability_node = Prefab::CreateAbilityNode(prefab_world, "Fireball");
+    check(prefab_world.Entities().Get<AbilityComponent>(ability_node)->ability_name == "Fireball", "AbilityNode stores ability name");
+    Entity savepoint = Prefab::CreateSavePointNode(prefab_world, Vec3(0,0,0));
+    check(prefab_world.Entities().Get<SavePointComponent>(savepoint) != nullptr, "SavePointNode created");
+
+    // VFX extended
+    Entity vfx_node = Prefab::CreateVFXGraphNode(prefab_world, "explosion.vfx");
+    check(prefab_world.Entities().Get<VFXGraphComponent>(vfx_node)->graph_asset == "explosion.vfx", "VFXGraphNode stores graph path");
+
+    // Audio extended
+    Entity audio_src = Prefab::CreateAudioSourceNode(prefab_world, "thunder.wav", Vec3(0,0,0));
+    check(prefab_world.Entities().Get<AudioSourceComponent>(audio_src)->sound_path == "thunder.wav", "AudioSourceNode stores sound path");
+    Entity music_node = Prefab::CreateMusicTrackNode(prefab_world, "boss_theme.ogg");
+    check(prefab_world.Entities().Get<MusicTrackComponent>(music_node)->track_path == "boss_theme.ogg", "MusicTrackNode stores track path");
+
+    // Networking
+    Entity net_id = Prefab::CreateNetworkIdentityNode(prefab_world, 42);
+    check(prefab_world.Entities().Get<NetworkIdentityComponent>(net_id)->net_id == 42, "NetworkIdentityNode stores net_id 42");
+    Entity net_xform = Prefab::CreateNetworkTransformNode(prefab_world);
+    check(prefab_world.Entities().Get<NetworkTransformComponent>(net_xform) != nullptr, "NetworkTransformNode created");
+    Entity net_anim = Prefab::CreateNetworkAnimatorNode(prefab_world);
+    check(prefab_world.Entities().Get<NetworkAnimatorComponent>(net_anim) != nullptr, "NetworkAnimatorNode created");
+    Entity repl_mgr = Prefab::CreateReplicationManagerNode(prefab_world, 60);
+    check(prefab_world.Entities().Get<ReplicationManagerComponent>(repl_mgr)->tick_rate_hz == 60, "ReplicationManagerNode stores 60 Hz tick rate");
+    Entity rpc_node = Prefab::CreateRPCNode(prefab_world);
+    check(prefab_world.Entities().Get<RPCComponent>(rpc_node) != nullptr, "RPCNode created");
+
+    // UI & HUD
+    Entity canvas_node = Prefab::CreateCanvasLayerNode(prefab_world, 5);
+    check(prefab_world.Entities().Get<CanvasComponent>(canvas_node)->sorting_order == 5, "CanvasLayerNode stores sort order 5");
+    Entity ui_panel = Prefab::CreateUIPanelNode(prefab_world, Vec2(320, 200));
+    check(prefab_world.Entities().Get<UIPanelComponent>(ui_panel)->size.x == 320.0f, "UIPanelNode stores panel dimensions");
+    Entity ui_btn = Prefab::CreateUIButtonNode(prefab_world, "Start Game");
+    check(prefab_world.Entities().Get<UIButtonComponent>(ui_btn)->label == "Start Game", "UIButtonNode stores label");
+    Entity ui_label = Prefab::CreateUILabelNode(prefab_world, "Score: 9999");
+    check(prefab_world.Entities().Get<UILabelComponent>(ui_label)->text == "Score: 9999", "UILabelNode stores text");
+    Entity ui_img = Prefab::CreateUIImageNode(prefab_world, "crosshair.png");
+    check(prefab_world.Entities().Get<UIImageComponent>(ui_img)->texture_path == "crosshair.png", "UIImageNode stores texture path");
+    Entity minimap = Prefab::CreateMiniMapNode(prefab_world);
+    check(prefab_world.Entities().Get<MiniMapComponent>(minimap) != nullptr, "MiniMapNode created");
+
+    // Scene & Optimization
+    Entity hlod_node = Prefab::CreateHLODNode(prefab_world, Vec3(0,0,0));
+    check(prefab_world.Entities().Get<HLODComponent>(hlod_node) != nullptr, "HLODNode created");
+    Entity portal_node = Prefab::CreateOcclusionPortalNode(prefab_world, Vec3(0,1.5f,0));
+    check(prefab_world.Entities().Get<OcclusionPortalComponent>(portal_node)->is_open, "OcclusionPortalNode defaults open");
+    Entity partition = Prefab::CreateWorldPartitionCellNode(prefab_world, Vec3(2,0,3));
+    check(prefab_world.Entities().Get<WorldPartitionComponent>(partition)->cell_index == Vec3(2,0,3), "WorldPartitionCellNode stores cell index");
+    Entity signal_bus = Prefab::CreateSignalBusNode(prefab_world);
+    check(prefab_world.Entities().Get<SignalBusComponent>(signal_bus) != nullptr, "SignalBusNode created");
 
     prefab_world.Shutdown();
 

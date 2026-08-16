@@ -1154,46 +1154,104 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
         }
 
         if (ImGui::BeginMenu("Vehicles")) {
-            if (ImGui::MenuItem("Muscle Car (Mustang Boss)")) ui.selection = Prefab::CreateVehicleNode(world, Vec3(0,1,0), 0, "MustangBoss302");
+            if (ImGui::MenuItem("Muscle Car (Wheeled)"))   ui.selection = Prefab::CreateWheeledVehicleNode(world, Vec3(0,1,0), "WheeledCar");
+            if (ImGui::MenuItem("Tank (Tracked)"))          ui.selection = Prefab::CreateTrackedVehicleNode(world, Vec3(0,1,0), "Tank");
+            if (ImGui::MenuItem("Aircraft"))                ui.selection = Prefab::CreateAircraftNode(world, Vec3(0,10,0));
+            if (ImGui::MenuItem("Watercraft / Boat"))       ui.selection = Prefab::CreateWatercraftNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("Vehicle Wheel"))           ui.selection = Prefab::CreateVehicleWheelNode(world, Vec3(0.8f,0.35f,1.5f));
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("Characters & AI")) {
-            if (ImGui::MenuItem("Player Pawn Node")) ui.selection = Prefab::CreatePawnNode(world, Vec3(0, 1.8f, 5.0f));
+            if (ImGui::MenuItem("Player Pawn"))             ui.selection = Prefab::CreatePawnNode(world, Vec3(0, 1.8f, 5.0f));
             if (ImGui::MenuItem("Character Body (Humanoid)")) ui.selection = Prefab::CreateCharacterBodyNode(world, Vec3(0, 1.0f, 0.0f));
-            if (ImGui::MenuItem("AI Enemy Node")) ui.selection = Prefab::CreateAIEnemyNode(world, Vec3(0, 1.0f, 0.0f));
-            if (ImGui::MenuItem("NavMesh Bounds")) ui.selection = Prefab::CreateNavMeshBoundsNode(world, Vec3(0,0,0), Vec3(50,10,50));
-            if (ImGui::MenuItem("Patrol Path (Spline)")) ui.selection = Prefab::CreatePatrolPathNode(world, {Vec3(-5,0,-5), Vec3(5,0,-5), Vec3(5,0,5), Vec3(-5,0,5)});
+            if (ImGui::MenuItem("AI Enemy / Controller"))   ui.selection = Prefab::CreateAIControllerNode(world, Vec3(0, 1.0f, 0.0f));
+            if (ImGui::MenuItem("Player Input Node"))       ui.selection = Prefab::CreatePlayerInputNode(world);
+            if (ImGui::MenuItem("Ragdoll Node"))            ui.selection = Prefab::CreateRagdollNode(world, Vec3(0, 1.0f, 0.0f));
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Animation & Kinematics")) {
+            if (ImGui::MenuItem("Skeleton Node"))           ui.selection = Prefab::CreateSkeletonNode(world);
+            if (ImGui::MenuItem("Bone Node"))               ui.selection = Prefab::CreateBoneNode(world, "Spine_01");
+            if (ImGui::MenuItem("Socket / Attachment"))     ui.selection = Prefab::CreateSocketNode(world, "Hand_R");
+            if (ImGui::MenuItem("Animation Player"))        ui.selection = Prefab::CreateAnimationPlayerNode(world, "Idle");
+            if (ImGui::MenuItem("Animation Tree Blend"))    ui.selection = Prefab::CreateAnimationTreeBlendNode(world);
+            if (ImGui::MenuItem("IK Solver Node"))          ui.selection = Prefab::CreateIKSolverNode(world, "Foot_L");
+            if (ImGui::MenuItem("Morph Target Node"))       ui.selection = Prefab::CreateMorphTargetNode(world);
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("AI & Navigation")) {
+            if (ImGui::MenuItem("NavMesh Bounds"))          ui.selection = Prefab::CreateNavMeshBoundsNode(world, Vec3(0,0,0), Vec3(50,10,50));
+            if (ImGui::MenuItem("NavMesh Obstacle"))        ui.selection = Prefab::CreateNavMeshObstacleNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("NavMesh Link"))            ui.selection = Prefab::CreateNavMeshLinkNode(world, Vec3(0,0,0), Vec3(0,2,3));
+            if (ImGui::MenuItem("Navigation Agent"))        ui.selection = Prefab::CreateNavigationAgentNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("Behavior Tree Node"))      ui.selection = Prefab::CreateBehaviorTreeNode(world, "PatrolAndChase");
+            if (ImGui::MenuItem("FSM (State Machine)"))     ui.selection = Prefab::CreateFSMNode(world, "Patrol");
+            if (ImGui::MenuItem("Perception Sensor"))       ui.selection = Prefab::CreatePerceptionSensorNode(world, 20.0f);
+            if (ImGui::MenuItem("AI Blackboard"))           ui.selection = Prefab::CreateBlackboardNode(world);
+            if (ImGui::MenuItem("Patrol Path (Spline)"))    ui.selection = Prefab::CreatePatrolPathNode(world, {Vec3(-5,0,-5), Vec3(5,0,-5), Vec3(5,0,5), Vec3(-5,0,5)});
             ImGui::EndMenu();
         }
 
         if (ImGui::BeginMenu("VFX & Audio")) {
-            if (ImGui::MenuItem("Particle Emitter")) {
-                Entity e = entities.Create("ParticleEmitter");
-                entities.Add<LocalTransform>(e, LocalTransform{Vec3(0,1,0)});
-                entities.Add<WorldTransform>(e);
-                entities.Add<ParticleEmitterComponent>(e);
-                ui.selection = e;
-            }
-            if (ImGui::MenuItem("Trail Effect Node")) ui.selection = Prefab::CreateTrailNode(world, Vec3(0,1,0));
-            if (ImGui::MenuItem("Beam / Laser Emitter")) ui.selection = Prefab::CreateBeamEmitterNode(world, Vec3(0,1,0), Vec3(0,1,10));
-            if (ImGui::MenuItem("Spatial Audio Source")) {
-                Entity e = entities.Create("AudioSource");
-                entities.Add<LocalTransform>(e, LocalTransform{Vec3(0,1,0)});
-                entities.Add<WorldTransform>(e);
-                entities.Add<AudioSourceComponent>(e);
-                ui.selection = e;
-            }
-            if (ImGui::MenuItem("Audio Reverb Zone")) ui.selection = Prefab::CreateAudioReverbZoneNode(world, Vec3(0,0,0), 20.0f);
+            if (ImGui::MenuItem("Particle Emitter"))        ui.selection = Prefab::CreateParticleEmitterNode(world, Vec3(0,1,0));
+            if (ImGui::MenuItem("VFX Graph Node"))          ui.selection = Prefab::CreateVFXGraphNode(world, "fire_sparks.vfx");
+            if (ImGui::MenuItem("Trail Effect"))            ui.selection = Prefab::CreateTrailNode(world, Vec3(0,1,0));
+            if (ImGui::MenuItem("Beam / Laser Emitter"))    ui.selection = Prefab::CreateBeamEmitterNode(world, Vec3(0,1,0), Vec3(0,1,10));
+            ImGui::Separator();
+            if (ImGui::MenuItem("Spatial Audio Source"))    ui.selection = Prefab::CreateAudioSourceNode(world, "assets/sound/sfx.wav", Vec3(0,1,0));
+            if (ImGui::MenuItem("Audio Listener Node"))     ui.selection = Prefab::CreateAudioListenerNode(world, Vec3(0,1.8f,0));
+            if (ImGui::MenuItem("Audio Reverb Zone"))       ui.selection = Prefab::CreateAudioReverbZoneNode(world, Vec3(0,0,0), 20.0f);
+            if (ImGui::MenuItem("Music Track Node"))        ui.selection = Prefab::CreateMusicTrackNode(world, "assets/audio/combat_theme.ogg");
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Gameplay & UI")) {
-            if (ImGui::MenuItem("Interactable Chest")) ui.selection = Prefab::CreateInteractableNode(world, Vec3(0,0,0), "Press [E] to Open Chest");
-            if (ImGui::MenuItem("Item Spawner Node")) ui.selection = Prefab::CreateItemSpawnerNode(world, Vec3(0,1,0), "HealthPotion");
-            if (ImGui::MenuItem("Quest Trigger Node")) ui.selection = Prefab::CreateQuestTriggerNode(world, Vec3(0,0,0), "Quest_Ruins_01");
+        if (ImGui::BeginMenu("Gameplay Systems")) {
+            if (ImGui::MenuItem("Health Node"))             ui.selection = Prefab::CreateHealthNode(world, 100.0f);
+            if (ImGui::MenuItem("Damage Receiver"))         ui.selection = Prefab::CreateDamageReceiverNode(world);
+            if (ImGui::MenuItem("Hitbox Node"))             ui.selection = Prefab::CreateHitboxNode(world, 25.0f);
+            if (ImGui::MenuItem("Hurtbox Node"))            ui.selection = Prefab::CreateHurtboxNode(world);
+            if (ImGui::MenuItem("Inventory Node"))          ui.selection = Prefab::CreateInventoryNode(world, 20);
+            if (ImGui::MenuItem("Equipment Node"))          ui.selection = Prefab::CreateEquipmentNode(world);
+            if (ImGui::MenuItem("Interactable Chest"))      ui.selection = Prefab::CreateInteractableNode(world, Vec3(0,0,0), "Press [E] to Open");
+            if (ImGui::MenuItem("Ability Node (Fireball)")) ui.selection = Prefab::CreateAbilityNode(world, "Fireball");
+            if (ImGui::MenuItem("Quest Trigger"))           ui.selection = Prefab::CreateQuestTriggerNode(world, Vec3(0,0,0), "Quest_01");
+            if (ImGui::MenuItem("Save Point Node"))         ui.selection = Prefab::CreateSavePointNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("Item Spawner"))            ui.selection = Prefab::CreateItemSpawnerNode(world, Vec3(0,1,0), "HealthPotion");
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Networking")) {
+            if (ImGui::MenuItem("Network Identity"))        ui.selection = Prefab::CreateNetworkIdentityNode(world, 1);
+            if (ImGui::MenuItem("Network Transform"))       ui.selection = Prefab::CreateNetworkTransformNode(world);
+            if (ImGui::MenuItem("Network Animator"))        ui.selection = Prefab::CreateNetworkAnimatorNode(world);
+            if (ImGui::MenuItem("Replication Manager"))     ui.selection = Prefab::CreateReplicationManagerNode(world, 30);
+            if (ImGui::MenuItem("RPC Node"))                ui.selection = Prefab::CreateRPCNode(world);
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("UI & HUD")) {
+            if (ImGui::MenuItem("Canvas Layer"))            ui.selection = Prefab::CreateCanvasLayerNode(world, 0);
+            if (ImGui::MenuItem("UI Panel"))                ui.selection = Prefab::CreateUIPanelNode(world, Vec2(200,150));
+            if (ImGui::MenuItem("UI Container"))            ui.selection = Prefab::CreateUIContainerNode(world);
+            if (ImGui::MenuItem("UI Button"))               ui.selection = Prefab::CreateUIButtonNode(world, "Play");
+            if (ImGui::MenuItem("UI Label"))                ui.selection = Prefab::CreateUILabelNode(world, "Score: 0");
+            if (ImGui::MenuItem("UI Image"))                ui.selection = Prefab::CreateUIImageNode(world, "icon.png");
             if (ImGui::MenuItem("World Space UI (Healthbar)")) ui.selection = Prefab::CreateWorldSpaceUINode(world, Vec3(0,2,0), "Boss Health");
-            if (ImGui::MenuItem("LOD Group Node")) ui.selection = Prefab::CreateLODGroupNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("Mini Map Node"))           ui.selection = Prefab::CreateMiniMapNode(world);
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Scene & Optimization")) {
+            if (ImGui::MenuItem("LOD Group"))               ui.selection = Prefab::CreateLODGroupNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("HLOD Proxy"))              ui.selection = Prefab::CreateHLODNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("Occlusion Portal"))        ui.selection = Prefab::CreateOcclusionPortalNode(world, Vec3(0,1.5f,0));
+            if (ImGui::MenuItem("World Partition Cell"))    ui.selection = Prefab::CreateWorldPartitionCellNode(world, Vec3(0,0,0));
+            if (ImGui::MenuItem("Debug Draw Node"))         ui.selection = Prefab::CreateDebugDrawNode(world);
+            if (ImGui::MenuItem("Timer Node (1s)"))         ui.selection = Prefab::CreateTimerNode(world, 1.0f);
+            if (ImGui::MenuItem("Signal Bus Node"))         ui.selection = Prefab::CreateSignalBusNode(world);
             ImGui::EndMenu();
         }
 
