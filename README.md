@@ -22,7 +22,7 @@
 
 ## The New Era of Game Engines
 
-**Lucida** is a next-generation real-time ray tracing game engine engineered from first principles for deterministic Whitted ray tracing, Radiance Cascades Global Illumination, and Data-Oriented Design (DOD). 
+**Lucida** is a next-generation real-time ray tracing game engine engineered from first principles for deterministic Whitted ray tracing, Radiance Cascades Global Illumination, and Data-Oriented Design (DOD).
 
 Built to deliver breathtaking visual fidelity, real-time procedural materials, active physical ragdolls, and hardware-accelerated temporal upscaling without relying on expensive dedicated RT cores.
 
@@ -54,7 +54,7 @@ with no ray tracing hardware, everything in compute):
 | Scene | Resolution | Path | Frame rate |
 | --- | --- | --- | --- |
 | Sponza 4K (~5.7 M triangles) | 1080×720 | full RT, unoptimised | **15-30 fps** |
-| Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 57.8 fps |
+| Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 60-110 fps |
 
 This method **cannot** produce noise or ghosting - not "does not yet". Tracing is
 deterministic Whitted-style with analytic soft shadows and AO rather than stochastic
