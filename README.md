@@ -20,21 +20,7 @@
 
 A modular real-time ray tracing **Graphics and Game Engine**, aimed narrowly at **procedural materials and selective ray tracing** - spending rays only where they are visible so ray-traced games run on ordinary hardware.
 
-Architecture follows three primary reference books strictly:
-
-| # | Book | Author(s) | Used for |
-| --- | ------ | ----------- | ---------- |
-| 1 | **Game Engine Architecture** (3rd ed., 2018) | Jason Gregory | Layering model, subsystem inventory, memory management, the full engine feature checklist |
-| 2 | **Game Programming Patterns** (2014) | Robert Nystrom | Patterns inside each layer — Command, Observer, Service Locator, Object Pool, Component, Event Queue |
-| 3 | **Data-Oriented Design** (2018) | Richard Fabian | SoA memory layout, cache-friendly ECS, eliminating dynamic allocation in the hot path |
-| 4 | **Real-Time Rendering** (4th ed., 2018) | Akenine-Möller, Haines, Hoffman | Radiance Cascades, TLAS/BLAS two-level acceleration, BRDF derivation, PBR pipeline |
-| 5 | **Physically Based Rendering** (4th ed., 2023, PBRT) | Pharr, Jakob, Humphreys | Spectral transport, path integrator math, participating media — used as RT correctness reference |
-| 6 | **Mathematics for 3D Game Programming and Computer Graphics** (3rd ed.) | Eric Lengyel | Quaternion interpolation, frustum plane extraction, numerical stability of transforms |
-
-* Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-* Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
-* Frame and memory budgets, and where a small engine beats a large one: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
-* **What is implemented vs. the reference books, what is next:** [docs/STATUS.md](docs/STATUS.md)
+---
 
 <p align="center">
   <img src="media/0.3.png" alt="Lucida Engine 0.3 Viewport" width="100%">
@@ -255,6 +241,24 @@ ImGui - choosing backends is the application's job.
 
 ---
 
+## **Architecture** follows three primary reference books strictly
+
+| # | Book | Author(s) | Used for |
+| --- | ------ | ----------- | ---------- |
+| 1 | **Game Engine Architecture** (3rd ed., 2018) | Jason Gregory | Layering model, subsystem inventory, memory management, the full engine feature checklist |
+| 2 | **Game Programming Patterns** (2014) | Robert Nystrom | Patterns inside each layer — Command, Observer, Service Locator, Object Pool, Component, Event Queue |
+| 3 | **Data-Oriented Design** (2018) | Richard Fabian | SoA memory layout, cache-friendly ECS, eliminating dynamic allocation in the hot path |
+| 4 | **Real-Time Rendering** (4th ed., 2018) | Akenine-Möller, Haines, Hoffman | Radiance Cascades, TLAS/BLAS two-level acceleration, BRDF derivation, PBR pipeline |
+| 5 | **Physically Based Rendering** (4th ed., 2023, PBRT) | Pharr, Jakob, Humphreys | Spectral transport, path integrator math, participating media — used as RT correctness reference |
+| 6 | **Mathematics for 3D Game Programming and Computer Graphics** (3rd ed.) | Eric Lengyel | Quaternion interpolation, frustum plane extraction, numerical stability of transforms |
+
+* Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+* Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
+* Frame and memory budgets, and where a small engine beats a large one: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+* **What is implemented vs. the reference books, what is next:** [docs/STATUS.md](docs/STATUS.md)
+
+---
+
 ## Licence
 
 Lucida Engine is free software under the **GNU General Public License v3.0 or later** -
@@ -278,6 +282,7 @@ Development notes, builds and breakdowns:
 <p align="left">
   <a href="https://t.me/blacklineinteractive"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"></a>
   <a href="https://youtube.com/@blacklineinteractive"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
+  <a href="https://discord.gg/uq2TxADhW"><img alt="Discord" src="https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white"></a>
 </p>
 
 Issues and pull requests are welcome. If you are opening a pull request, read
