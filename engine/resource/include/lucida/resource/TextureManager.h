@@ -48,6 +48,7 @@ public:
     const TextureInfo* GetTexture(TextureHandle handle) const;
     const TextureInfo* FindTexture(const std::string& filepath) const;
     std::vector<const TextureInfo*> GetAllTextures() const;
+    usize GetTotalMemoryBytes() const;
 
     void UnloadTexture(TextureHandle handle);
     void Clear();

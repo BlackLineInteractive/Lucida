@@ -60,6 +60,31 @@ struct UiState {
     Vec2  mesh_uv_scale{1.0f, 1.0f};
     Vec2  mesh_uv_offset{0.0f, 0.0f};
 
+    // PBR Texture Maps sub-panel states (Albedo, Normal, Metallic, Roughness, AO, Emissive, Height)
+    struct TextureMapSlot {
+        std::string path;
+        f32         factor = 1.0f;
+        Vec4        tint{1.0f, 1.0f, 1.0f, 1.0f};
+        Vec2        uv_scale{1.0f, 1.0f};
+        Vec2        uv_offset{0.0f, 0.0f};
+        int         channel = 0; // 0: All/RGB, 1: R, 2: G, 3: B, 4: A
+        bool        srgb = true;
+        bool        invert = false;
+        bool        flip_green_normal = false;
+        f32         normal_strength = 1.0f;
+        f32         emissive_intensity = 1.0f;
+        f32         height_scale = 0.05f;
+        int         pom_steps = 16;
+    };
+    TextureMapSlot map_albedo;
+    TextureMapSlot map_normal;
+    TextureMapSlot map_metallic;
+    TextureMapSlot map_roughness;
+    TextureMapSlot map_ao;
+    TextureMapSlot map_emissive;
+    TextureMapSlot map_height;
+    int            active_texture_map_tab = 0; // 0: All, 1: Albedo, 2: Normal, 3: Metallic, 4: Roughness, 5: AO, 6: Emissive, 7: Height
+
     bool request_quit       = false;
     bool request_fullscreen = false;
 

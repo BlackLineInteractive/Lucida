@@ -100,6 +100,14 @@ std::vector<const TextureInfo*> TextureManager::GetAllTextures() const {
     return list;
 }
 
+usize TextureManager::GetTotalMemoryBytes() const {
+    usize total = 0;
+    for (const auto& [id, info] : m_textures) {
+        total += info.memory_bytes;
+    }
+    return total;
+}
+
 void TextureManager::UnloadTexture(TextureHandle handle) {
     if (!handle.IsValid()) return;
     auto it = m_textures.find(handle.index);
