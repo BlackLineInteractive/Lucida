@@ -18,9 +18,13 @@
 
 ---
 
+## What is Lucida?
+
 A modular real-time ray tracing **Graphics and Game Engine**, aimed narrowly at **procedural materials and selective ray tracing** - spending rays only where they are visible so ray-traced games run on ordinary hardware.
 
 ---
+
+## Showcase
 
 <p align="center">
   <img src="media/0.3.png" alt="Lucida Engine 0.3 Viewport" width="100%">
