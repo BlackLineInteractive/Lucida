@@ -743,7 +743,7 @@ bool point_in_cube(float3 p, device const Cube& c) {
     return d.x <= c.half_size.x && d.y <= c.half_size.y && d.z <= c.half_size.z;
 }
 
-float calc_analytic_shadow(float3 p, float3 n, float3 geo_n, float hit_t, float3 lpos, float lrad, device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, device const BVHNode* bvh_nodes, device const TriPos* triangles,
+float calc_analytic_shadow(float3 p, float3 n, float3 geo_n, float hit_t, float3 lpos, float lrad, device const Material* materials, device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, device const BVHNode* bvh_nodes, device const TriPos* triangles,
                  device const TriAttr* tri_attrs,
                  device const Instance* instances, constant Uniforms& u) {
     float3 L = lpos - p;
@@ -755,7 +755,13 @@ float calc_analytic_shadow(float3 p, float3 n, float3 geo_n, float hit_t, float3
 
     for(int i = 0; i < u.num_spheres; i++) {
         if (distance(spheres[i].center, lpos) < 1e-2) continue;
-        occlusion += cone_sphere_occlusion(ro, L, light_angle, spheres[i].center, spheres[i].radius);
+        float occ = cone_sphere_occlusion(ro, L, light_angle, spheres[i].center, spheres[i].radius);
+        Material sm = materials[spheres[i].mat_index];
+        if (sm.type == GLASS) {
+            occlusion += occ * 0.15; // Glass casts soft partial shadow
+        } else {
+            occlusion += occ;
+        }
     }
     for(int i = 0; i < u.num_cubes; i++) {
         if (point_in_cube(ro, cubes[i])) continue;
@@ -1221,7 +1227,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
             float3 spec = float3(0.0);
             for (int i = 0; i < u.num_lights; i++) {
-                float sh = calc_analytic_shadow(hit.point, water_n, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
+                float sh = calc_analytic_shadow(hit.point, water_n, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, materials, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
                 float3 to_light = lights[i].position - hit.point;
                 float dist = length(to_light);
                 float3 L = to_light / dist;
@@ -1259,7 +1265,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 float NdotL = max(0.0, dot(N, L));
                 if (NdotL <= 0.0) continue;   // shadow ray would be wasted
 
-                float sh = calc_analytic_shadow(hit.point, N, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
+                float sh = calc_analytic_shadow(hit.point, N, hit.geo_normal, hit.t, lights[i].position, lights[i].radius, materials, spheres, planes, cubes, cylinders, cones, tori, disks, bvh_nodes, triangles, tri_attrs, instances, u);
                 if (sh <= 0.0) continue;
 
                 float atten = lights[i].intensity / max(dist_sq, 0.01f);
@@ -1336,30 +1342,67 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
             }
         }
 
-        if (mat.type == GLASS && sp < MAX_STACK) {
-            // Use the unflipped geometric normal so the entering/exiting test works
-            float n1 = 1.0, n2 = mat.refractive_index;
-            float3 Nf = hit.normal; float cos_i = -dot(cur.direction, Nf);
-            if (cos_i < 0.0) { float tmp = n1; n1 = n2; n2 = tmp; Nf = -Nf; cos_i = -cos_i; }
+        if (mat.type == GLASS) {
+            // Direct specular highlight from lights on glass surface
+            float3 spec_light = float3(0.0);
+            for (int i = 0; i < u.num_lights; i++) {
+                float3 to_light = lights[i].position - hit.point;
+                float dist_sq = dot(to_light, to_light);
+                float dist = sqrt(dist_sq);
+                float3 L = to_light / dist;
+                float3 H = normalize(L + V);
+                float NdotH = max(0.0, dot(N, H));
+                float NdotL = max(0.0, dot(N, L));
+                if (NdotL > 0.0) {
+                    float shininess = 256.0;
+                    float spec = pow(NdotH, shininess) * ((shininess + 8.0) / 25.13274) * NdotL;
+                    spec_light += lights[i].color * (lights[i].intensity / max(dist_sq, 0.01f)) * spec;
+                }
+            }
+
+            float n1 = 1.0, n2 = max(mat.refractive_index, 1.01f);
+            float3 Nf = hit.normal;
+            float cos_i = -dot(cur.direction, Nf);
+            if (cos_i < 0.0) { 
+                float tmp = n1; n1 = n2; n2 = tmp; 
+                Nf = -Nf; 
+                cos_i = -cos_i; 
+            }
 
             float eta = n1 / n2;
             float k = 1.0 - eta * eta * (1.0 - cos_i * cos_i);
-            // Total internal reflection: all energy goes to the reflected ray
             float fresnel_r = (k < 0.0) ? 1.0 : schlick(cos_i, n1, n2).x;
+            fresnel_r = clamp(fresnel_r, 0.04f, 1.0f);
 
-            if (fresnel_r > EPSILON && sp < MAX_STACK) {
-                stack_ray[sp] = make_ray(hit.point + Nf * 3e-3, reflect(cur.direction, Nf));
-                stack_contrib[sp] = contrib * fresnel_r;
-                stack_depth[sp] = depth - 1;
-                sp++;
-            }
-            if (k >= 0.0 && (1.0 - fresnel_r) > EPSILON && sp < MAX_STACK) {
+            // Add surface specular highlight and sky reflection
+            float3 R = reflect(cur.direction, Nf);
+            result += contrib * spec_light * fresnel_r;
+            result += contrib * sky_color(R, u) * fresnel_r * 0.35f;
+
+            float3 glass_tint = (length(alb) > 0.01) ? alb : float3(1.0);
+
+            if (sp < MAX_STACK && depth > 1) {
+                // Reflected ray
+                if (fresnel_r > 0.04f) {
+                    stack_ray[sp] = make_ray(hit.point + Nf * 2e-3, R);
+                    stack_contrib[sp] = contrib * fresnel_r;
+                    stack_depth[sp] = depth - 1;
+                    sp++;
+                }
+                // Refracted ray
+                if (k >= 0.0 && (1.0 - fresnel_r) > 0.04f && sp < MAX_STACK) {
+                    float3 T = eta * cur.direction + (eta * cos_i - sqrt(k)) * Nf;
+                    stack_ray[sp] = make_ray(hit.point - Nf * 3e-3, T);
+                    stack_contrib[sp] = contrib * (1.0 - fresnel_r) * glass_tint;
+                    stack_depth[sp] = depth - 1;
+                    sp++;
+                }
+            } else if (k >= 0.0) {
+                // Fallback on stack exhaustion: sample sky in refracted direction to avoid black pixels
                 float3 T = eta * cur.direction + (eta * cos_i - sqrt(k)) * Nf;
-                stack_ray[sp] = make_ray(hit.point - Nf * 5e-3, T);
-                stack_contrib[sp] = contrib * (1.0 - fresnel_r);
-                stack_depth[sp] = depth - 1;
-                sp++;
+                result += contrib * sky_color(T, u) * (1.0 - fresnel_r) * glass_tint;
             }
+            continue;
         }
     }
 
@@ -1379,6 +1422,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 // Forward declarations: the mesh lighting block is defined above the fog
 // march but the fog needs the sun constants, which are file scope.
 float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
+                 device const Material* materials,
                  device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks, device const Light* lights,
                  device const BVHNode* bvh_nodes, device const TriPos* triangles,
                  device const TriAttr* tri_attrs,
@@ -1415,6 +1459,7 @@ float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
                 float  sh = calc_analytic_shadow(sample_p, float3(0.0, 1.0, 0.0),
                                                  float3(0.0, 1.0, 0.0), 0.0,
                                                  lights[l].position, lights[l].radius,
+                                                 materials,
                                                  spheres, planes, cubes, cylinders, cones, tori, disks,
                                                  bvh_nodes, triangles, tri_attrs, instances, u);
                 float3 light_intensity = lights[l].color * lights[l].intensity / (dist * dist + 0.1);
@@ -1459,6 +1504,7 @@ kernel void fog_kernel(texture2d<float, access::write> outFog [[texture(0)]],
                        texture2d<float, access::write> outAO [[texture(2)]],
                        texture2d<float, access::write> outGINorm [[texture(3)]],
                        texture2d_array<float, access::sample> mesh_textures [[texture(4)]],
+                       device const Material* materials [[buffer(0)]],
                        device const Sphere*   spheres   [[buffer(1)]],
                        device const Plane*    planes    [[buffer(2)]],
                        device const Cube*     cubes     [[buffer(3)]],
@@ -1506,21 +1552,15 @@ kernel void fog_kernel(texture2d<float, access::write> outFog [[texture(0)]],
     outAO.write(float4(irr, ao), gid);
     outGINorm.write(float4(ao_n, 0.0), gid);
 
-    // Deterministic ordered offset rather than a random one: this renderer is
-    // deliberately noise-free, and an ordered pattern removes step banding
-    // without introducing a grain that then has to be filtered back out.
-    // Fog is optional; the ambient-occlusion / visibility data this pass also
-    // produces is not. Gating the whole kernel on enable_fog meant switching fog
-    // off left the AO buffer stale and the shading lost its occlusion entirely.
-    float4 fog = float4(0.0, 0.0, 0.0, 1.0);   // no inscatter, full transmittance
+    // Fog march
+    float4 fog = float4(0.0, 0.0, 0.0, 1.0);
     if (u.enable_fog > 0) {
         float jitter = kBayer4[(gid.y & 3) * 4 + (gid.x & 3)];
         fog = march_fog(u.camera_origin, dir, fd, jitter,
+                        materials,
                         spheres, planes, cubes, cylinders, cones, tori, disks, lights, bvh_nodes, triangles, tri_attrs, instances, u);
     }
     outFog.write(fog, gid);
-    // Depth of the fog texel, so the composite can reject taps that belong to a
-    // different surface and avoid haloing along silhouettes.
     outFogDepth.write(float4(fd, 0.0, 0.0, 0.0), gid);
 }
 
@@ -1603,14 +1643,14 @@ float3 aces_approx(float3 v) {
 // spacing step by decades without shimmering.
 struct GridSample { float3 color; float alpha; };
 
-GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
+GridSample sample_grid(float3 p, float pixel_size, constant Uniforms& u) {
     GridSample out;
     out.color = float3(u.grid_color);
     out.alpha = 0.0;
 
     float step0, step1, blend;
     if (u.grid_auto_scale != 0) {
-        float decade = max(0.0, log10(footprint * 28.0));
+        float decade = max(0.0, log10(pixel_size * 35.0));
         step0 = pow(10.0, floor(decade));
         step1 = step0 * 10.0;
         blend = fract(decade);
@@ -1620,37 +1660,38 @@ GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
         blend = 0.0;
     }
 
-    // Half-width of lines in world units for crisp anti-aliased lines
-    float line_w = max(footprint * 0.70, 0.004);
-
-    // Distance to the nearest line of minor and major spacings
+    // Distance in world coordinates
     float2 d0 = abs(fract(p.xz / step0 + 0.5) - 0.5) * step0;
     float2 d1 = abs(fract(p.xz / step1 + 0.5) - 0.5) * step1;
 
-    float2 l0_2d = 1.0 - smoothstep(float2(0.0), float2(line_w * 1.5), d0);
-    float l0 = max(l0_2d.x, l0_2d.y);
+    // Convert distance to pixels for constant, crisp 1.2px line anti-aliasing
+    float2 pix0 = d0 / max(pixel_size, 1e-5);
+    float2 pix1 = d1 / max(pixel_size, 1e-5);
 
-    float2 l1_2d = 1.0 - smoothstep(float2(0.0), float2(line_w * 1.8), d1);
-    float l1 = max(l1_2d.x, l1_2d.y);
+    float l0 = max(clamp(1.2 - pix0.x, 0.0, 1.0), clamp(1.2 - pix0.y, 0.0, 1.0));
+    float l1 = max(clamp(1.5 - pix1.x, 0.0, 1.0), clamp(1.5 - pix1.y, 0.0, 1.0));
 
-    // Major lines are slightly brighter than minor lines
     float3 base_col  = float3(u.grid_color);
     float3 major_col = mix(base_col, float3(0.9, 0.92, 0.95), 0.35);
 
-    out.alpha = max(l1 * 0.80, l0 * 0.45 * (1.0 - blend));
+    out.alpha = max(l1 * 0.75, l0 * 0.40 * (1.0 - blend));
     out.color = (l1 > l0 * (1.0 - blend)) ? major_col : base_col;
 
     // Origin Axes: X-axis (Red) along Z=0, Z-axis (Blue) along X=0
-    float ax = 1.0 - smoothstep(0.0, line_w * 1.8, abs(p.z));
-    float az = 1.0 - smoothstep(0.0, line_w * 1.8, abs(p.x));
+    // Measured strictly in screen pixels so width NEVER flares or widens with distance!
+    float ax_pix = abs(p.z) / max(pixel_size, 1e-5);
+    float az_pix = abs(p.x) / max(pixel_size, 1e-5);
 
-    if (ax > 0.02) {
+    float ax = clamp(1.5 - ax_pix, 0.0, 1.0);
+    float az = clamp(1.5 - az_pix, 0.0, 1.0);
+
+    if (ax > 0.01) {
         out.color = mix(out.color, float3(u.grid_axis_x), ax);
-        out.alpha = max(out.alpha, ax * 0.95);
+        out.alpha = max(out.alpha, ax);
     }
-    if (az > 0.02) {
+    if (az > 0.01) {
         out.color = mix(out.color, float3(u.grid_axis_z), az);
-        out.alpha = max(out.alpha, az * 0.95);
+        out.alpha = max(out.alpha, az);
     }
 
     return out;
@@ -1668,17 +1709,14 @@ float3 composite_grid(float3 color, float3 origin, float3 dir, float surface_t,
     if (t <= 0.0 || t >= surface_t) return color;
 
     float3 p = origin + dir * t;
+    float pixel_size = t * 2.0 * tan_half / max(u.screen_height, 1.0);
 
-    // Filter footprint with grazing angle correction to eliminate horizon aliasing
-    float ray_cos = max(abs(dir.y), 0.035);
-    float footprint = (t * 2.0 * tan_half / max(u.screen_height, 1.0)) / ray_cos;
-
-    GridSample g = sample_grid(p, footprint, u);
+    GridSample g = sample_grid(p, pixel_size, u);
     if (g.alpha <= 0.001) return color;
 
-    // Smooth fade with distance and grazing angle
-    float fade = 1.0 - smoothstep(u.grid_fade * 0.25, u.grid_fade, t);
-    float grazing = smoothstep(0.01, 0.08, abs(dir.y));
+    // Clean distance and horizon grazing fade
+    float fade = 1.0 - smoothstep(u.grid_fade * 0.30, u.grid_fade, t);
+    float grazing = smoothstep(0.015, 0.08, abs(dir.y));
 
     return mix(color, g.color, clamp(g.alpha * fade * grazing * u.grid_opacity, 0.0, 1.0));
 }
