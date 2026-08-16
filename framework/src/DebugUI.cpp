@@ -1,6 +1,7 @@
 // Lucida Engine
 // Copyright (C) 2026 BlackLine Interactive
 // SPDX-License-Identifier: GPL-3.0-or-later
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "lucida/framework/DebugUI.h"
 
 #include "lucida/core/diag/Profiler.h"
@@ -221,16 +222,37 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             if (avail.x / avail.y > aspect) size.x = avail.y * aspect;
             else                            size.y = avail.x / aspect;
         }
-        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + (avail.x - size.x) * 0.5f,
-                                   ImGui::GetCursorPosY() + (avail.y - size.y) * 0.5f));
+        const ImVec2 img_offset(ImGui::GetCursorPosX() + (avail.x - size.x) * 0.5f,
+                                ImGui::GetCursorPosY() + (avail.y - size.y) * 0.5f);
+        ImGui::SetCursorPos(img_offset);
 
         const ImVec2 image_min = ImGui::GetCursorScreenPos();
         ImGui::Image(reinterpret_cast<ImTextureID>(texture), size);
+        const bool image_hovered = ImGui::IsItemHovered();
 
-        // Click to select. Only on a release without a drag: press-and-drag in
-        // the viewport is how the camera is flown, and losing the selection
-        // every time you look around would be maddening.
-        if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+        // Track hover state so SandboxApp can gate camera input.
+        ui.viewport_hovered = image_hovered;
+
+        // RMB held over viewport → activate look-around (Blender / UE style).
+        // We track the "started inside" flag to avoid capturing drags that began
+        // on a UI element and accidentally entered the image area.
+        static bool rmb_started_in_viewport = false;
+        if (image_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+            rmb_started_in_viewport = true;
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Right))
+            rmb_started_in_viewport = false;
+        ui.viewport_rmb = rmb_started_in_viewport;
+
+        // Hotkeys for Gizmo mode (when viewport is hovered and not flying camera)
+        if (image_hovered && !ui.viewport_rmb) {
+            if (ImGui::IsKeyPressed(ImGuiKey_T, false) || ImGui::IsKeyPressed(ImGuiKey_1, false)) ui.gizmo_operation = 0;
+            if (ImGui::IsKeyPressed(ImGuiKey_R, false) || ImGui::IsKeyPressed(ImGuiKey_2, false)) ui.gizmo_operation = 1;
+            if (ImGui::IsKeyPressed(ImGuiKey_S, false) || ImGui::IsKeyPressed(ImGuiKey_3, false)) ui.gizmo_operation = 2;
+        }
+
+        // LMB click to select (no drag, not clicking/hovering gizmo handles).
+        if (image_hovered && !ImGuizmo::IsOver() && !ImGuizmo::IsUsing() &&
+            ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
             ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x == 0.0f &&
             ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y == 0.0f) {
             const ImVec2 mouse = ImGui::GetMousePos();
@@ -242,30 +264,71 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             ui.selection = hit.entity;   // a miss clears the selection, as it should
         }
 
-        // Toolbar for Gizmo
-        ImGui::SetCursorPos(ImVec2(10, 30));
+        // ---- Gizmo toolbar (Dark Frosted Glass HUD) ----------------------
+        const ImVec2 win_pos = ImGui::GetWindowPos();
+        ImDrawList*  dl      = ImGui::GetWindowDrawList();
+
+        const float  tb_h    = 34.0f;
+        const float  tb_w    = 520.0f;
+        const float  tb_x    = 12.0f;
+        const float  tb_y    = 10.0f;
+
+        const ImVec2 pill_min(win_pos.x + img_offset.x + tb_x,
+                              win_pos.y + img_offset.y + tb_y);
+        const ImVec2 pill_max(pill_min.x + tb_w, pill_min.y + tb_h);
+        dl->AddRectFilled(pill_min, pill_max,
+                          IM_COL32(14, 16, 22, 235), 6.0f);
+        dl->AddRect(pill_min, pill_max,
+                    IM_COL32(55, 60, 75, 200), 6.0f);
+
+        // Place controls inside the pill
+        ImGui::SetCursorPos(ImVec2(img_offset.x + tb_x + 8.0f,
+                                   img_offset.y + tb_y + 5.0f));
+
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(230, 232, 240, 255));
+
         ImGui::BeginGroup();
-        if (ImGui::RadioButton("Translate", ui.gizmo_operation == 0)) ui.gizmo_operation = 0;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Rotate", ui.gizmo_operation == 1)) ui.gizmo_operation = 1;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Scale", ui.gizmo_operation == 2)) ui.gizmo_operation = 2;
-        ImGui::SameLine();
-        ImGui::Dummy(ImVec2(20, 0));
-        ImGui::SameLine();
-        if (ImGui::RadioButton("Local", ui.gizmo_space == 0)) ui.gizmo_space = 0;
-        ImGui::SameLine();
-        if (ImGui::RadioButton("World", ui.gizmo_space == 1)) ui.gizmo_space = 1;
-        ImGui::SameLine();
-        ImGui::Dummy(ImVec2(20, 0));
-        ImGui::SameLine();
+        // Mode buttons: Translate / Rotate / Scale
+        const char* ops[] = { "Translate (T)", "Rotate (R)", "Scale (S)" };
+        for (int i = 0; i < 3; ++i) {
+            const bool sel = ui.gizmo_operation == i;
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(50, 110, 220, 220));
+            else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(30, 34, 45, 180));
+            if (ImGui::SmallButton(ops[i])) ui.gizmo_operation = i;
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+        }
+        ImGui::SameLine(0, 10);
+
+        // Coordinate space: Local / World
+        const char* spaces[] = { "Local", "World" };
+        for (int i = 0; i < 2; ++i) {
+            const bool sel = ui.gizmo_space == i;
+            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(40, 150, 90, 220));
+            else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(30, 34, 45, 180));
+            if (ImGui::SmallButton(spaces[i])) ui.gizmo_space = i;
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+        }
+        ImGui::SameLine(0, 10);
+
+        // Snap
         ImGui::Checkbox("Snap", &ui.snap_enabled);
+        if (ui.snap_enabled) {
+            ImGui::SameLine(0, 6);
+            ImGui::SetNextItemWidth(45.0f);
+            ImGui::DragFloat("##snap_pos", &ui.snap_position.x, 0.05f, 0.01f, 10.0f, "%.2f");
+        }
         ImGui::EndGroup();
 
-        DrawGizmo(world, ui, const_cast<CameraController&>(camera), aspect);
+        ImGui::PopStyleColor();   // Text
+
+        DrawGizmo(world, ui, const_cast<CameraController&>(camera), aspect, image_min, size);
     } else {
         ui.viewport_width = 0;
         ui.viewport_height = 0;
+        ui.viewport_hovered = false;
+        ui.viewport_rmb = false;
     }
     ImGui::End();
 }
@@ -539,23 +602,22 @@ void DebugUI::DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSetti
         EndSection();
     }
 
-    if (BeginSection("Camera", true)) {
+    if (BeginSection("Navigation", true)) {
         const Vec3& p = camera.Camera().position;
         LabelledText("Position", "%.2f  %.2f  %.2f", p.x, p.y, p.z);
-
-        bool walking = camera.Mode() == CameraMode::Walk;
-        if (ImGui::Checkbox("walk mode (gravity)", &walking)) {
-            camera.SetMode(walking ? CameraMode::Walk : CameraMode::Fly);
-        }
-        ImGui::SliderFloat("walk speed", &camera.Tuning().walk_speed, 1.0f, 20.0f);
-        ImGui::SliderFloat("mouse", &camera.Tuning().look_sensitivity, 0.0005f, 0.01f, "%.4f");
+        ImGui::SliderFloat("fly speed",   &camera.Tuning().fly_speed,  1.0f, 40.0f);
+        ImGui::SliderFloat("sprint mul",  &camera.Tuning().sprint_mul, 1.0f, 6.0f);
+        ImGui::SliderFloat("sensitivity", &camera.Tuning().look_sensitivity, 0.0005f, 0.01f, "%.4f");
+        ImGui::Separator();
+        ImGui::TextDisabled("RMB drag: look   WASD: move   Q/E: up/down   Shift: sprint");
         EndSection();
     }
 
     ImGui::End();
 }
 
-void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect) {
+void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect,
+                        const ImVec2& image_min, const ImVec2& image_size) {
     if (!ui.show_viewport || ui.selection == kNullEntity) return;
 
     Registry& registry = world.Entities();
@@ -564,14 +626,11 @@ void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32
 
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist();
-    
-    ImVec2 vMin = ImGui::GetWindowContentRegionMin();
-    ImVec2 vMax = ImGui::GetWindowContentRegionMax();
-    vMin.x += ImGui::GetWindowPos().x;
-    vMin.y += ImGui::GetWindowPos().y;
-    vMax.x += ImGui::GetWindowPos().x;
-    vMax.y += ImGui::GetWindowPos().y;
-    ImGuizmo::SetRect(vMin.x, vMin.y, vMax.x - vMin.x, vMax.y - vMin.y);
+
+    // Use the actual rendered image rect, not the window content region.
+    // The window has a toolbar above the image, so the content-region approach
+    // misaligns the gizmo by the toolbar height.
+    ImGuizmo::SetRect(image_min.x, image_min.y, image_size.x, image_size.y);
 
     const CameraState& cam = camera.Camera();
     Vec3 fwd   = cam.Forward();
@@ -586,7 +645,19 @@ void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32
     // Perspective projection
     Mat4 proj = glm::perspective(cam.fov_y, aspect, 0.01f, 1000.0f);
 
-    Mat4 matrix = local->ToMatrix();
+    // Check if entity has a parent
+    Entity parent_entity = kNullEntity;
+    const Parent* parent = registry.Get<Parent>(ui.selection);
+    if (parent && registry.Valid(parent->entity)) {
+        parent_entity = parent->entity;
+    }
+
+    Mat4 parent_world(1.0f);
+    if (parent_entity != kNullEntity) {
+        parent_world = ComputeWorldTransform(registry, parent_entity);
+    }
+
+    Mat4 matrix = parent_world * local->ToMatrix();
 
     ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
     if (ui.gizmo_operation == 1) op = ImGuizmo::ROTATE;
@@ -602,12 +673,23 @@ void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32
     }
 
     if (ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(proj), op, mode, glm::value_ptr(matrix), nullptr, ui.snap_enabled ? snap : nullptr)) {
+        Mat4 new_local = (parent_entity != kNullEntity) ? glm::inverse(parent_world) * matrix : matrix;
+
         float translation[3], rotation[3], scale[3];
-        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), translation, rotation, scale);
+        ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(new_local), translation, rotation, scale);
         
         local->position = Vec3(translation[0], translation[1], translation[2]);
         local->rotation = Quat(glm::radians(Vec3(rotation[0], rotation[1], rotation[2])));
-        local->scale = scale[0];
+        if (scale[0] > 0.001f) local->scale = scale[0];
+
+        // Keep picking bounds in sync with scale
+        if (PrimitiveShape* shape = registry.Get<PrimitiveShape>(ui.selection)) {
+            const Vec3 half = shape->HalfExtents() * local->scale;
+            if (LocalBounds* bounds = registry.Get<LocalBounds>(ui.selection)) {
+                bounds->min = -half;
+                bounds->max =  half;
+            }
+        }
         
         if (!m_dragging) {
             m_drag_start = *local;

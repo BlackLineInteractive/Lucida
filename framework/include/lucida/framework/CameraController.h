@@ -44,7 +44,7 @@ public:
 private:
     CameraState  m_camera;
     CameraTuning m_tuning;
-    CameraMode   m_mode = CameraMode::Walk;
+    CameraMode   m_mode = CameraMode::Fly;
     f32 m_velocity_y = 0.0f;
 };
 

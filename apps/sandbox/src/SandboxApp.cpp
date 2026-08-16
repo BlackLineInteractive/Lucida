@@ -39,7 +39,7 @@ struct Config {
     i32 height = 720;
     bool fullscreen = false;
     RenderSettings render;
-    bool  walk_mode  = true;
+    bool  walk_mode  = false;
     std::string model_path;
     Vec3  model_pos{0.0f, -1.6f, -3.0f};
     f32   model_scale = 100.0f;
@@ -159,26 +159,16 @@ public:
 
         m_physics = CreateJoltBackend();
         if (m_physics->Init()) {
-            // The car is an entity now, not three members of this class. Its
-            // pose is written by the physics system and read by the render
-            // system; nothing here has to keep them in step.
-            m_car = world.Entities().Create("Mustang Boss 302");
-            Vehicle vehicle;
-            vehicle.handle = m_physics->CreateVehicle(VehicleDesc{});
-            world.Entities().Add<Vehicle>(m_car, vehicle);
-
             world.AddSystem<PhysicsSystem>(*m_physics);
         }
         world.AddSystem<RenderSyncSystem>(*m_renderer);
 
-        if (!m_config.model_path.empty())
+        if (!m_config.model_path.empty() && std::filesystem::exists(m_project.Resolve(m_config.model_path)))
             LoadModelFile(world, m_project.Resolve(m_config.model_path));
 
-        // Opening a project means you came to edit: panels up, cursor free.
-        // Without one, the sandbox is a game and starts in the viewport.
-        const bool editing = m_project.IsOpen();
-        m_ui_state.show_menu = editing;
-        m_platform->SetMouseCaptured(!editing);
+        // Always start in Editor mode: panels active, cursor free.
+        m_ui_state.show_menu = true;
+        m_platform->SetMouseCaptured(false);
         return true;
     }
 
@@ -239,9 +229,18 @@ public:
     void OnRender(World& world, const FrameTime& time) override {
         LUCIDA_PROFILE("render");
 
-        // Mouse look belongs to the frame, not the tick: the delta already
-        // covers exactly the time since the previous frame.
-        if (!m_ui_state.show_menu) m_camera.Update(m_input, time.real_delta);
+        // Camera control:
+        //   Game mode (no menu): mouse is captured, free FPS camera.
+        //   Editor mode: when RMB is held inside viewport, capture mouse and fly.
+        const bool in_game_mode   = !m_ui_state.show_menu;
+        const bool editor_looking = m_ui_state.show_menu && m_ui_state.viewport_rmb;
+
+        if (in_game_mode || editor_looking) {
+            m_platform->SetMouseCaptured(true);
+            m_camera.Update(m_input, time.real_delta);
+        } else {
+            m_platform->SetMouseCaptured(false);
+        }
         m_renderer->SetCamera(m_camera.Camera());
 
         i32 w = 0, h = 0;

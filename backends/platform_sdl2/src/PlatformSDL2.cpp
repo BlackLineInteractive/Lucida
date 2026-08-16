@@ -23,11 +23,13 @@ namespace {
 // editing data, not code.
 struct Binding { SDL_Scancode key; Action action; };
 
-constexpr std::array<Binding, 14> kBindings{{
+constexpr std::array<Binding, 16> kBindings{{
     {SDL_SCANCODE_W,      Action::MoveForward},
     {SDL_SCANCODE_S,      Action::MoveBack},
     {SDL_SCANCODE_A,      Action::MoveLeft},
     {SDL_SCANCODE_D,      Action::MoveRight},
+    {SDL_SCANCODE_E,      Action::Jump},        // Fly Up
+    {SDL_SCANCODE_Q,      Action::Crouch},      // Fly Down
     {SDL_SCANCODE_LSHIFT, Action::Sprint},
     {SDL_SCANCODE_RSHIFT, Action::Sprint},
     {SDL_SCANCODE_SPACE,  Action::Jump},

@@ -17,6 +17,8 @@
 
 #include <string>
 
+struct ImVec2;
+
 namespace lucida {
 
 class World;
@@ -49,6 +51,8 @@ struct UiState {
     // panel costs a third of the rays.
     i32 viewport_width  = 0;
     i32 viewport_height = 0;
+    bool viewport_hovered = false;   // true when mouse is over the viewport panel
+    bool viewport_rmb     = false;   // true while RMB is held inside the viewport
 
     scenes::BuiltIn scene = scenes::BuiltIn::Empty;
     bool request_scene_reload = false;
@@ -78,7 +82,8 @@ private:
     void DrawSceneGraph(World& world, UiState& ui, Entity root_or_null);
     void DrawInspector(World& world, UiState& ui, SceneAssets& assets);
     void DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSettings& settings, CameraController& camera);
-    void DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect);
+    void DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect,
+                   const ImVec2& image_min, const ImVec2& image_size);
     void DrawStats(const RenderStats& stats, const FrameTime& time);
     void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
                    const char* name);

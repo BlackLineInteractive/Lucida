@@ -27,25 +27,24 @@ enum class ShadingModel : u8 {
 };
 
 struct SceneEnvironment {
-    Vec3 ambient{0.3f, 0.4f, 0.6f};
-    bool fog_enabled  = true;
+    Vec3 ambient{0.08f, 0.10f, 0.14f};
+    bool fog_enabled  = false;   // opt-in, not always-on
     f32  fog_density  = 0.022f;
     i32  fog_steps    = 16;
 
-    // Sky gradient. With no geometry and no skybox to load, this plus the grid
-    // is what an empty scene looks like — somewhere to stand, not a void.
-    Vec3 sky_zenith{0.32f, 0.52f, 0.82f};
-    Vec3 sky_horizon{0.78f, 0.86f, 0.95f};
-    Vec3 sky_ground{0.16f, 0.17f, 0.19f};
+    // Sky gradient — neutral dark studio tones (Blender/Unreal viewport style).
+    Vec3 sky_zenith{0.06f, 0.09f, 0.16f};
+    Vec3 sky_horizon{0.18f, 0.22f, 0.28f};
+    Vec3 sky_ground{0.04f, 0.04f, 0.06f};
 
     // Editor ground grid, drawn by the tracer so it sits behind geometry
     // correctly instead of being painted over the finished image.
-    bool grid_enabled = false;
+    bool grid_enabled = true;
     Vec3 grid_color{0.42f, 0.44f, 0.48f};
     Vec3 grid_axis_x{0.78f, 0.28f, 0.32f};
     Vec3 grid_axis_z{0.30f, 0.48f, 0.85f};
-    f32  grid_opacity = 0.75f;
-    f32  grid_fade    = 220.0f;   // metres at which it has faded out entirely
+    f32  grid_opacity = 0.65f;
+    f32  grid_fade    = 120.0f;
     bool grid_auto_scale = true;
     f32  grid_spacing = 1.0f;
 };
