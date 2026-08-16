@@ -951,6 +951,8 @@ public:
       m_uniforms.grid_enabled = m_environment.grid_enabled ? 1 : 0;
       m_uniforms.grid_opacity = m_environment.grid_opacity;
       m_uniforms.grid_fade    = m_environment.grid_fade;
+      m_uniforms.grid_spacing = m_environment.grid_spacing;
+      m_uniforms.grid_auto_scale = m_environment.grid_auto_scale ? 1 : 0;
       SetVec3(m_uniforms.camera_origin, m_cam_pos);
       SetVec3(m_uniforms.camera_forward, fwd);
       SetVec3(m_uniforms.camera_right, right);

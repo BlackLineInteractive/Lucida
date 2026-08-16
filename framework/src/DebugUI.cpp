@@ -12,6 +12,7 @@
 #include "lucida/runtime/World.h"
 
 #include "lucida/framework/SceneAssets.h"
+#include "lucida/resource/Terrain.h"
 #include "ImGuiFileDialog.h"
 #include "ImGuizmo.h"
 #include "imgui.h"
@@ -117,7 +118,7 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
 
     if (ui.show_viewport && viewport_texture)
         DrawViewport(world, ui, viewport_texture, viewport_aspect, camera, assets, stats, settings, time);
-    if (ui.show_hierarchy) DrawHierarchy(world, ui); // Calls DrawSceneGraph
+    if (ui.show_hierarchy) DrawHierarchy(world, ui, assets); // Calls DrawSceneGraph
     if (ui.show_inspector) DrawInspector(world, ui, assets);
     if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
     if (ui.show_stats_panel)       DrawStatsPanel(world, assets, stats, time, settings, ui);
@@ -377,6 +378,42 @@ void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
             ui.selection = entity;
         }
 
+        if (ImGui::BeginPopupContextItem("EntityContextMenu")) {
+            ui.selection = entity;
+            if (ImGui::MenuItem("Unparent", nullptr, false, its_parent != kNullEntity)) {
+                entities.Remove<Parent>(entity);
+            }
+            if (ImGui::MenuItem("Duplicate")) {
+                Entity dup = entities.Create(name.value + "_copy");
+                if (LocalTransform* lt = entities.Get<LocalTransform>(entity)) {
+                    *entities.Get<LocalTransform>(dup) = *lt;
+                    entities.Get<LocalTransform>(dup)->position += Vec3(0.5f, 0.0f, 0.5f);
+                }
+                if (PrimitiveShape* ps = entities.Get<PrimitiveShape>(entity)) {
+                    entities.Add<PrimitiveShape>(dup, *ps);
+                }
+                if (MaterialRef* mr = entities.Get<MaterialRef>(entity)) {
+                    entities.Add<MaterialRef>(dup, *mr);
+                }
+                if (LocalBounds* lb = entities.Get<LocalBounds>(entity)) {
+                    entities.Add<LocalBounds>(dup, *lb);
+                }
+                if (RigidBody* rb = entities.Get<RigidBody>(entity)) {
+                    entities.Add<RigidBody>(dup, *rb);
+                }
+                if (its_parent != kNullEntity) {
+                    entities.Add<Parent>(dup, Parent{its_parent});
+                }
+                ui.selection = dup;
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Delete", "Delete")) {
+                if (ui.selection == entity) ui.selection = kNullEntity;
+                entities.Destroy(entity);
+            }
+            ImGui::EndPopup();
+        }
+
         if (ImGui::BeginDragDropSource()) {
             Entity dragged = entity;
             ImGui::SetDragDropPayload("ENTITY_PAYLOAD", &dragged, sizeof(Entity));
@@ -401,7 +438,7 @@ void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
     }
 }
 
-void DebugUI::DrawHierarchy(World& world, UiState& ui) {
+void DebugUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
     if (!ImGui::Begin("Hierarchy", &ui.show_hierarchy)) {
         ImGui::End();
         return;
@@ -414,19 +451,48 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui) {
     if (ImGui::Button("+")) ImGui::OpenPopup("AddPrimitivePopup");
     if (ImGui::BeginPopup("AddPrimitivePopup")) {
         auto add = [&](PrimitiveType type, const char* name) {
-            ui.selection = CreatePrimitive(entities, type, Vec3(0,0,0), 0, name);
+            const std::string mat_name = std::string(name) + "_mat_" + std::to_string(assets.materials.size());
+            const i32 mat_idx = assets.AddMaterial(
+                Material(DIFFUSE, {0.75f, 0.75f, 0.78f}, {0, 0, 0}, 0.5f, 0.0f),
+                PROC_NONE, mat_name);
+            ui.selection = CreatePrimitive(entities, type, Vec3(0,0,0), mat_idx, name);
         };
-        if (ImGui::MenuItem("Sphere")) add(PrimitiveType::Sphere, "Sphere");
-        if (ImGui::MenuItem("Box")) add(PrimitiveType::Box, "Box");
-        if (ImGui::MenuItem("Plane")) add(PrimitiveType::Plane, "Plane");
-        if (ImGui::MenuItem("Cylinder")) add(PrimitiveType::Cylinder, "Cylinder");
-        if (ImGui::MenuItem("Cone")) add(PrimitiveType::Cone, "Cone");
-        if (ImGui::MenuItem("Torus")) add(PrimitiveType::Torus, "Torus");
-        if (ImGui::MenuItem("Disk")) add(PrimitiveType::Disk, "Disk");
-        ImGui::Separator();
-        if (ImGui::MenuItem("Light")) {
-            ui.selection = CreateLight(entities, Vec3(0, 1, 0), Vec3(1), 50.0f, 1.0f, "Light");
+
+        if (ImGui::BeginMenu("3D Object")) {
+            if (ImGui::MenuItem("Sphere"))   add(PrimitiveType::Sphere, "Sphere");
+            if (ImGui::MenuItem("Cube"))     add(PrimitiveType::Box, "Cube");
+            if (ImGui::MenuItem("Plane"))    add(PrimitiveType::Plane, "Plane");
+            if (ImGui::MenuItem("Cylinder")) add(PrimitiveType::Cylinder, "Cylinder");
+            if (ImGui::MenuItem("Cone"))     add(PrimitiveType::Cone, "Cone");
+            if (ImGui::MenuItem("Torus"))    add(PrimitiveType::Torus, "Torus");
+            if (ImGui::MenuItem("Disk"))     add(PrimitiveType::Disk, "Disk");
+            ImGui::Separator();
+            if (ImGui::MenuItem("Terrain (Procedural)")) {
+                TerrainComponent cfg{};
+                i32 mat_idx = assets.AddMaterial(
+                    Material(DIFFUSE, {0.35f, 0.55f, 0.25f}, {0, 0, 0}, 0.85f, 0.0f),
+                    PROC_NONE, "Terrain_mat");
+                ui.selection = CreateTerrain(entities, assets, cfg, mat_idx, "Terrain");
+            }
+            ImGui::EndMenu();
         }
+
+        if (ImGui::BeginMenu("Light")) {
+            if (ImGui::MenuItem("Point Light")) {
+                ui.selection = CreateLight(entities, LightType::Point, Vec3(0, 3, 0), Vec3(1.0f, 0.95f, 0.9f), 50.0f, 1.0f, Vec3(0,-1,0), "Point Light");
+            }
+            if (ImGui::MenuItem("Directional Light (Sun)")) {
+                ui.selection = CreateLight(entities, LightType::Directional, Vec3(0, 10, 0), Vec3(1.0f, 0.98f, 0.92f), 10.0f, 5.0f, Vec3(-0.3f, -1.0f, -0.4f), "Directional Light");
+            }
+            if (ImGui::MenuItem("Spot Light")) {
+                ui.selection = CreateLight(entities, LightType::Spot, Vec3(0, 4, 0), Vec3(1.0f, 0.95f, 0.85f), 75.0f, 1.0f, Vec3(0.0f, -1.0f, 0.0f), "Spot Light");
+            }
+            if (ImGui::MenuItem("Area Light")) {
+                ui.selection = CreateLight(entities, LightType::Area, Vec3(0, 3, 0), Vec3(1.0f, 1.0f, 1.0f), 60.0f, 2.0f, Vec3(0.0f, -1.0f, 0.0f), "Area Light");
+            }
+            ImGui::EndMenu();
+        }
+
         ImGui::EndPopup();
     }
 
@@ -526,19 +592,109 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets) {
 
     if (MaterialRef* mat_ref = entities.Get<MaterialRef>(ui.selection)) {
         if (BeginSection("Material", true)) {
-            if (mat_ref->index >= 0 && mat_ref->index < (i32)assets.materials.size()) {
+            if (!assets.materials.empty()) {
+                if (mat_ref->index < 0 || mat_ref->index >= (i32)assets.materials.size()) {
+                    mat_ref->index = 0;
+                }
+
+                // Dropdown to pick existing material slot
+                const std::string& current_name = assets.material_names[mat_ref->index];
+                if (ImGui::BeginCombo("Slot", current_name.c_str())) {
+                    for (i32 i = 0; i < (i32)assets.materials.size(); ++i) {
+                        const bool is_selected = (mat_ref->index == i);
+                        if (ImGui::Selectable(assets.material_names[i].c_str(), is_selected)) {
+                            mat_ref->index = i;
+                        }
+                        if (is_selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+
+                // Action buttons: "Make Unique" and "+ New Material"
+                if (ImGui::Button("Make Unique")) {
+                    GPUMaterial cloned = assets.materials[mat_ref->index];
+                    std::string new_name = assets.material_names[mat_ref->index] + "_unique";
+                    assets.materials.push_back(cloned);
+                    assets.material_names.push_back(new_name);
+                    mat_ref->index = (i32)assets.materials.size() - 1;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("+ New Material")) {
+                    i32 new_idx = assets.AddMaterial(
+                        Material(DIFFUSE, {0.75f, 0.75f, 0.78f}, {0, 0, 0}, 0.5f, 0.0f),
+                        PROC_NONE, "mat_" + std::to_string(assets.materials.size()));
+                    mat_ref->index = new_idx;
+                }
+
                 GPUMaterial& m = assets.materials[mat_ref->index];
-                ImGui::Text("Material: %s", assets.material_names[mat_ref->index].c_str());
+
+                // Material Presets
+                ImGui::TextDisabled("Presets:");
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Gold")) {
+                    m.type = 1; m.albedo[0]=1.0f; m.albedo[1]=0.76f; m.albedo[2]=0.33f;
+                    m.roughness=0.15f; m.metallic=1.0f;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Chrome")) {
+                    m.type = 1; m.albedo[0]=0.95f; m.albedo[1]=0.95f; m.albedo[2]=0.95f;
+                    m.roughness=0.05f; m.metallic=1.0f;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Copper")) {
+                    m.type = 1; m.albedo[0]=0.95f; m.albedo[1]=0.64f; m.albedo[2]=0.54f;
+                    m.roughness=0.20f; m.metallic=1.0f;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Glass")) {
+                    m.type = 2; m.albedo[0]=1.0f; m.albedo[1]=1.0f; m.albedo[2]=1.0f;
+                    m.roughness=0.0f; m.metallic=0.0f; m.refractive_index=1.52f;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Neon")) {
+                    m.type = 3; m.albedo[0]=0.1f; m.albedo[1]=0.8f; m.albedo[2]=1.0f;
+                    m.emission[0]=1.5f; m.emission[1]=12.0f; m.emission[2]=15.0f;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Rubber")) {
+                    m.type = 0; m.albedo[0]=0.12f; m.albedo[1]=0.12f; m.albedo[2]=0.13f;
+                    m.roughness=0.90f; m.metallic=0.0f;
+                }
+
+                ImGui::Separator();
+
+                // Material Property Editor
+                
+                // Editable Name
+                char name_buf[64];
+                std::strncpy(name_buf, assets.material_names[mat_ref->index].c_str(), sizeof(name_buf) - 1);
+                name_buf[sizeof(name_buf) - 1] = '\0';
+                if (ImGui::InputText("Name", name_buf, sizeof(name_buf))) {
+                    assets.material_names[mat_ref->index] = name_buf;
+                }
+
                 const char* mat_types[] = { "Diffuse", "Metal", "Glass", "Emissive", "Checkerboard", "Water", "PBR" };
                 ImGui::Combo("Type", &m.type, mat_types, 7);
+
                 ImGui::ColorEdit3("Albedo", m.albedo);
-                if (m.type == 3) ImGui::ColorEdit3("Emission", m.emission);
+                if (m.type == 4) { // Checkerboard
+                    ImGui::ColorEdit3("Albedo 2", m.albedo2);
+                }
+                if (m.type == 3) { // Emissive
+                    ImGui::ColorEdit3("Emission", m.emission);
+                }
+
                 ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f);
                 ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f);
-                if (m.type == 2 || m.type == 5) ImGui::SliderFloat("IOR", &m.refractive_index, 1.0f, 3.0f);
+                if (m.type == 2 || m.type == 5) { // Glass or Water
+                    ImGui::SliderFloat("IOR", &m.refractive_index, 1.0f, 3.0f);
+                }
 
-                const char* proc_types[] = { "None", "Marble", "Wood", "Rust", "Tiles", "Brushed", "Hex", "Rough Ramp", "Patina", "Concrete" };
-                ImGui::Combo("Pattern", &m.proc_id, proc_types, 10);
+                const char* proc_types[] = {
+                    "None", "Marble", "Wood", "Rust", "Tiles", "Brushed", "Hex",
+                    "Rough Ramp", "Patina", "Concrete", "Perlin Noise", "Voronoi Cells"
+                };
+                ImGui::Combo("Pattern", &m.proc_id, proc_types, 12);
             }
             EndSection();
         }
@@ -557,6 +713,122 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets) {
         if (BeginSection("Mesh instance", true)) {
             LabelledText("Mesh", "%u", mesh->mesh.index);
             LabelledText("Instance", "%u", mesh->instance.index);
+            EndSection();
+        }
+    }
+
+    if (RigidBody* rb = entities.Get<RigidBody>(ui.selection)) {
+        if (BeginSection("Physics / RigidBody", true)) {
+            const char* body_types[] = { "Static", "Dynamic", "Kinematic" };
+            int type_idx = static_cast<int>(rb->type);
+            if (ImGui::Combo("Body Type", &type_idx, body_types, 3)) {
+                rb->type = static_cast<BodyType>(type_idx);
+            }
+
+            const char* shape_types[] = { "Box", "Sphere", "Capsule", "Plane", "Mesh" };
+            int shape_idx = static_cast<int>(rb->shape);
+            if (ImGui::Combo("Collider Shape", &shape_idx, shape_types, 5)) {
+                rb->shape = static_cast<ShapeType>(shape_idx);
+            }
+
+            if (rb->type == BodyType::Dynamic) {
+                ImGui::DragFloat("Mass (kg)", &rb->mass, 0.1f, 0.01f, 10000.0f, "%.2f");
+                ImGui::DragFloat("Gravity Scale", &rb->gravity_scale, 0.05f, 0.0f, 10.0f, "%.2f");
+                ImGui::SliderFloat("Linear Damping", &rb->linear_damping, 0.0f, 1.0f);
+                ImGui::SliderFloat("Angular Damping", &rb->angular_damping, 0.0f, 1.0f);
+            }
+
+            ImGui::SliderFloat("Friction", &rb->friction, 0.0f, 1.0f);
+            ImGui::SliderFloat("Restitution", &rb->restitution, 0.0f, 1.0f);
+            ImGui::Checkbox("Simulate", &rb->is_active);
+
+            ImGui::Separator();
+            if (ImGui::Button("Remove Physics", ImVec2(-1.0f, 22.0f))) {
+                entities.Remove<RigidBody>(ui.selection);
+            }
+            EndSection();
+        }
+    } else {
+        if (BeginSection("Physics", false)) {
+            if (ImGui::Button("+ Add RigidBody Component", ImVec2(-1.0f, 24.0f))) {
+                RigidBody rb{};
+                if (PrimitiveShape* ps = entities.Get<PrimitiveShape>(ui.selection)) {
+                    if (ps->type == PrimitiveType::Sphere) rb.shape = ShapeType::Sphere;
+                    else if (ps->type == PrimitiveType::Plane) { rb.shape = ShapeType::Plane; rb.type = BodyType::Static; }
+                    else rb.shape = ShapeType::Box;
+                }
+                entities.Add<RigidBody>(ui.selection, rb);
+            }
+            EndSection();
+        }
+    }
+
+    if (LightSource* light = entities.Get<LightSource>(ui.selection)) {
+        if (BeginSection("Light Source", true)) {
+            const char* light_types[] = { "Point Light", "Directional Light (Sun)", "Spot Light", "Area Light" };
+            int type_idx = static_cast<int>(light->type);
+            if (ImGui::Combo("Light Type", &type_idx, light_types, 4)) {
+                light->type = static_cast<LightType>(type_idx);
+            }
+
+            ImGui::ColorEdit3("Color", glm::value_ptr(light->color));
+
+            // Quick Color Temperature presets
+            ImGui::TextDisabled("Color Temp:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Candle 2000K"))   light->color = Vec3(1.00f, 0.58f, 0.16f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Warm 3200K"))     light->color = Vec3(1.00f, 0.82f, 0.62f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Daylight 6500K")) light->color = Vec3(1.00f, 1.00f, 1.00f);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Sky 9000K"))      light->color = Vec3(0.80f, 0.88f, 1.00f);
+
+            ImGui::DragFloat("Intensity", &light->intensity, 0.5f, 0.0f, 10000.0f, "%.1f");
+            ImGui::DragFloat("Radius / Range", &light->radius, 0.05f, 0.01f, 100.0f, "%.2f");
+
+            if (light->type == LightType::Directional || light->type == LightType::Spot) {
+                ImGui::Separator();
+                Vec3Row("Direction", light->direction);
+                if (glm::length(light->direction) > 0.001f) {
+                    light->direction = glm::normalize(light->direction);
+                }
+            }
+
+            if (light->type == LightType::Spot) {
+                ImGui::SliderFloat("Inner Cone", &light->inner_angle, 1.0f, 89.0f, "%.1f deg");
+                ImGui::SliderFloat("Outer Cone", &light->outer_angle, light->inner_angle, 90.0f, "%.1f deg");
+            }
+
+            ImGui::Checkbox("Cast Shadows", &light->cast_shadows);
+            EndSection();
+        }
+    }
+
+    if (TerrainComponent* terrain = entities.Get<TerrainComponent>(ui.selection)) {
+        if (BeginSection("Terrain Generator", true)) {
+            bool changed = false;
+            changed |= ImGui::SliderInt("Resolution", &terrain->resolution, 8, 256);
+            changed |= ImGui::DragFloat("World Size", &terrain->size, 0.5f, 5.0f, 500.0f, "%.1f m");
+            changed |= ImGui::DragFloat("Max Height", &terrain->max_height, 0.1f, 0.5f, 100.0f, "%.1f m");
+            changed |= ImGui::SliderFloat("Frequency", &terrain->frequency, 0.001f, 0.2f, "%.4f");
+            changed |= ImGui::SliderInt("Octaves", &terrain->octaves, 1, 8);
+            changed |= ImGui::SliderFloat("Persistence", &terrain->persistence, 0.1f, 0.9f, "%.2f");
+            changed |= ImGui::SliderFloat("Lacunarity", &terrain->lacunarity, 1.0f, 4.0f, "%.2f");
+            
+            ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain->seed);
+            ImGui::SameLine();
+            if (ImGui::Button("Random")) {
+                terrain->seed = static_cast<u32>(rand());
+                changed = true;
+            }
+
+            if (changed) terrain->dirty = true;
+
+            ImGui::Separator();
+            if (ImGui::Button("Regenerate Terrain", ImVec2(-1.0f, 26.0f))) {
+                terrain->dirty = true;
+            }
             EndSection();
         }
     }

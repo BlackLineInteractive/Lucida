@@ -15,4 +15,8 @@ namespace lucida {
 // Centres the mesh and scales it so its largest dimension is target_size.
 MeshData LoadModel(const std::string& path, float target_size = 2.0f);
 
+void BuildBVH(std::vector<GPUTriangle>& tris,
+              std::vector<GPUBVHNode>&  nodes,
+              int start, int count, int depth = 0);
+
 } // namespace lucida

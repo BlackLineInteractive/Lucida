@@ -51,9 +51,18 @@ u64 SceneFingerprint(Registry& registry, const SceneAssets& assets);
 
 Entity CreatePrimitive(Registry& registry, PrimitiveType type, const Vec3& position,
                        i32 material, const std::string& name = {});
-Entity CreateLight(Registry& registry, const Vec3& position, const Vec3& color,
-                   f32 intensity, f32 radius, const std::string& name = {});
+Entity CreateLight(Registry& registry, LightType type, const Vec3& position, const Vec3& color,
+                   f32 intensity, f32 radius, const Vec3& direction = Vec3(0.0f, -1.0f, 0.0f),
+                   const std::string& name = {});
+inline Entity CreateLight(Registry& registry, const Vec3& position, const Vec3& color,
+                          f32 intensity, f32 radius, const std::string& name = {}) {
+    return CreateLight(registry, LightType::Point, position, color, intensity, radius, Vec3(0.0f, -1.0f, 0.0f), name);
+}
+
+Entity CreateTerrain(Registry& registry, SceneAssets& assets, const TerrainComponent& config,
+                     i32 material, const std::string& name = {});
 
 const char* PrimitiveTypeName(PrimitiveType type);
+const char* LightTypeName(LightType type);
 
 } // namespace lucida

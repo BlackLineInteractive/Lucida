@@ -92,7 +92,7 @@ struct Uniforms {
     packed_float3 grid_axis_x; float pad12;
     packed_float3 grid_axis_z; float pad13;
     int num_cylinders; int num_cones; int num_tori; int num_disks;
-    float grid_spacing; float pad14; float pad15; float pad16;
+    float grid_spacing; int grid_auto_scale; float pad15; float pad16;
 };
 
 constant float EPSILON = 1e-4;
@@ -1608,30 +1608,50 @@ GridSample sample_grid(float3 p, float footprint, constant Uniforms& u) {
     out.color = float3(u.grid_color);
     out.alpha = 0.0;
 
-    // Pick the decade whose lines are still far enough apart to read, and blend
-    // into the next one so nothing pops as the camera pulls back.
-    float decade = max(0.0, log10(footprint * 40.0));
-    float step0 = pow(10.0, floor(decade));
-    float step1 = step0 * 10.0;
-    float blend = fract(decade);
+    float step0, step1, blend;
+    if (u.grid_auto_scale != 0) {
+        float decade = max(0.0, log10(footprint * 28.0));
+        step0 = pow(10.0, floor(decade));
+        step1 = step0 * 10.0;
+        blend = fract(decade);
+    } else {
+        step0 = max(u.grid_spacing, 0.05);
+        step1 = step0 * 10.0;
+        blend = 0.0;
+    }
 
-    float half_width = footprint * 0.6;
+    // Half-width of lines in world units for crisp anti-aliased lines
+    float line_w = max(footprint * 0.70, 0.004);
 
-    // Distance to the nearest line of a given spacing, in world units.
+    // Distance to the nearest line of minor and major spacings
     float2 d0 = abs(fract(p.xz / step0 + 0.5) - 0.5) * step0;
     float2 d1 = abs(fract(p.xz / step1 + 0.5) - 0.5) * step1;
 
-    float l0 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d0.x, d0.y));
-    float l1 = 1.0 - smoothstep(half_width, half_width * 2.0, min(d1.x, d1.y));
+    float2 l0_2d = 1.0 - smoothstep(float2(0.0), float2(line_w * 1.5), d0);
+    float l0 = max(l0_2d.x, l0_2d.y);
 
-    // The coarser decade is always fully present; the finer one fades in.
-    out.alpha = max(l1, l0 * (1.0 - blend));
+    float2 l1_2d = 1.0 - smoothstep(float2(0.0), float2(line_w * 1.8), d1);
+    float l1 = max(l1_2d.x, l1_2d.y);
 
-    // Axes last so they win over the lines they sit on.
-    float ax = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.z));
-    float az = 1.0 - smoothstep(half_width, half_width * 2.5, abs(p.x));
-    if (ax > 0.01) { out.color = float3(u.grid_axis_x); out.alpha = max(out.alpha, ax); }
-    if (az > 0.01) { out.color = float3(u.grid_axis_z); out.alpha = max(out.alpha, az); }
+    // Major lines are slightly brighter than minor lines
+    float3 base_col  = float3(u.grid_color);
+    float3 major_col = mix(base_col, float3(0.9, 0.92, 0.95), 0.35);
+
+    out.alpha = max(l1 * 0.80, l0 * 0.45 * (1.0 - blend));
+    out.color = (l1 > l0 * (1.0 - blend)) ? major_col : base_col;
+
+    // Origin Axes: X-axis (Red) along Z=0, Z-axis (Blue) along X=0
+    float ax = 1.0 - smoothstep(0.0, line_w * 1.8, abs(p.z));
+    float az = 1.0 - smoothstep(0.0, line_w * 1.8, abs(p.x));
+
+    if (ax > 0.02) {
+        out.color = mix(out.color, float3(u.grid_axis_x), ax);
+        out.alpha = max(out.alpha, ax * 0.95);
+    }
+    if (az > 0.02) {
+        out.color = mix(out.color, float3(u.grid_axis_z), az);
+        out.alpha = max(out.alpha, az * 0.95);
+    }
 
     return out;
 }
@@ -1649,18 +1669,18 @@ float3 composite_grid(float3 color, float3 origin, float3 dir, float surface_t,
 
     float3 p = origin + dir * t;
 
-    float footprint = t * 2.0 * tan_half / max(u.screen_height, 1.0);
+    // Filter footprint with grazing angle correction to eliminate horizon aliasing
+    float ray_cos = max(abs(dir.y), 0.035);
+    float footprint = (t * 2.0 * tan_half / max(u.screen_height, 1.0)) / ray_cos;
+
     GridSample g = sample_grid(p, footprint, u);
     if (g.alpha <= 0.001) return color;
 
-    // Fade with distance so the horizon stays clean instead of turning into a
-    // solid band of aliased lines.
-    float fade = 1.0 - smoothstep(u.grid_fade * 0.35, u.grid_fade, t);
-    // And fade at grazing angles, where a pixel covers so much ground that every
-    // line inside it would average to a smear.
-    float grazing = smoothstep(0.0, 0.12, abs(dir.y));
+    // Smooth fade with distance and grazing angle
+    float fade = 1.0 - smoothstep(u.grid_fade * 0.25, u.grid_fade, t);
+    float grazing = smoothstep(0.01, 0.08, abs(dir.y));
 
-    return mix(color, g.color, g.alpha * fade * grazing * u.grid_opacity);
+    return mix(color, g.color, clamp(g.alpha * fade * grazing * u.grid_opacity, 0.0, 1.0));
 }
 
 kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture(0)]],

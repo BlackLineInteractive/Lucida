@@ -5,6 +5,7 @@ add_library(lucida_resource STATIC
     src/ModelLoader.cpp
     src/SceneSerializer.cpp
     src/Project.cpp
+    src/Terrain.cpp
     src/StbImplementations.cpp
 )
 add_library(lucida::resource ALIAS lucida_resource)

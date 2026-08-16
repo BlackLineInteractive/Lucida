@@ -160,7 +160,7 @@ struct GPUUniforms {
     float grid_axis_x[3]; float pad12;
     float grid_axis_z[3]; float pad13;
     int   num_cylinders; int num_cones; int num_tori; int num_disks;
-    float grid_spacing; float pad14; float pad15; float pad16;
+    float grid_spacing; int grid_auto_scale; float pad15; float pad16;
 };
 static_assert(sizeof(GPUUniforms) == 400);
 

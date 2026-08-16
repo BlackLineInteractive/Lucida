@@ -2,6 +2,7 @@
 // Copyright (C) 2026 BlackLine Interactive
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lucida/framework/SceneAssets.h"
+#include "lucida/physics/Components.h"
 
 #include <functional>
 
@@ -185,13 +186,61 @@ Entity CreatePrimitive(Registry& registry, PrimitiveType type, const Vec3& posit
     return entity;
 }
 
-Entity CreateLight(Registry& registry, const Vec3& position, const Vec3& color,
-                   f32 intensity, f32 radius, const std::string& name) {
-    const Entity entity = registry.Create(name.empty() ? "Light" : name);
+Entity CreateLight(Registry& registry, LightType type, const Vec3& position, const Vec3& color,
+                   f32 intensity, f32 radius, const Vec3& direction, const std::string& name) {
+    std::string default_name = "Light";
+    switch (type) {
+    case LightType::Point:       default_name = "Point Light"; break;
+    case LightType::Directional: default_name = "Directional Light"; break;
+    case LightType::Spot:        default_name = "Spot Light"; break;
+    case LightType::Area:        default_name = "Area Light"; break;
+    }
+
+    const Entity entity = registry.Create(name.empty() ? default_name : name);
     registry.Get<LocalTransform>(entity)->position = position;
-    registry.Add<LightSource>(entity, LightSource{color, intensity, radius});
+    LightSource ls{};
+    ls.type = type;
+    ls.color = color;
+    ls.intensity = intensity;
+    ls.radius = radius;
+    ls.direction = direction;
+    registry.Add<LightSource>(entity, ls);
     registry.Raw().emplace_or_replace<SceneGraphNode>(entity);
     registry.Add<LocalBounds>(entity, LocalBounds{Vec3(-0.25f), Vec3(0.25f)});
+    return entity;
+}
+
+const char* LightTypeName(LightType type) {
+    switch (type) {
+    case LightType::Point:       return "Point Light";
+    case LightType::Directional: return "Directional Light";
+    case LightType::Spot:        return "Spot Light";
+    case LightType::Area:        return "Area Light";
+    default:                     return "Light";
+    }
+}
+
+Entity CreateTerrain(Registry& registry, SceneAssets& assets, const TerrainComponent& config,
+                     i32 material, const std::string& name) {
+    (void)assets;
+    const Entity entity = registry.Create(name.empty() ? "Terrain" : name);
+    registry.Get<LocalTransform>(entity)->position = Vec3(0.0f);
+    registry.Add<TerrainComponent>(entity, config);
+    registry.Add<MaterialRef>(entity, MaterialRef{material});
+    registry.Add<Visibility>(entity, Visibility{true});
+    registry.Raw().emplace_or_replace<SceneGraphNode>(entity);
+
+    const f32 half = config.size * 0.5f;
+    registry.Add<LocalBounds>(entity, LocalBounds{
+        Vec3(-half, -config.max_height, -half),
+        Vec3( half,  config.max_height,  half)
+    });
+
+    RigidBody rb{};
+    rb.type = BodyType::Static;
+    rb.shape = ShapeType::Plane;
+    registry.Add<RigidBody>(entity, rb);
+
     return entity;
 }
 

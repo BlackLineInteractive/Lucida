@@ -161,9 +161,9 @@ static bool GetORMTexture(const aiMaterial* mat, aiString& out, const char*& whi
 }
 
 
-static void BuildBVH(std::vector<GPUTriangle>& tris,
-                     std::vector<GPUBVHNode>&  nodes,
-                     int start, int count, int depth = 0) {
+void BuildBVH(std::vector<GPUTriangle>& tris,
+              std::vector<GPUBVHNode>&  nodes,
+              int start, int count, int depth) {
     using Scalar = float;
     using Vec3 = bvh::v2::Vec<Scalar, 3>;
     using Bbox = bvh::v2::BBox<Scalar, 3>;

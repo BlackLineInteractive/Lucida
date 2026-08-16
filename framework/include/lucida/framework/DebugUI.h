@@ -80,7 +80,7 @@ private:
     void DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
                       const CameraController& camera, const SceneAssets& assets,
                       const RenderStats& stats, const RenderSettings& settings, const FrameTime& time);
-    void DrawHierarchy(World& world, UiState& ui);
+    void DrawHierarchy(World& world, UiState& ui, SceneAssets& assets);
     void DrawSceneGraph(World& world, UiState& ui, Entity root_or_null);
     void DrawInspector(World& world, UiState& ui, SceneAssets& assets);
     void DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSettings& settings, CameraController& camera);

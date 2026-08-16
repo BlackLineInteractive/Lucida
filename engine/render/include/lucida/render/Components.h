@@ -65,11 +65,36 @@ struct MaterialRef {
     i32 index = 0;
 };
 
+enum class LightType : u8 {
+    Point = 0,
+    Directional,
+    Spot,
+    Area
+};
+
 // A light, as an entity, so it can be selected and moved like anything else.
 struct LightSource {
+    LightType type = LightType::Point;
     Vec3 color{1.0f, 0.95f, 0.9f};
     f32  intensity = 50.0f;
     f32  radius = 1.0f;
+    Vec3 direction{0.0f, -1.0f, 0.0f};
+    f32  inner_angle = 25.0f;
+    f32  outer_angle = 45.0f;
+    bool cast_shadows = true;
+};
+
+// Procedural Terrain configuration component
+struct TerrainComponent {
+    i32 resolution   = 64;       // Grid vertices per side (64x64)
+    f32 size         = 60.0f;    // World X/Z size in meters
+    f32 max_height   = 8.0f;     // Maximum peak elevation
+    f32 frequency    = 0.04f;    // Base noise frequency
+    i32 octaves      = 4;        // Fractal octaves
+    f32 persistence  = 0.5f;     // Roughness multiplier per octave
+    f32 lacunarity   = 2.0f;     // Frequency multiplier per octave
+    u32 seed         = 1337;     // Random seed
+    bool dirty       = false;    // Marks mesh needs regeneration
 };
 
 // Marks the entity the viewport camera follows. Zero or one per world.
