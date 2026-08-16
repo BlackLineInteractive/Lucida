@@ -11,6 +11,7 @@
 #include "lucida/core/ecs/Registry.h"
 #include "lucida/framework/Commands.h"
 #include "lucida/framework/CameraController.h"
+#include "lucida/framework/SceneAssets.h"
 #include "lucida/framework/SceneLibrary.h"
 #include "lucida/render/RenderBackend.h"
 

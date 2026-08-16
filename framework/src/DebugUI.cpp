@@ -281,8 +281,8 @@ void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
         ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
         
         bool has_children = false;
-        for (auto [child] : entities.View<Parent>().each()) {
-            if (entities.Get<Parent>(child)->entity == entity) { has_children = true; break; }
+        for (auto [child, parent_comp] : entities.View<Parent>().each()) {
+            if (parent_comp.entity == entity) { has_children = true; break; }
         }
 
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
@@ -305,7 +305,7 @@ void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_PAYLOAD")) {
                 Entity dropped = *static_cast<const Entity*>(payload->Data);
                 if (dropped != entity) {
-                    entities.AddOrReplace<Parent>(dropped, Parent{entity});
+                    entities.Add<Parent>(dropped, Parent{entity});
                 }
             }
             ImGui::EndDragDropTarget();
@@ -574,8 +574,17 @@ void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32
     ImGuizmo::SetRect(vMin.x, vMin.y, vMax.x - vMin.x, vMax.y - vMin.y);
 
     const CameraState& cam = camera.Camera();
-    Mat4 view = cam.ViewMatrix();
-    Mat4 proj = cam.ProjectionMatrix(aspect);
+    Vec3 fwd   = cam.Forward();
+    Vec3 right = cam.Right();
+    Vec3 up    = cam.Up();
+    // View matrix from basis vectors
+    Mat4 view = Mat4(1.0f);
+    view[0][0] = right.x; view[1][0] = right.y; view[2][0] = right.z; view[3][0] = -glm::dot(right, cam.position);
+    view[0][1] = up.x;    view[1][1] = up.y;    view[2][1] = up.z;    view[3][1] = -glm::dot(up,    cam.position);
+    view[0][2] = -fwd.x;  view[1][2] = -fwd.y;  view[2][2] = -fwd.z; view[3][2] =  glm::dot(fwd,  cam.position);
+    view[0][3] = 0;       view[1][3] = 0;       view[2][3] = 0;       view[3][3] = 1.0f;
+    // Perspective projection
+    Mat4 proj = glm::perspective(cam.fov_y, aspect, 0.01f, 1000.0f);
 
     Mat4 matrix = local->ToMatrix();
 

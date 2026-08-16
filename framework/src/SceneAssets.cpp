@@ -176,7 +176,7 @@ Entity CreatePrimitive(Registry& registry, PrimitiveType type, const Vec3& posit
     if (type == PrimitiveType::Sphere) shape.size = Vec3(1.0f);
     registry.Add<PrimitiveShape>(entity, shape);
     registry.Add<MaterialRef>(entity, MaterialRef{material});
-    registry.Add<SceneGraphNode>(entity);
+    registry.Raw().emplace_or_replace<SceneGraphNode>(entity);
 
     // Bounds are what makes it clickable, so they are set here rather than left
     // to whoever remembers.
@@ -190,7 +190,7 @@ Entity CreateLight(Registry& registry, const Vec3& position, const Vec3& color,
     const Entity entity = registry.Create(name.empty() ? "Light" : name);
     registry.Get<LocalTransform>(entity)->position = position;
     registry.Add<LightSource>(entity, LightSource{color, intensity, radius});
-    registry.Add<SceneGraphNode>(entity);
+    registry.Raw().emplace_or_replace<SceneGraphNode>(entity);
     registry.Add<LocalBounds>(entity, LocalBounds{Vec3(-0.25f), Vec3(0.25f)});
     return entity;
 }

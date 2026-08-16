@@ -666,7 +666,9 @@ HitInfo intersect_disk(Ray ray, device const Disk& d) {
 // space, so hits from different instances are directly comparable and the
 // closest-so-far distance can prune later instances without any conversion.
 HitInfo find_closest(Ray ray,
-                     device const Sphere* spheres, device const Plane* planes, device const Cube* cubes, device const Cylinder* cylinders, device const Cone* cones, device const Torus* tori, device const Disk* disks,
+                     device const Sphere*   spheres,
+                     device const Plane*    planes,
+                     device const Cube*     cubes,
                      device const Cylinder* cylinders,
                      device const Cone*     cones,
                      device const Torus*    tori,
@@ -1467,6 +1469,10 @@ kernel void fog_kernel(texture2d<float, access::write> outFog [[texture(0)]],
                        device const Material* mesh_mats [[buffer(9)]],
                        device const TriAttr*  tri_attrs [[buffer(10)]],
                        device const Instance* instances [[buffer(11)]],
+                       device const Cylinder* cylinders [[buffer(12)]],
+                       device const Cone*     cones     [[buffer(13)]],
+                       device const Torus*    tori      [[buffer(14)]],
+                       device const Disk*     disks     [[buffer(15)]],
                        uint2 gid [[thread_position_in_grid]]) {
 
     if (gid.x >= uint(u.fog_width) || gid.y >= uint(u.fog_height)) return;
@@ -1677,6 +1683,10 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
                             device const Material* mesh_mats [[buffer(9)]],
                             device const TriAttr*  tri_attrs [[buffer(10)]],
                             device const Instance* instances [[buffer(11)]],
+                            device const Cylinder* cylinders [[buffer(12)]],
+                            device const Cone*     cones     [[buffer(13)]],
+                            device const Torus*    tori      [[buffer(14)]],
+                            device const Disk*     disks     [[buffer(15)]],
                             uint2 gid [[thread_position_in_grid]]) {
 
     if (gid.x >= uint(u.screen_width) || gid.y >= uint(u.screen_height)) return;
