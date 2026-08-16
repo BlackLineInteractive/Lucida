@@ -1,4 +1,4 @@
-<h1 align="center">Lucida — The New Era of Game Engines</h1>
+<h1 align="center">Lucida - Game Engines</h1>
 
 <p align="center">
   <em>lucida</em> — the brightest star in a constellation.
