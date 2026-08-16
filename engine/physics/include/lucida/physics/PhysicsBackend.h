@@ -20,7 +20,7 @@ LUCIDA_DECLARE_HANDLE(BodyHandle);
 LUCIDA_DECLARE_HANDLE(VehicleHandle);
 
 enum class BodyType : u8 { Static, Dynamic, Kinematic };
-enum class ShapeType : u8 { Box, Sphere, Capsule, Plane, Mesh };
+enum class ShapeType : u8 { Box, Sphere, Capsule, Cylinder, Plane, Mesh };
 
 struct BodyDesc {
     BodyType  type  = BodyType::Dynamic;

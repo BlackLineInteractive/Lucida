@@ -33,14 +33,19 @@ public:
         m_world.Step(fixed_dt, m_input);
     }
 
-    // --- rigid bodies: not wired to the vehicle world yet -------------------
-    BodyHandle CreateBody(const BodyDesc&) override {
-        LUCIDA_WARN(Physics, "CreateBody is not implemented in the Jolt vehicle world yet");
-        return BodyHandle{};
+    // --- rigid bodies ------------------------------------------------------
+    BodyHandle CreateBody(const BodyDesc& desc) override {
+        return m_world.CreateBody(desc);
     }
-    void DestroyBody(BodyHandle) override {}
-    Transform GetBodyTransform(BodyHandle) const override { return Transform{}; }
-    void SetBodyTransform(BodyHandle, const Transform&) override {}
+    void DestroyBody(BodyHandle body) override {
+        m_world.DestroyBody(body);
+    }
+    Transform GetBodyTransform(BodyHandle body) const override {
+        return m_world.GetBodyTransform(body);
+    }
+    void SetBodyTransform(BodyHandle body, const Transform& transform) override {
+        m_world.SetBodyTransform(body, transform);
+    }
 
     // --- vehicle ------------------------------------------------------------
     VehicleHandle CreateVehicle(const VehicleDesc&) override {

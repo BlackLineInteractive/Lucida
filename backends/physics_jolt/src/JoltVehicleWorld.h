@@ -17,6 +17,7 @@
 //  • The caller reads car_pos / car_rot / wheels[] every frame.
 //  • All units are SI (metres, kg, N, rad).
 
+#include "lucida/physics/PhysicsBackend.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <array>
@@ -48,6 +49,12 @@ public:
     void Shutdown();
     void Step(float dt, const CarInput& input);
     void Reset();
+
+    // ---- Rigid Bodies ----
+    lucida::BodyHandle CreateBody(const lucida::BodyDesc& desc);
+    void               DestroyBody(lucida::BodyHandle body);
+    lucida::Transform  GetBodyTransform(lucida::BodyHandle body) const;
+    void               SetBodyTransform(lucida::BodyHandle body, const lucida::Transform& transform);
 
     // ---- Outputs ----
     glm::vec3 car_pos   = glm::vec3(0.0f, 0.5f, 0.0f);

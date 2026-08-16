@@ -73,6 +73,18 @@ struct UiState {
 
     // Viewport 3D line gizmo & frustum visualizers (cameras, lights, bounds)
     bool show_visualizers = true;
+
+    // Play Mode (M22) state
+    enum class PlayState : u8 {
+        Edit = 0,
+        Playing,
+        Paused
+    };
+    PlayState play_state = PlayState::Edit;
+    bool request_play  = false;
+    bool request_pause = false;
+    bool request_step  = false;
+    bool request_stop  = false;
 };
 
 class DebugUI {
@@ -93,6 +105,7 @@ public:
 private:
     void BuildDefaultLayout(unsigned dockspace_id);
     void DrawMenuBar(World& world, SceneAssets& assets, UiState& ui);
+    void DrawPlayToolbar(UiState& ui);
     void DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
                       const CameraController& camera, const SceneAssets& assets,
                       const RenderStats& stats, const RenderSettings& settings, const FrameTime& time);

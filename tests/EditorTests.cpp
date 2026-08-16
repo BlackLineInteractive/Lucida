@@ -8,9 +8,12 @@
 // Run with `ctest --test-dir build` or by executing the binary directly; it
 // returns the number of failed checks.
 
+#include "lucida/backend/JoltBackend.h"
 #include "lucida/framework/Commands.h"
 #include "lucida/framework/Picking.h"
+#include "lucida/framework/Systems.h"
 #include "lucida/render/Components.h"
+#include "lucida/runtime/World.h"
 #include <cstdio>
 using namespace lucida;
 
@@ -108,6 +111,109 @@ int main() {
     check(assets.materials[0].type == 1 && assets.materials[0].metallic == 1.0f, "material edit applied");
     stack.Undo();
     check(assets.materials[0].type == 0 && assets.materials[0].metallic == 0.0f, "material undo restored");
+
+    // --- WorldSnapshot (Play Mode M22) Tests
+    Registry play_reg;
+    Entity parent_ent = play_reg.Create("parent_node");
+    play_reg.Get<LocalTransform>(parent_ent)->position = Vec3(10.0f, 0.0f, 0.0f);
+    play_reg.Add<LightSource>(parent_ent, LightSource{LightType::Point, Vec3(1.0f, 0.5f, 0.2f), 100.0f});
+
+    Entity child_ent = play_reg.Create("child_node");
+    play_reg.Get<LocalTransform>(child_ent)->position = Vec3(0.0f, 5.0f, 0.0f);
+    play_reg.Add<Parent>(child_ent, Parent{parent_ent});
+    play_reg.Add<PrimitiveShape>(child_ent, PrimitiveShape{PrimitiveType::Sphere, Vec3(2.0f)});
+    play_reg.Add<CameraComponent>(child_ent, CameraComponent{ProjectionType::Perspective, 75.0f});
+
+    UpdateWorldTransforms(play_reg);
+    check(play_reg.Count() == 2, "initial world has 2 entities");
+
+    // Capture snapshot (as done when clicking Play)
+    WorldSnapshot play_snapshot = WorldSnapshot::Capture(play_reg);
+    check(play_snapshot.entities.size() == 2, "snapshot captured 2 entities");
+
+    // Simulate play mode mutating the world: move entities, spawn temporary debris, delete parent
+    play_reg.Get<LocalTransform>(parent_ent)->position = Vec3(999.0f, 999.0f, 999.0f);
+    Entity debris = play_reg.Create("temp_debris");
+    play_reg.Get<LocalTransform>(debris)->position = Vec3(42.0f);
+    check(play_reg.Count() == 3, "world mutated during play mode (3 entities)");
+
+    // Restore snapshot (as done when clicking Stop)
+    play_snapshot.Restore(play_reg);
+    check(play_reg.Count() == 2, "restored world has exactly original entity count (2)");
+
+    // Verify restored entities and components
+    bool found_parent = false;
+    bool found_child = false;
+    Entity restored_parent = kNullEntity;
+    Entity restored_child = kNullEntity;
+
+    for (auto e : play_reg.Raw().view<Name>()) {
+        const std::string& n = play_reg.Get<Name>(e)->value;
+        if (n == "parent_node") {
+            found_parent = true;
+            restored_parent = e;
+            const LocalTransform* lt = play_reg.Get<LocalTransform>(e);
+            check(lt && lt->position.x == 10.0f, "restored parent position is correct (10, 0, 0)");
+            const LightSource* ls = play_reg.Get<LightSource>(e);
+            check(ls && ls->intensity == 100.0f, "restored parent has light source");
+        } else if (n == "child_node") {
+            found_child = true;
+            restored_child = e;
+            const LocalTransform* lt = play_reg.Get<LocalTransform>(e);
+            check(lt && lt->position.y == 5.0f, "restored child position is correct (0, 5, 0)");
+            const PrimitiveShape* ps = play_reg.Get<PrimitiveShape>(e);
+            check(ps && ps->type == PrimitiveType::Sphere && ps->size.x == 2.0f, "restored child has sphere shape");
+            const CameraComponent* cam = play_reg.Get<CameraComponent>(e);
+            check(cam && cam->fov == 75.0f, "restored child has camera component");
+        }
+    }
+    check(found_parent && found_child, "both entities found after restore");
+
+    // Verify hierarchy was rebuilt with new valid entity IDs
+    if (restored_child != kNullEntity) {
+        const Parent* p = play_reg.Get<Parent>(restored_child);
+        check(p && p->entity == restored_parent, "parent-child hierarchy correctly mapped and restored");
+    }
+
+    // --- Dynamic RigidBody Physics Simulation Test (Jolt)
+    World physics_world;
+    physics_world.Init();
+    auto jolt = CreateJoltBackend();
+    check(jolt && jolt->Init(), "jolt physics backend initialized");
+
+    PhysicsSystem* phys_sys = physics_world.AddSystem<PhysicsSystem>(*jolt);
+    phys_sys->SetPaused(false); // Play mode active
+
+    // Create falling dynamic sphere at y = 10.0
+    Entity falling_ball = physics_world.Entities().Create("falling_ball");
+    physics_world.Entities().Get<LocalTransform>(falling_ball)->position = Vec3(0.0f, 10.0f, 0.0f);
+    physics_world.Entities().Add<PrimitiveShape>(falling_ball, PrimitiveShape{PrimitiveType::Sphere, Vec3(0.5f)});
+    RigidBody rb{};
+    rb.type = BodyType::Dynamic;
+    rb.shape = ShapeType::Sphere;
+    rb.mass = 5.0f;
+    physics_world.Entities().Add<RigidBody>(falling_ball, rb);
+
+    FrameTime ft;
+    ft.delta = 1.0f / 60.0f;
+    ft.real_delta = 1.0f / 60.0f;
+
+    // Step simulation 10 frames (approx 0.16s) -> ball should fall (y < 10)
+    for (int f = 0; f < 10; ++f) {
+        physics_world.RunPhase(UpdatePhase::Simulation, ft);
+    }
+    const f32 y_after_10 = physics_world.Entities().Get<LocalTransform>(falling_ball)->position.y;
+    check(y_after_10 < 9.9f && y_after_10 > 0.0f, "dynamic body falls down under gravity (y < 9.9)");
+
+    // Step simulation 120 more frames (total > 2.0s) -> ball should hit ground plane (around y ~ 0.5)
+    for (int f = 0; f < 120; ++f) {
+        physics_world.RunPhase(UpdatePhase::Simulation, ft);
+    }
+    const f32 y_ground = physics_world.Entities().Get<LocalTransform>(falling_ball)->position.y;
+    check(y_ground > 0.0f && y_ground < 5.0f, "dynamic sphere falls and approaches ground");
+
+    jolt->Shutdown();
+    physics_world.Shutdown();
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures;

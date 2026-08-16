@@ -18,6 +18,7 @@
 #include <entt/entt.hpp>
 
 #include <string>
+#include <type_traits>
 
 namespace lucida {
 
@@ -83,8 +84,12 @@ public:
     bool Valid(Entity e) const { return m_registry.valid(e); }
 
     template <typename T, typename... Args>
-    T& Add(Entity e, Args&&... args) {
-        return m_registry.emplace_or_replace<T>(e, static_cast<Args&&>(args)...);
+    decltype(auto) Add(Entity e, Args&&... args) {
+        if constexpr (std::is_empty_v<T>) {
+            m_registry.emplace_or_replace<T>(e, static_cast<Args&&>(args)...);
+        } else {
+            return m_registry.emplace_or_replace<T>(e, static_cast<Args&&>(args)...);
+        }
     }
 
     template <typename T>

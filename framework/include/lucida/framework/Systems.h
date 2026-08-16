@@ -24,8 +24,12 @@ public:
     UpdatePhase Phase() const override { return UpdatePhase::Simulation; }
     void Update(World& world, const FrameTime& time) override;
 
+    void SetPaused(bool paused) { m_paused = paused; }
+    bool IsPaused() const { return m_paused; }
+
 private:
     IPhysicsBackend& m_physics;
+    bool             m_paused = true;
 };
 
 // Presentation step. Pushes world transforms to the backend, and only for

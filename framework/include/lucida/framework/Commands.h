@@ -12,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace lucida {
@@ -148,7 +149,7 @@ private:
     std::string m_name;
 };
 
-// Entity Snapshot for complete state capture (Create/Delete/Duplicate)
+// Entity Snapshot for complete state capture (Create/Delete/Duplicate/PlayMode)
 struct EntitySnapshot {
     std::string name;
     bool has_transform = false;
@@ -165,6 +166,15 @@ struct EntitySnapshot {
     RigidBody rigid_body{};
     bool has_parent = false;
     Entity parent_entity = kNullEntity;
+    bool has_light = false;
+    LightSource light{};
+    bool has_camera = false;
+    CameraComponent camera{};
+    bool has_terrain = false;
+    TerrainComponent terrain{};
+    bool has_mesh_instance = false;
+    MeshInstance mesh_instance{};
+    bool has_scene_graph_node = false;
 
     static EntitySnapshot Capture(Registry& reg, Entity e) {
         EntitySnapshot s;
@@ -177,10 +187,15 @@ struct EntitySnapshot {
         if (const Visibility* v = reg.Get<Visibility>(e)) { s.has_visibility = true; s.visibility = *v; }
         if (const RigidBody* rb = reg.Get<RigidBody>(e)) { s.has_rigid_body = true; s.rigid_body = *rb; }
         if (const Parent* pr = reg.Get<Parent>(e)) { s.has_parent = true; s.parent_entity = pr->entity; }
+        if (const LightSource* l = reg.Get<LightSource>(e)) { s.has_light = true; s.light = *l; }
+        if (const CameraComponent* c = reg.Get<CameraComponent>(e)) { s.has_camera = true; s.camera = *c; }
+        if (const TerrainComponent* tr = reg.Get<TerrainComponent>(e)) { s.has_terrain = true; s.terrain = *tr; }
+        if (const MeshInstance* mi = reg.Get<MeshInstance>(e)) { s.has_mesh_instance = true; s.mesh_instance = *mi; }
+        if (reg.Has<SceneGraphNode>(e)) { s.has_scene_graph_node = true; }
         return s;
     }
 
-    Entity Restore(Registry& reg, Entity target = kNullEntity) const {
+    Entity Restore(Registry& reg, Entity target = kNullEntity, bool restore_parent = true) const {
         Entity e = (target != kNullEntity && reg.Valid(target)) ? target : reg.Create(name);
         if (Name* n = reg.Get<Name>(e)) n->value = name;
         if (has_transform) {
@@ -192,9 +207,58 @@ struct EntitySnapshot {
         if (has_bounds) reg.Add<LocalBounds>(e, bounds);
         if (has_visibility) reg.Add<Visibility>(e, visibility);
         if (has_rigid_body) reg.Add<RigidBody>(e, rigid_body);
-        if (has_parent && parent_entity != kNullEntity && reg.Valid(parent_entity))
+        if (has_light) reg.Add<LightSource>(e, light);
+        if (has_camera) reg.Add<CameraComponent>(e, camera);
+        if (has_terrain) reg.Add<TerrainComponent>(e, terrain);
+        if (has_mesh_instance) reg.Add<MeshInstance>(e, mesh_instance);
+        if (has_scene_graph_node) reg.Add<SceneGraphNode>(e);
+        if (restore_parent && has_parent && parent_entity != kNullEntity && reg.Valid(parent_entity))
             reg.Add<Parent>(e, Parent{parent_entity});
         return e;
+    }
+};
+
+// Full World / Registry Snapshot for Play Mode state save and restore
+struct WorldSnapshot {
+    struct EntityEntry {
+        Entity original_id = kNullEntity;
+        EntitySnapshot snapshot;
+    };
+
+    std::vector<EntityEntry> entities;
+
+    static WorldSnapshot Capture(Registry& reg) {
+        WorldSnapshot ws;
+        for (auto entity : reg.Raw().view<Name>()) {
+            if (reg.Valid(entity)) {
+                ws.entities.push_back({entity, EntitySnapshot::Capture(reg, entity)});
+            }
+        }
+        return ws;
+    }
+
+    void Restore(Registry& reg) const {
+        reg.Clear();
+        std::unordered_map<Entity, Entity> old_to_new;
+        old_to_new.reserve(entities.size());
+
+        // First pass: restore all entities and components except parent pointers
+        for (const auto& entry : entities) {
+            Entity new_e = entry.snapshot.Restore(reg, kNullEntity, false);
+            old_to_new[entry.original_id] = new_e;
+        }
+
+        // Second pass: reconstruct parent hierarchy using mapped entity IDs
+        for (const auto& entry : entities) {
+            if (entry.snapshot.has_parent && entry.snapshot.parent_entity != kNullEntity) {
+                auto it_parent = old_to_new.find(entry.snapshot.parent_entity);
+                auto it_child  = old_to_new.find(entry.original_id);
+                if (it_parent != old_to_new.end() && it_child != old_to_new.end()) {
+                    reg.Add<Parent>(it_child->second, Parent{it_parent->second});
+                }
+            }
+        }
+        UpdateWorldTransforms(reg);
     }
 };
 

@@ -29,6 +29,8 @@
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
@@ -43,6 +45,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <cmath>
+#include <vector>
 
 JPH_SUPPRESS_WARNINGS
 
@@ -115,6 +118,15 @@ struct PhysicsWorld::Impl {
     // Bodies
     JPH::BodyID car_body_id;
     JPH::BodyID ground_id;
+
+    // Rigid bodies record
+    struct BodyRecord {
+        JPH::BodyID id;
+        lucida::u32 generation = 1;
+        bool active = false;
+    };
+    std::vector<BodyRecord> bodies;
+    std::vector<lucida::u32> free_body_indices;
 
     // Vehicle
     JPH::Ref<JPH::VehicleConstraint> vehicle;
@@ -462,4 +474,148 @@ void PhysicsWorld::Shutdown() {
     JPH::Factory::sInstance = nullptr;
 
     is_initialised = false;
+}
+
+lucida::BodyHandle PhysicsWorld::CreateBody(const lucida::BodyDesc& desc) {
+    if (!is_initialised || !m_impl || !m_impl->physics_system) return lucida::BodyHandle{};
+
+    auto& body_iface = m_impl->physics_system->GetBodyInterface();
+
+    JPH::Ref<JPH::Shape> shape;
+    switch (desc.shape) {
+    case lucida::ShapeType::Sphere: {
+        const float radius = std::max(0.01f, desc.half_extent.x);
+        JPH::SphereShapeSettings s(radius);
+        s.SetEmbedded();
+        auto res = s.Create();
+        if (res.IsValid()) shape = res.Get();
+        break;
+    }
+    case lucida::ShapeType::Capsule: {
+        const float half_height = std::max(0.01f, desc.half_extent.y);
+        const float radius = std::max(0.01f, desc.half_extent.x);
+        JPH::CapsuleShapeSettings s(half_height, radius);
+        s.SetEmbedded();
+        auto res = s.Create();
+        if (res.IsValid()) shape = res.Get();
+        break;
+    }
+    case lucida::ShapeType::Cylinder: {
+        const float half_height = std::max(0.01f, desc.half_extent.y);
+        const float radius = std::max(0.01f, desc.half_extent.x);
+        JPH::CylinderShapeSettings s(half_height, radius);
+        s.SetEmbedded();
+        auto res = s.Create();
+        if (res.IsValid()) shape = res.Get();
+        break;
+    }
+    case lucida::ShapeType::Box:
+    default: {
+        const JPH::Vec3 half_extent(std::max(0.01f, desc.half_extent.x),
+                                    std::max(0.01f, desc.half_extent.y),
+                                    std::max(0.01f, desc.half_extent.z));
+        JPH::BoxShapeSettings s(half_extent);
+        s.SetEmbedded();
+        auto res = s.Create();
+        if (res.IsValid()) shape = res.Get();
+        break;
+    }
+    }
+
+    if (!shape) return lucida::BodyHandle{};
+
+    JPH::EMotionType motion_type = JPH::EMotionType::Dynamic;
+    JPH::ObjectLayer layer = Layers::MOVING;
+
+    if (desc.type == lucida::BodyType::Static) {
+        motion_type = JPH::EMotionType::Static;
+        layer = Layers::NON_MOVING;
+    } else if (desc.type == lucida::BodyType::Kinematic) {
+        motion_type = JPH::EMotionType::Kinematic;
+        layer = Layers::MOVING;
+    }
+
+    JPH::BodyCreationSettings bs(
+        shape,
+        JPH::RVec3(desc.position.x, desc.position.y, desc.position.z),
+        JPH::Quat(desc.rotation.x, desc.rotation.y, desc.rotation.z, desc.rotation.w),
+        motion_type,
+        layer);
+
+    if (desc.type == lucida::BodyType::Dynamic) {
+        bs.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+        bs.mMassPropertiesOverride.mMass = std::max(0.01f, desc.mass);
+    }
+    bs.mFriction = desc.friction;
+    bs.mRestitution = desc.restitution;
+    bs.mLinearDamping = 0.05f;
+    bs.mAngularDamping = 0.05f;
+
+    JPH::Body* body = body_iface.CreateBody(bs);
+    if (!body) return lucida::BodyHandle{};
+
+    const JPH::BodyID body_id = body->GetID();
+    body_iface.AddBody(body_id, (desc.type == lucida::BodyType::Dynamic) ? JPH::EActivation::Activate : JPH::EActivation::DontActivate);
+
+    lucida::u32 index = 0;
+    if (!m_impl->free_body_indices.empty()) {
+        index = m_impl->free_body_indices.back();
+        m_impl->free_body_indices.pop_back();
+        m_impl->bodies[index].id = body_id;
+        m_impl->bodies[index].active = true;
+    } else {
+        index = static_cast<lucida::u32>(m_impl->bodies.size());
+        m_impl->bodies.push_back({body_id, 1, true});
+    }
+
+    return lucida::BodyHandle{index, m_impl->bodies[index].generation};
+}
+
+void PhysicsWorld::DestroyBody(lucida::BodyHandle handle) {
+    if (!is_initialised || !m_impl || !m_impl->physics_system || !handle.IsValid()) return;
+    if (handle.index >= m_impl->bodies.size()) return;
+
+    auto& rec = m_impl->bodies[handle.index];
+    if (!rec.active || rec.generation != handle.generation) return;
+
+    auto& body_iface = m_impl->physics_system->GetBodyInterface();
+    body_iface.RemoveBody(rec.id);
+    body_iface.DestroyBody(rec.id);
+
+    rec.active = false;
+    rec.generation++;
+    m_impl->free_body_indices.push_back(handle.index);
+}
+
+lucida::Transform PhysicsWorld::GetBodyTransform(lucida::BodyHandle handle) const {
+    lucida::Transform t{};
+    if (!is_initialised || !m_impl || !m_impl->physics_system || !handle.IsValid()) return t;
+    if (handle.index >= m_impl->bodies.size()) return t;
+
+    const auto& rec = m_impl->bodies[handle.index];
+    if (!rec.active || rec.generation != handle.generation) return t;
+
+    const auto& body_iface = m_impl->physics_system->GetBodyInterface();
+    const JPH::RVec3 pos = body_iface.GetPosition(rec.id);
+    const JPH::Quat rot = body_iface.GetRotation(rec.id);
+
+    t.position = ToGLM(pos);
+    t.rotation = ToGLM(rot);
+    t.scale = 1.0f;
+    return t;
+}
+
+void PhysicsWorld::SetBodyTransform(lucida::BodyHandle handle, const lucida::Transform& transform) {
+    if (!is_initialised || !m_impl || !m_impl->physics_system || !handle.IsValid()) return;
+    if (handle.index >= m_impl->bodies.size()) return;
+
+    auto& rec = m_impl->bodies[handle.index];
+    if (!rec.active || rec.generation != handle.generation) return;
+
+    auto& body_iface = m_impl->physics_system->GetBodyInterface();
+    body_iface.SetPositionAndRotation(
+        rec.id,
+        JPH::RVec3(transform.position.x, transform.position.y, transform.position.z),
+        JPH::Quat(transform.rotation.x, transform.rotation.y, transform.rotation.z, transform.rotation.w),
+        JPH::EActivation::Activate);
 }

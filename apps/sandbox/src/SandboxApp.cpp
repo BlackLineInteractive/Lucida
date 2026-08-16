@@ -186,7 +186,10 @@ public:
 
         m_physics = CreateJoltBackend();
         if (m_physics->Init()) {
-            world.AddSystem<PhysicsSystem>(*m_physics);
+            m_physics_system = world.AddSystem<PhysicsSystem>(*m_physics);
+            if (m_physics_system) {
+                m_physics_system->SetPaused(m_ui_state.play_state != UiState::PlayState::Playing);
+            }
         }
         m_render_sync_system = world.AddSystem<RenderSyncSystem>(*m_renderer);
 
@@ -296,13 +299,51 @@ public:
 
     void OnFixedUpdate(World&, const FrameTime& time) override {
         LUCIDA_PROFILE("fixed");
-        // Everything else this frame is a system: stepping physics and pushing
-        // transforms belongs to them, not to the application.
         m_camera.FixedUpdate(m_input, time.delta);
+        if (m_step_tick) {
+            m_step_tick = false;
+            if (m_physics_system) m_physics_system->SetPaused(true);
+        }
     }
 
     void OnRender(World& world, const FrameTime& time) override {
         LUCIDA_PROFILE("render");
+
+        // Handle Play Mode state requests
+        if (m_ui_state.request_play) {
+            m_ui_state.request_play = false;
+            if (m_ui_state.play_state == UiState::PlayState::Edit) {
+                // Entering play mode: capture world snapshot
+                m_play_snapshot = WorldSnapshot::Capture(world.Entities());
+                LUCIDA_INFO(App, "Play mode started (captured snapshot with %zu entities)", m_play_snapshot.entities.size());
+            }
+            m_ui_state.play_state = UiState::PlayState::Playing;
+            if (m_physics_system) m_physics_system->SetPaused(false);
+        }
+        if (m_ui_state.request_pause) {
+            m_ui_state.request_pause = false;
+            m_ui_state.play_state = UiState::PlayState::Paused;
+            if (m_physics_system) m_physics_system->SetPaused(true);
+            LUCIDA_INFO(App, "Play mode paused");
+        }
+        if (m_ui_state.request_step) {
+            m_ui_state.request_step = false;
+            m_ui_state.play_state = UiState::PlayState::Paused;
+            m_step_tick = true;
+            if (m_physics_system) m_physics_system->SetPaused(false);
+            LUCIDA_INFO(App, "Play mode step single tick");
+        }
+        if (m_ui_state.request_stop) {
+            m_ui_state.request_stop = false;
+            m_ui_state.play_state = UiState::PlayState::Edit;
+            if (m_physics_system) m_physics_system->SetPaused(true);
+
+            // Leaving play mode: restore world snapshot
+            m_play_snapshot.Restore(world.Entities());
+            m_fingerprint = 0; // force scene republish
+            Republish(world);
+            LUCIDA_INFO(App, "Play mode stopped (restored world snapshot)");
+        }
 
         if (m_ui_state.requested_backend != m_ui_state.current_backend) {
             SwitchBackend(world, m_ui_state.requested_backend);
@@ -564,7 +605,11 @@ private:
     std::unique_ptr<IPlatform>       m_platform;
     std::unique_ptr<IRenderBackend>  m_renderer;
     std::unique_ptr<IPhysicsBackend> m_physics;
+    PhysicsSystem*                   m_physics_system = nullptr;
     RenderSyncSystem*                m_render_sync_system = nullptr;
+
+    WorldSnapshot    m_play_snapshot;
+    bool             m_step_tick = false;
 
     CameraController m_camera;
     DebugUI          m_ui;

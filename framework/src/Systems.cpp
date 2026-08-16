@@ -13,26 +13,70 @@
 namespace lucida {
 
 void PhysicsSystem::Update(World& world, const FrameTime& time) {
-    LUCIDA_PROFILE("physics");
-
     Registry& entities = world.Entities();
 
-    // Intent in, before the step: a vehicle's input has to be applied to the
-    // simulation it is about to run, not to the one that already ran.
+    // 1. Ensure all RigidBody components have valid physics bodies
+    for (auto [entity, rb, local] : entities.View<RigidBody, LocalTransform>().each()) {
+        if (!rb.body.IsValid() && rb.is_active) {
+            BodyDesc desc;
+            desc.type = rb.type;
+            desc.shape = rb.shape;
+            desc.position = local.position;
+            desc.rotation = local.rotation;
+            desc.mass = rb.mass;
+            desc.friction = rb.friction;
+            desc.restitution = rb.restitution;
+
+            // Determine shape size from PrimitiveShape, LocalBounds, or fallback
+            if (const PrimitiveShape* ps = entities.Get<PrimitiveShape>(entity)) {
+                desc.half_extent = ps->HalfExtents() * local.scale;
+                if (ps->type == PrimitiveType::Sphere)        desc.shape = ShapeType::Sphere;
+                else if (ps->type == PrimitiveType::Box)      desc.shape = ShapeType::Box;
+                else if (ps->type == PrimitiveType::Cylinder) desc.shape = ShapeType::Cylinder;
+                else if (ps->type == PrimitiveType::Cone)     desc.shape = ShapeType::Cylinder;
+                else if (ps->type == PrimitiveType::Plane) {
+                    desc.shape = ShapeType::Box;
+                    desc.type = BodyType::Static;
+                }
+            } else if (const LocalBounds* lb = entities.Get<LocalBounds>(entity)) {
+                desc.half_extent = (lb->max - lb->min) * 0.5f * local.scale;
+                desc.shape = ShapeType::Box;
+            } else {
+                desc.half_extent = local.scale * 0.5f;
+            }
+
+            rb.body = m_physics.CreateBody(desc);
+        } else if (rb.body.IsValid() && m_paused) {
+            // While editing / paused, sync entity transform changes to the physics body
+            m_physics.SetBodyTransform(rb.body, Transform{local.position, local.rotation, local.scale.x});
+        }
+    }
+
+    if (m_paused) return;
+    LUCIDA_PROFILE("physics");
+
+    // 2. Drive Vehicles
     for (auto [entity, vehicle] : entities.View<Vehicle>().each()) {
         if (vehicle.handle.IsValid()) m_physics.SetVehicleInput(vehicle.handle, vehicle.input);
     }
 
+    // 3. Step simulation
     m_physics.Step(time.delta);
 
-    // Poses out. Physics owns the transform of anything it simulates, so this
-    // writes rather than blends: a gameplay system that also moved the entity
-    // this tick would be fighting the solver, and the solver would win anyway.
+    // 4. Update Vehicle poses
     for (auto [entity, vehicle, local] : entities.View<Vehicle, LocalTransform>().each()) {
         if (!vehicle.handle.IsValid()) continue;
         const VehicleState state = m_physics.GetVehicleState(vehicle.handle);
         local.position = state.position;
         local.rotation = state.rotation;
+    }
+
+    // 5. Update RigidBody poses (physics -> entity)
+    for (auto [entity, rb, local] : entities.View<RigidBody, LocalTransform>().each()) {
+        if (!rb.body.IsValid() || rb.type == BodyType::Static) continue;
+        const Transform t = m_physics.GetBodyTransform(rb.body);
+        local.position = t.position;
+        local.rotation = t.rotation;
     }
 }
 

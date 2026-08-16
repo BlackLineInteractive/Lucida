@@ -171,6 +171,19 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
 
     // Global keyboard shortcuts outside text fields
     if (!io.WantTextInput) {
+        if (modifier && ImGui::IsKeyPressed(ImGuiKey_P, false)) {
+            if (io.KeyShift) {
+                if (ui.play_state == UiState::PlayState::Playing) ui.request_pause = true;
+                else if (ui.play_state == UiState::PlayState::Paused) ui.request_play = true;
+            } else {
+                if (ui.play_state == UiState::PlayState::Edit) ui.request_play = true;
+                else ui.request_stop = true;
+            }
+        }
+        if (modifier && ImGui::IsKeyPressed(ImGuiKey_Period, false)) {
+            if (ui.play_state == UiState::PlayState::Paused) ui.request_step = true;
+        }
+
         if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
             if (ui.selection != kNullEntity && world.Entities().Valid(ui.selection)) {
                 Entity to_del = ui.selection;
@@ -322,7 +335,87 @@ void DebugUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
+    if (ImGui::BeginMenu("Play")) {
+        if (ui.play_state == UiState::PlayState::Edit) {
+            if (ImGui::MenuItem("Play", "Cmd+P")) ui.request_play = true;
+        } else {
+            if (ImGui::MenuItem("Stop", "Cmd+P")) ui.request_stop = true;
+        }
+        if (ui.play_state == UiState::PlayState::Playing) {
+            if (ImGui::MenuItem("Pause", "Cmd+Shift+P")) ui.request_pause = true;
+        } else if (ui.play_state == UiState::PlayState::Paused) {
+            if (ImGui::MenuItem("Resume", "Cmd+Shift+P")) ui.request_play = true;
+            if (ImGui::MenuItem("Step Frame", "Cmd+.")) ui.request_step = true;
+        }
+        ImGui::EndMenu();
+    }
+
+    DrawPlayToolbar(ui);
+
     ImGui::EndMainMenuBar();
+}
+
+void DebugUI::DrawPlayToolbar(UiState& ui) {
+    const float bar_width = ImGui::GetWindowWidth();
+    const float toolbar_width = 250.0f;
+    const float target_x = (bar_width - toolbar_width) * 0.5f;
+    if (target_x > ImGui::GetCursorPosX()) {
+        ImGui::SameLine(target_x);
+    } else {
+        ImGui::SameLine();
+    }
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 0.0f));
+
+    if (ui.play_state == UiState::PlayState::Edit) {
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(48, 175, 90, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(28, 120, 60, 255));
+        if (ImGui::Button(" > Play (Cmd+P) ", ImVec2(120, 0))) {
+            ui.request_play = true;
+        }
+        ImGui::PopStyleColor(3);
+    } else {
+        // Stop button
+        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(185, 45, 45, 230));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(215, 60, 60, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(155, 35, 35, 255));
+        if (ImGui::Button(" [ ] Stop ", ImVec2(70, 0))) {
+            ui.request_stop = true;
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+        if (ui.play_state == UiState::PlayState::Playing) {
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(195, 145, 25, 230));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(225, 170, 35, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(165, 125, 20, 255));
+            if (ImGui::Button(" || Pause ", ImVec2(75, 0))) {
+                ui.request_pause = true;
+            }
+            ImGui::PopStyleColor(3);
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(48, 175, 90, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(28, 120, 60, 255));
+            if (ImGui::Button(" > Resume ", ImVec2(75, 0))) {
+                ui.request_play = true;
+            }
+            ImGui::PopStyleColor(3);
+
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 105, 195, 230));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(60, 130, 230, 255));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(35, 85, 165, 255));
+            if (ImGui::Button(" |> Step ", ImVec2(65, 0))) {
+                ui.request_step = true;
+            }
+            ImGui::PopStyleColor(3);
+        }
+    }
+
+    ImGui::PopStyleVar(2);
 }
 
 void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
@@ -520,6 +613,37 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             else            ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
             if (ImGui::Button("👁️ Overlays")) ui.show_visualizers = !ui.show_visualizers;
             ImGui::PopStyleColor();
+
+            ImGui::SameLine(0, 4.0f);
+            ImGui::TextDisabled("|");
+            ImGui::SameLine(0, 4.0f);
+
+            // Play Mode quick buttons in Viewport
+            if (ui.play_state == UiState::PlayState::Edit) {
+                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
+                if (ImGui::Button("▶ Play")) ui.request_play = true;
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(185, 45, 45, 230));
+                if (ImGui::Button("⏹ Stop")) ui.request_stop = true;
+                ImGui::PopStyleColor();
+
+                ImGui::SameLine(0, 4.0f);
+                if (ui.play_state == UiState::PlayState::Playing) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(195, 145, 25, 230));
+                    if (ImGui::Button("⏸ Pause")) ui.request_pause = true;
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(38, 145, 75, 230));
+                    if (ImGui::Button("▶ Resume")) ui.request_play = true;
+                    ImGui::PopStyleColor();
+
+                    ImGui::SameLine(0, 4.0f);
+                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(45, 105, 195, 230));
+                    if (ImGui::Button("⏭ Step")) ui.request_step = true;
+                    ImGui::PopStyleColor();
+                }
+            }
         }
         ImGui::EndChild();
         ImGui::PopStyleVar(6);
@@ -1073,12 +1197,14 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
             int type_idx = static_cast<int>(rb->type);
             if (ImGui::Combo("Body Type", &type_idx, body_types, 3)) {
                 rb->type = static_cast<BodyType>(type_idx);
+                rb->body = BodyHandle{};
             }
 
             const char* shape_types[] = { "Box", "Sphere", "Capsule", "Plane", "Mesh" };
             int shape_idx = static_cast<int>(rb->shape);
             if (ImGui::Combo("Collider Shape", &shape_idx, shape_types, 5)) {
                 rb->shape = static_cast<ShapeType>(shape_idx);
+                rb->body = BodyHandle{};
             }
 
             if (rb->type == BodyType::Dynamic) {
