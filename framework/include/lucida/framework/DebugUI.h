@@ -35,6 +35,15 @@ struct UiState {
     bool show_content_browser = true;
     bool show_mesh_editor     = true;
     bool show_texture_browser = true;
+    bool show_gameplay_debugger   = true;
+    bool show_engine_diagnostics  = true;
+
+    // Gameplay Debugger & Diagnostics State
+    f32  gameplay_time_scale     = 1.0f;
+    bool draw_physics_colliders  = true;
+    bool draw_raycast_sensors    = true;
+    bool draw_ai_perception      = true;
+    bool draw_audio_radii        = true;
 
     char hierarchy_search[128] = {0};
     char content_search[128]   = {0};
@@ -159,6 +168,8 @@ private:
     void DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets);
     void DrawMeshEditor(World& world, UiState& ui, SceneAssets& assets);
     void DrawTextureBrowser(UiState& ui, SceneAssets& assets);
+    void DrawGameplayDebugger(World& world, UiState& ui);
+    void DrawEngineDiagnostics(World& world, UiState& ui, const RenderStats& stats);
     void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
                    const char* name);
     void TrackMaterialEdit(SceneAssets& assets, i32 mat_index, const GPUMaterial& current,

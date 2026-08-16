@@ -25,6 +25,8 @@
 #include "lucida/resource/Prefab.h"
 #include "lucida/resource/TextureManager.h"
 #include "lucida/runtime/Particles.h"
+#include "lucida/runtime/DebugDraw.h"
+#include "lucida/runtime/GameplayComponents.h"
 #include "lucida/runtime/World.h"
 #include <cstdio>
 using namespace lucida;
@@ -446,7 +448,108 @@ int main() {
     Entity pawn_node = Prefab::CreatePawnNode(prefab_world, Vec3(0, 2, 5), "Player");
     check(prefab_world.Entities().Get<CameraComponent>(pawn_node) != nullptr, "PawnNode contains CameraComponent");
     check(prefab_world.Entities().Get<AudioListenerComponent>(pawn_node) != nullptr, "PawnNode contains AudioListenerComponent");
+
+    // All Node Archetypes Testing
+    Entity decal_node = Prefab::CreateDecalNode(prefab_world, "blood.png", Vec3(0));
+    check(prefab_world.Entities().Get<DecalComponent>(decal_node) != nullptr, "DecalNode contains DecalComponent");
+
+    Entity text_node = Prefab::CreateText3DNode(prefab_world, "Score: 100", Vec3(0, 2, 0));
+    check(prefab_world.Entities().Get<Text3DComponent>(text_node) != nullptr, "Text3DNode contains Text3DComponent");
+
+    Entity dir_light = Prefab::CreateDirectionalLightNode(prefab_world, Vec3(0, -1, 0));
+    check(prefab_world.Entities().Get<LightSource>(dir_light)->type == LightType::Directional, "DirectionalLightNode created");
+
+    Entity fog_node = Prefab::CreateFogVolumeNode(prefab_world, Vec3(0), Vec3(10));
+    check(prefab_world.Entities().Get<FogVolumeComponent>(fog_node) != nullptr, "FogVolumeNode contains FogVolumeComponent");
+
+    Entity post_node = Prefab::CreatePostProcessVolumeNode(prefab_world, Vec3(0), Vec3(10));
+    check(prefab_world.Entities().Get<PostProcessVolumeComponent>(post_node) != nullptr, "PostProcessVolumeNode created");
+
+    Entity cine_cam = Prefab::CreateCinematicCameraNode(prefab_world, Vec3(0, 1.8f, 5.0f), 85.0f, 1.4f);
+    check(prefab_world.Entities().Get<CinematicCameraComponent>(cine_cam)->f_stop == 1.4f, "CinematicCameraNode has 85mm f/1.4 lens");
+
+    Entity spring_node = Prefab::CreateSpringArmNode(prefab_world, Vec3(0), 4.5f);
+    check(prefab_world.Entities().Get<SpringArmComponent>(spring_node) != nullptr, "SpringArmNode contains SpringArmComponent");
+
+    Entity water_node = Prefab::CreateWaterBodyNode(prefab_world, Vec3(0), Vec2(50, 50));
+    check(prefab_world.Entities().Get<WaterBodyComponent>(water_node) != nullptr, "WaterBodyNode contains WaterBodyComponent");
+
+    Entity river_node = Prefab::CreateRiverNode(prefab_world, {Vec3(0), Vec3(10,0,10)});
+    check(prefab_world.Entities().Get<RiverSplineComponent>(river_node) != nullptr, "RiverNode contains RiverSplineComponent");
+
+    Entity fol_node = Prefab::CreateFoliageNode(prefab_world, "tree.obj", 100);
+    check(prefab_world.Entities().Get<FoliageInstancerComponent>(fol_node)->instance_count == 100, "FoliageNode instantiates 100 instances");
+
+    Entity trig_node = Prefab::CreateTriggerVolumeNode(prefab_world, Vec3(0), Vec3(2));
+    check(prefab_world.Entities().Get<RigidBody>(trig_node)->is_trigger, "TriggerVolumeNode is non-physical sensor");
+
+    Entity ray_sensor = Prefab::CreateRaycastSensorNode(prefab_world, Vec3(0, 1, 0), Vec3(0, -1, 0));
+    check(prefab_world.Entities().Get<RaycastSensorComponent>(ray_sensor) != nullptr, "RaycastSensorNode created");
+
+    Entity joint_node = Prefab::CreatePhysicsJointNode(prefab_world, JointType::Hinge, Vec3(0));
+    check(prefab_world.Entities().Get<PhysicsJointComponent>(joint_node)->joint_type == JointType::Hinge, "PhysicsJointNode creates Hinge joint");
+
+    Entity buoy_node = Prefab::CreateBuoyancyNode(prefab_world, Vec3(0), 0.0f);
+    check(prefab_world.Entities().Get<BuoyancyComponent>(buoy_node) != nullptr, "BuoyancyNode contains BuoyancyComponent");
+
+    Entity char_body = Prefab::CreateCharacterBodyNode(prefab_world, Vec3(0, 1, 0));
+    check(prefab_world.Entities().Get<CharacterBodyComponent>(char_body) != nullptr, "CharacterBodyNode contains CharacterBodyComponent");
+
+    Entity ai_enemy = Prefab::CreateAIEnemyNode(prefab_world, Vec3(0, 1, 0));
+    check(prefab_world.Entities().Get<AIControllerComponent>(ai_enemy) != nullptr, "AIEnemyNode contains AIControllerComponent");
+    check(prefab_world.Entities().Get<BehaviorTreeComponent>(ai_enemy) != nullptr, "AIEnemyNode contains BehaviorTreeComponent");
+
+    Entity nav_bounds = Prefab::CreateNavMeshBoundsNode(prefab_world, Vec3(0), Vec3(50));
+    check(prefab_world.Entities().Get<NavMeshBoundsComponent>(nav_bounds) != nullptr, "NavMeshBoundsNode created");
+
+    Entity trail_node = Prefab::CreateTrailNode(prefab_world, Vec3(0));
+    check(prefab_world.Entities().Get<TrailComponent>(trail_node) != nullptr, "TrailNode contains TrailComponent");
+
+    Entity beam_node = Prefab::CreateBeamEmitterNode(prefab_world, Vec3(0), Vec3(0,0,10));
+    check(prefab_world.Entities().Get<BeamEmitterComponent>(beam_node) != nullptr, "BeamEmitterNode contains BeamEmitterComponent");
+
+    Entity reverb_node = Prefab::CreateAudioReverbZoneNode(prefab_world, Vec3(0), 20.0f);
+    check(prefab_world.Entities().Get<AudioReverbZoneComponent>(reverb_node)->radius == 20.0f, "AudioReverbZoneNode has 20m radius");
+
+    Entity chest_node = Prefab::CreateInteractableNode(prefab_world, Vec3(0), "Open Chest");
+    check(prefab_world.Entities().Get<InteractableComponent>(chest_node) != nullptr, "InteractableNode created");
+
+    Entity spawner_node = Prefab::CreateItemSpawnerNode(prefab_world, Vec3(0), "ManaPotion");
+    check(prefab_world.Entities().Get<SpawnerComponent>(spawner_node)->prefab_name == "ManaPotion", "ItemSpawnerNode spawns ManaPotion");
+
+    Entity quest_node = Prefab::CreateQuestTriggerNode(prefab_world, Vec3(0), "Quest_Boss_01");
+    check(prefab_world.Entities().Get<QuestTriggerComponent>(quest_node) != nullptr, "QuestTriggerNode created");
+
+    Entity ui_3d_node = Prefab::CreateWorldSpaceUINode(prefab_world, Vec3(0, 2, 0), "Dragon HP");
+    check(prefab_world.Entities().Get<WorldSpaceUIComponent>(ui_3d_node) != nullptr, "WorldSpaceUINode created");
+
+    Entity lod_node = Prefab::CreateLODGroupNode(prefab_world, Vec3(0));
+    check(prefab_world.Entities().Get<LODGroupComponent>(lod_node) != nullptr, "LODGroupNode contains LODGroupComponent");
+
     prefab_world.Shutdown();
+
+    // --- Gameplay Health & Stats Logic Test
+    HealthComponent test_hp{};
+    test_hp.max_health = 100.0f;
+    test_hp.current_health = 100.0f;
+    test_hp.shield = 20.0f;
+    test_hp.TakeDamage(30.0f);
+    check(test_hp.shield == 0.0f && test_hp.current_health == 90.0f, "HealthComponent absorbs damage with shield first");
+    test_hp.Heal(5.0f);
+    check(test_hp.current_health == 95.0f, "HealthComponent heals accurately");
+
+    // --- DebugDraw Visualizer Queue Test
+    DebugDraw::Clear();
+    DebugDraw::DrawLine(Vec3(0), Vec3(1, 1, 1), Vec4(1, 0, 0, 1));
+    DebugDraw::DrawBox(Vec3(0), Vec3(1), Vec4(0, 1, 0, 1));
+    DebugDraw::DrawSphere(Vec3(0, 2, 0), 0.5f, Vec4(0, 0, 1, 1));
+    DebugDraw::DrawCone(Vec3(0, 5, 0), Vec3(0, -1, 0), 0.5f, 10.0f, Vec4(1, 1, 0, 1));
+    check(DebugDraw::GetLines().size() == 1, "DebugDraw queues 3D lines");
+    check(DebugDraw::GetBoxes().size() == 1, "DebugDraw queues wireframe bounding boxes");
+    check(DebugDraw::GetSpheres().size() == 1, "DebugDraw queues wireframe spheres");
+    check(DebugDraw::GetCones().size() == 1, "DebugDraw queues perception cones");
+    DebugDraw::Clear();
+    check(DebugDraw::GetLines().empty() && DebugDraw::GetBoxes().empty(), "DebugDraw::Clear flushes visual queues");
 
     // --- RenderSettings AO and AA Pipeline Test
     RenderSettings r_settings{};
