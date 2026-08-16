@@ -21,6 +21,10 @@ void LogSetChannelLevel(LogChannel channel, LogLevel level);
 bool LogEnabled(LogChannel channel, LogLevel level);
 void LogWrite(LogChannel channel, LogLevel level, const char* fmt, ...);
 
+using LogSinkFn = void(*)(LogChannel channel, LogLevel level, const char* message, void* user_data);
+void LogAddSink(LogSinkFn sink, void* user_data = nullptr);
+void LogRemoveSink(LogSinkFn sink);
+
 } // namespace lucida
 
 #define LUCIDA_LOG(ch, lvl, ...)                                              \

@@ -7,8 +7,15 @@
 #include "lucida/core/diag/Profiler.h"
 #include "lucida/framework/Picking.h"
 #include "lucida/framework/Theme.h"
+#include "lucida/animation/AnimationSystem.h"
+#include "lucida/animation/Skeleton.h"
+#include "lucida/audio/AudioBackend.h"
+#include "lucida/audio/Components.h"
+#include "lucida/core/diag/Log.h"
+#include "lucida/framework/Script.h"
 #include "lucida/physics/Components.h"
 #include "lucida/render/Components.h"
+#include "lucida/runtime/Particles.h"
 #include "lucida/runtime/World.h"
 
 #include "lucida/framework/SceneAssets.h"
@@ -24,9 +31,14 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <filesystem>
+#include <iomanip>
+#include <sstream>
 #include <string>
+#include <vector>
 
 namespace lucida {
 namespace {
@@ -291,6 +303,36 @@ void DebugUI::TrackMaterialEdit(SceneAssets& assets, i32 mat_index, const GPUMat
     }
 }
 
+struct ConsoleLogItem {
+    LogChannel  channel;
+    LogLevel    level;
+    std::string message;
+    std::string timestamp;
+};
+
+static std::vector<ConsoleLogItem> s_console_logs;
+static std::mutex                  s_console_mutex;
+static bool                        s_console_autoscroll = true;
+static bool                        s_console_show_info = true;
+static bool                        s_console_show_warn = true;
+static bool                        s_console_show_error = true;
+static bool                        s_console_show_debug = true;
+static char                        s_console_filter[128] = {0};
+
+static void OnConsoleLogSink(LogChannel channel, LogLevel level, const char* message, void*) {
+    std::lock_guard<std::mutex> lock(s_console_mutex);
+
+    auto now = std::chrono::system_clock::now();
+    auto in_time_t = std::chrono::system_clock::to_time_t(now);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&in_time_t), "%H:%M:%S");
+
+    if (s_console_logs.size() >= 2000) {
+        s_console_logs.erase(s_console_logs.begin(), s_console_logs.begin() + 100);
+    }
+    s_console_logs.push_back({channel, level, message ? message : "", ss.str()});
+}
+
 void DebugUI::Init() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -300,9 +342,13 @@ void DebugUI::Init() {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     ApplyTheme();
+    LogAddSink(OnConsoleLogSink);
 }
 
-void DebugUI::Shutdown() { ImGui::DestroyContext(); }
+void DebugUI::Shutdown() {
+    LogRemoveSink(OnConsoleLogSink);
+    ImGui::DestroyContext();
+}
 
 void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettings& settings,
                     const RenderStats& stats, CameraController& camera,
@@ -390,6 +436,8 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
     if (ui.show_hierarchy) DrawHierarchy(world, ui, assets); // Calls DrawSceneGraph
     if (ui.show_inspector) DrawInspector(world, ui, assets, camera, renderer);
     if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
+    if (ui.show_content_browser)   DrawContentBrowser(world, ui, assets);
+    if (ui.show_console)           DrawConsole(ui);
     if (ui.show_stats_panel)       DrawStatsPanel(world, assets, stats, time, settings, ui);
 
     if (ui.show_manual_modal)       DrawManualModal(ui);
@@ -417,12 +465,15 @@ void DebugUI::BuildDefaultLayout(unsigned dockspace_id) {
     ImGuiID centre = dockspace_id;
     const ImGuiID left   = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left,  0.18f, nullptr, &centre);
     const ImGuiID right  = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.22f, nullptr, &centre);
-    const ImGuiID bottom = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down,  0.24f, nullptr, &centre);
+    ImGuiID bottom       = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down,  0.26f, nullptr, &centre);
+    const ImGuiID bottom_right = ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.45f, nullptr, &bottom);
 
     ImGui::DockBuilderDockWindow("Hierarchy", left);
     ImGui::DockBuilderDockWindow("Inspector", right);
-    ImGui::DockBuilderDockWindow("Renderer", right);
-    ImGui::DockBuilderDockWindow("Statistics", bottom);
+    ImGui::DockBuilderDockWindow("Graphics Settings", right);
+    ImGui::DockBuilderDockWindow("Content Browser", bottom);
+    ImGui::DockBuilderDockWindow("Console", bottom_right);
+    ImGui::DockBuilderDockWindow("Statistics", bottom_right);
     ImGui::DockBuilderDockWindow("Viewport", centre);
 
     ImGui::DockBuilderFinish(dockspace_id);
@@ -494,6 +545,8 @@ void DebugUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::MenuItem("Hierarchy", nullptr, &ui.show_hierarchy);
         ImGui::MenuItem("Inspector", nullptr, &ui.show_inspector);
         ImGui::MenuItem("Graphics Settings", nullptr, &ui.show_graphics_settings);
+        ImGui::MenuItem("Content Browser", nullptr, &ui.show_content_browser);
+        ImGui::MenuItem("Console", nullptr, &ui.show_console);
         ImGui::Separator();
         ImGui::MenuItem("Statistics (HUD Overlay)", nullptr, &ui.show_stats_overlay);
         ImGui::MenuItem("Statistics (Docked Panel)", nullptr, &ui.show_stats_panel);
@@ -922,8 +975,16 @@ void DebugUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) {
     for (auto [entity, name] : entities.View<Name>().each()) {
         Entity its_parent = kNullEntity;
         if (Parent* p = entities.Get<Parent>(entity)) its_parent = p->entity;
-        
-        if (its_parent != current_parent) continue;
+
+        if (ui.hierarchy_search[0] != '\0') {
+            std::string n = name.value;
+            std::string s = ui.hierarchy_search;
+            std::transform(n.begin(), n.end(), n.begin(), ::tolower);
+            std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+            if (n.find(s) == std::string::npos) continue;
+        } else {
+            if (its_parent != current_parent) continue;
+        }
 
         ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
         
@@ -1001,6 +1062,10 @@ void DebugUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
 
     ImGui::SameLine(ImGui::GetWindowWidth() - 40);
     if (ImGui::Button("+")) ImGui::OpenPopup("AddPrimitivePopup");
+
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint("##HierarchySearch", "Search entities...", ui.hierarchy_search, sizeof(ui.hierarchy_search));
+    ImGui::Separator();
     if (ImGui::BeginPopup("AddPrimitivePopup")) {
         auto add = [&](PrimitiveType type, const char* name) {
             const std::string mat_name = std::string(name) + "_mat_" + std::to_string(assets.materials.size());
@@ -1629,6 +1694,131 @@ void DebugUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Came
             ImGui::Checkbox("Handbrake", &vehicle->input.handbrake);
             EndSection();
         }
+    }
+
+    if (TagComponent* tag = entities.Get<TagComponent>(ui.selection)) {
+        if (BeginSection("Tag & Layer", true)) {
+            char tag_buf[64];
+            std::snprintf(tag_buf, sizeof(tag_buf), "%s", tag->tag.c_str());
+            if (ImGui::InputText("Tag", tag_buf, sizeof(tag_buf))) tag->tag = tag_buf;
+            int layer = static_cast<int>(tag->layer);
+            if (ImGui::InputInt("Layer", &layer)) tag->layer = static_cast<u32>(std::max(0, layer));
+            if (ImGui::Button("Remove Tag", ImVec2(-1.0f, 22.0f))) {
+                entities.Remove<TagComponent>(ui.selection);
+            }
+            EndSection();
+        }
+    }
+
+    if (ParticleEmitterComponent* pe = entities.Get<ParticleEmitterComponent>(ui.selection)) {
+        if (BeginSection("Particle Emitter (VFX)", true)) {
+            ImGui::Checkbox("Active", &pe->is_active);
+            ImGui::DragFloat("Rate (p/s)", &pe->emission_rate, 1.0f, 1.0f, 2000.0f);
+            ImGui::SliderFloat("Spread Angle", &pe->spread_angle, 0.0f, 90.0f * kDegToRad, "%.1f rad");
+            ImGui::DragFloatRange2("Lifetime (s)", &pe->lifetime_min, &pe->lifetime_max, 0.05f, 0.1f, 10.0f);
+            ImGui::DragFloatRange2("Speed (m/s)", &pe->speed_min, &pe->speed_max, 0.1f, 0.0f, 50.0f);
+            ImGui::DragFloat3("Gravity", glm::value_ptr(pe->gravity), 0.1f);
+            ImGui::DragFloat2("Size Start/End", &pe->size_start, 0.01f, 0.0f, 5.0f);
+            ImGui::ColorEdit4("Start Color", glm::value_ptr(pe->color_start));
+            ImGui::ColorEdit4("End Color", glm::value_ptr(pe->color_end));
+            ImGui::TextDisabled("Particles: %u / %u", pe->active_count, pe->max_particles);
+            if (ImGui::Button("Remove Emitter", ImVec2(-1.0f, 22.0f))) {
+                entities.Remove<ParticleEmitterComponent>(ui.selection);
+            }
+            EndSection();
+        }
+    }
+
+    if (AudioSourceComponent* audio = entities.Get<AudioSourceComponent>(ui.selection)) {
+        if (BeginSection("Audio Source", true)) {
+            char path_buf[256];
+            std::snprintf(path_buf, sizeof(path_buf), "%s", audio->sound_path.c_str());
+            if (ImGui::InputText("Sound Path", path_buf, sizeof(path_buf))) audio->sound_path = path_buf;
+            ImGui::SliderFloat("Volume", &audio->volume, 0.0f, 2.0f);
+            ImGui::SliderFloat("Pitch", &audio->pitch, 0.1f, 3.0f);
+            ImGui::Checkbox("3D Spatial Audio", &audio->is_3d);
+            ImGui::Checkbox("Loop", &audio->loop);
+            ImGui::Checkbox("Play On Start", &audio->play_on_start);
+            if (ImGui::Button("Remove Audio Source", ImVec2(-1.0f, 22.0f))) {
+                entities.Remove<AudioSourceComponent>(ui.selection);
+            }
+            EndSection();
+        }
+    }
+
+    if (AudioListenerComponent* listener = entities.Get<AudioListenerComponent>(ui.selection)) {
+        if (BeginSection("Audio Listener", true)) {
+            ImGui::Checkbox("Active Listener", &listener->is_active);
+            ImGui::SliderFloat("Master Volume", &listener->master_volume, 0.0f, 2.0f);
+            if (ImGui::Button("Remove Audio Listener", ImVec2(-1.0f, 22.0f))) {
+                entities.Remove<AudioListenerComponent>(ui.selection);
+            }
+            EndSection();
+        }
+    }
+
+    if (AnimatorComponent* anim = entities.Get<AnimatorComponent>(ui.selection)) {
+        if (BeginSection("Skeletal Animator", true)) {
+            ImGui::SliderFloat("Speed", &anim->playback_speed, 0.0f, 5.0f);
+            ImGui::Checkbox("Looping", &anim->is_looping);
+            ImGui::Checkbox("Playing", &anim->is_playing);
+            if (anim->current_clip) {
+                ImGui::ProgressBar(anim->current_clip->duration > 0.0f ? anim->current_time / anim->current_clip->duration : 0.0f);
+                ImGui::TextDisabled("Time: %.2f / %.2f s", anim->current_time, anim->current_clip->duration);
+            }
+            if (ImGui::Button("Remove Animator", ImVec2(-1.0f, 22.0f))) {
+                entities.Remove<AnimatorComponent>(ui.selection);
+            }
+            EndSection();
+        }
+    }
+
+    if (ScriptComponent* sc = entities.Get<ScriptComponent>(ui.selection)) {
+        if (BeginSection("Native Scripts", true)) {
+            ImGui::TextDisabled("Attached Scripts: %zu", sc->scripts.size());
+            if (ImGui::Button("Remove Scripts", ImVec2(-1.0f, 22.0f))) {
+                entities.Remove<ScriptComponent>(ui.selection);
+            }
+            EndSection();
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    if (ImGui::Button("+ Add Component", ImVec2(-1.0f, 28.0f))) {
+        ImGui::OpenPopup("AddComponentPopup");
+    }
+    if (ImGui::BeginPopup("AddComponentPopup")) {
+        ImGui::TextDisabled("Add Component:");
+        ImGui::Separator();
+        if (!entities.Get<TagComponent>(ui.selection) && ImGui::MenuItem("🏷️ Tag & Layer")) {
+            entities.Add<TagComponent>(ui.selection);
+        }
+        if (!entities.Get<RigidBody>(ui.selection) && ImGui::MenuItem("⚙️ RigidBody (Physics)")) {
+            entities.Add<RigidBody>(ui.selection);
+        }
+        if (!entities.Get<ParticleEmitterComponent>(ui.selection) && ImGui::MenuItem("✨ Particle Emitter (VFX)")) {
+            entities.Add<ParticleEmitterComponent>(ui.selection);
+        }
+        if (!entities.Get<AudioSourceComponent>(ui.selection) && ImGui::MenuItem("🔊 Audio Source")) {
+            entities.Add<AudioSourceComponent>(ui.selection);
+        }
+        if (!entities.Get<AudioListenerComponent>(ui.selection) && ImGui::MenuItem("👂 Audio Listener")) {
+            entities.Add<AudioListenerComponent>(ui.selection);
+        }
+        if (!entities.Get<AnimatorComponent>(ui.selection) && ImGui::MenuItem("🦴 Skeletal Animator")) {
+            entities.Add<AnimatorComponent>(ui.selection);
+        }
+        if (!entities.Get<ScriptComponent>(ui.selection) && ImGui::MenuItem("📜 Script Component")) {
+            entities.Add<ScriptComponent>(ui.selection);
+        }
+        if (!entities.Get<LightSource>(ui.selection) && ImGui::MenuItem("💡 Light Source")) {
+            entities.Add<LightSource>(ui.selection);
+        }
+        if (!entities.Get<CameraComponent>(ui.selection) && ImGui::MenuItem("🎥 Camera Component")) {
+            entities.Add<CameraComponent>(ui.selection);
+        }
+        ImGui::EndPopup();
     }
 
     ImGui::End();
@@ -2494,6 +2684,171 @@ void DebugUI::DrawPreferencesWindow(UiState& ui, CameraController& camera, Rende
 
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
+}
+
+void DebugUI::DrawConsole(UiState& ui) {
+    if (!ImGui::Begin("Console", &ui.show_console)) {
+        ImGui::End();
+        return;
+    }
+
+    // Top action bar
+    if (ImGui::Button("Clear")) {
+        std::lock_guard<std::mutex> lock(s_console_mutex);
+        s_console_logs.clear();
+    }
+    DrawTooltip("Clear all console log messages.");
+
+    ImGui::SameLine();
+    if (ImGui::Button("Copy All")) {
+        std::lock_guard<std::mutex> lock(s_console_mutex);
+        std::string all;
+        for (const auto& log : s_console_logs) {
+            all += "[" + log.timestamp + "] " + log.message + "\n";
+        }
+        ImGui::SetClipboardText(all.c_str());
+    }
+    DrawTooltip("Copy entire console log history to clipboard.");
+
+    ImGui::SameLine();
+    ImGui::Checkbox("Auto-scroll", &s_console_autoscroll);
+    ImGui::SameLine();
+    ImGui::Checkbox("Info", &s_console_show_info);
+    ImGui::SameLine();
+    ImGui::Checkbox("Warn", &s_console_show_warn);
+    ImGui::SameLine();
+    ImGui::Checkbox("Error", &s_console_show_error);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::InputTextWithHint("##ConsoleFilter", "Filter logs...", s_console_filter, sizeof(s_console_filter));
+
+    ImGui::Separator();
+
+    // Log message list
+    ImGui::BeginChild("ConsoleScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    {
+        std::lock_guard<std::mutex> lock(s_console_mutex);
+        for (const auto& log : s_console_logs) {
+            if (log.level == LogLevel::Info && !s_console_show_info) continue;
+            if (log.level == LogLevel::Warn && !s_console_show_warn) continue;
+            if (log.level == LogLevel::Error && !s_console_show_error) continue;
+            if (log.level == LogLevel::Debug && !s_console_show_debug) continue;
+
+            if (s_console_filter[0] != '\0') {
+                std::string msg = log.message;
+                std::string f = s_console_filter;
+                std::transform(msg.begin(), msg.end(), msg.begin(), ::tolower);
+                std::transform(f.begin(), f.end(), f.begin(), ::tolower);
+                if (msg.find(f) == std::string::npos) continue;
+            }
+
+            ImVec4 col(0.85f, 0.85f, 0.85f, 1.0f);
+            if (log.level == LogLevel::Warn)  col = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+            else if (log.level == LogLevel::Error) col = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            else if (log.level == LogLevel::Debug) col = ImVec4(0.4f, 0.8f, 1.0f, 1.0f);
+
+            ImGui::TextDisabled("[%s]", log.timestamp.c_str());
+            ImGui::SameLine();
+            ImGui::TextColored(col, "%s", log.message.c_str());
+        }
+
+        if (s_console_autoscroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+            ImGui::SetScrollHereY(1.0f);
+        }
+    }
+    ImGui::EndChild();
+    ImGui::End();
+}
+
+void DebugUI::DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets) {
+    if (!ImGui::Begin("Content Browser", &ui.show_content_browser)) {
+        ImGui::End();
+        return;
+    }
+
+    // Top Navigation & Breadcrumbs
+    if (ImGui::Button("Home")) {
+        ui.content_browser_path = ".";
+    }
+    DrawTooltip("Navigate to project root directory.");
+
+    ImGui::SameLine();
+    if (ImGui::Button("Up")) {
+        std::filesystem::path p(ui.content_browser_path);
+        if (p.has_parent_path() && p != "." && p != "/") {
+            ui.content_browser_path = p.parent_path().string();
+            if (ui.content_browser_path.empty()) ui.content_browser_path = ".";
+        }
+    }
+    DrawTooltip("Navigate up one directory level.");
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("Path: %s", ui.content_browser_path.c_str());
+    ImGui::SameLine(ImGui::GetWindowWidth() - 170.0f);
+    ImGui::SetNextItemWidth(160.0f);
+    ImGui::InputTextWithHint("##ContentSearch", "Search files...", ui.content_search, sizeof(ui.content_search));
+
+    ImGui::Separator();
+
+    // Directory items list in responsive grid
+    std::filesystem::path current_dir(ui.content_browser_path);
+    std::error_code ec;
+    if (std::filesystem::exists(current_dir, ec) && std::filesystem::is_directory(current_dir, ec)) {
+        const float item_width = 110.0f;
+        const float panel_width = ImGui::GetContentRegionAvail().x;
+        int columns = std::max(1, static_cast<int>(panel_width / (item_width + 15.0f)));
+
+        if (ImGui::BeginTable("ContentGrid", columns)) {
+            for (const auto& entry : std::filesystem::directory_iterator(current_dir, ec)) {
+                const auto& filename = entry.path().filename().string();
+                if (filename.empty() || filename[0] == '.') continue; // Skip hidden files
+
+                if (ui.content_search[0] != '\0') {
+                    std::string fn = filename;
+                    std::string s = ui.content_search;
+                    std::transform(fn.begin(), fn.end(), fn.begin(), ::tolower);
+                    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+                    if (fn.find(s) == std::string::npos) continue;
+                }
+
+                ImGui::TableNextColumn();
+                ImGui::PushID(filename.c_str());
+
+                const bool is_dir = entry.is_directory();
+                const std::string ext = entry.path().extension().string();
+
+                std::string icon = "[DOC]";
+                if (is_dir) icon = "[DIR]";
+                else if (ext == ".obj" || ext == ".gltf" || ext == ".glb" || ext == ".fbx") icon = "[MESH]";
+                else if (ext == ".png" || ext == ".jpg" || ext == ".hdr") icon = "[TEX]";
+                else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") icon = "[AUD]";
+                else if (ext == ".json") icon = "[SCN]";
+                else if (ext == ".cpp" || ext == ".h" || ext == ".lua") icon = "[SCR]";
+
+                std::string label = icon + " " + filename;
+                if (label.size() > 18) label = label.substr(0, 15) + "...";
+
+                if (ImGui::Button(label.c_str(), ImVec2(item_width, 36.0f))) {
+                    if (is_dir) {
+                        ui.content_browser_path = entry.path().string();
+                    } else if (ext == ".obj" || ext == ".gltf" || ext == ".glb" || ext == ".fbx") {
+                        ui.pending_model_path = entry.path().string();
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    DrawTooltip(filename.c_str());
+                }
+
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    } else {
+        ImGui::TextDisabled("Directory does not exist.");
+        if (ImGui::Button("Reset to Root")) ui.content_browser_path = ".";
+    }
+
+    ImGui::End();
 }
 
 } // namespace lucida

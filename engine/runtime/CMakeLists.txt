@@ -4,8 +4,9 @@
 add_library(lucida_runtime STATIC
     src/World.cpp
     src/Engine.cpp
+    src/Particles.cpp
 )
 add_library(lucida::runtime ALIAS lucida_runtime)
 
 target_include_directories(lucida_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(lucida_runtime PUBLIC lucida::core)
+target_link_libraries(lucida_runtime PUBLIC lucida::core lucida::render)

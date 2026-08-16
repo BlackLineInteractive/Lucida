@@ -8,13 +8,21 @@
 // Run with `ctest --test-dir build` or by executing the binary directly; it
 // returns the number of failed checks.
 
+#include "lucida/animation/AnimationClip.h"
+#include "lucida/animation/AnimationSystem.h"
+#include "lucida/animation/Skeleton.h"
+#include "lucida/audio/AudioSystem.h"
+#include "lucida/audio/Components.h"
 #include "lucida/backend/JoltBackend.h"
+#include "lucida/core/math/Frustum.h"
+#include "lucida/core/math/Tween.h"
 #include "lucida/framework/Commands.h"
 #include "lucida/framework/Picking.h"
 #include "lucida/framework/Script.h"
 #include "lucida/framework/Systems.h"
 #include "lucida/render/Components.h"
 #include "lucida/resource/MeshBuilder.h"
+#include "lucida/runtime/Particles.h"
 #include "lucida/runtime/World.h"
 #include <cstdio>
 using namespace lucida;
@@ -295,6 +303,92 @@ int main() {
     check(mesh_data.tri_pos.size() == 12, "MeshData has correct tri_pos count");
     check(mesh_data.tri_attr.size() == 12, "MeshData has correct tri_attr count");
     check(!mesh_data.bvh_nodes.empty(), "MeshData has generated BVH acceleration structure");
+
+    // --- Spatial Math & Frustum Culling Test
+    Mat4 proj = glm::perspective(60.0f * kDegToRad, 16.0f / 9.0f, 0.1f, 100.0f);
+    Mat4 view = glm::lookAt(Vec3(0.0f, 0.0f, 5.0f), Vec3(0.0f, 0.0f, 0.0f), Vec3(0.0f, 1.0f, 0.0f));
+    Frustum frustum = Frustum::FromMatrix(proj * view);
+
+    check(frustum.ContainsPoint(Vec3(0.0f, 0.0f, 0.0f)), "frustum contains center point");
+    check(!frustum.ContainsPoint(Vec3(0.0f, 0.0f, 10.0f)), "frustum rejects point behind camera");
+    check(frustum.Intersects(AABB{Vec3(-0.5f), Vec3(0.5f)}), "frustum intersects central AABB");
+    check(!frustum.Intersects(AABB{Vec3(50.0f, 50.0f, 0.0f), Vec3(60.0f, 60.0f, 1.0f)}), "frustum rejects distant off-screen AABB");
+
+    // --- Tween & Timer Test
+    check(Ease(EaseType::Linear, 0.5f) == 0.5f, "linear easing returns identity");
+    check(Ease(EaseType::OutQuad, 0.5f) == 0.75f, "out-quad easing matches quadratic curve");
+    check(Ease(EaseType::OutBounce, 1.0f) == 1.0f, "out-bounce completes at exactly 1.0");
+
+    Timer timer(1.0f, false);
+    check(!timer.Tick(0.4f) && !timer.Finished(), "timer ticks without early firing");
+    check(timer.Progress() == 0.4f, "timer reports exact 0.4 progress");
+    check(timer.Tick(0.6f) && timer.Finished(), "timer completes and fires after duration reached");
+
+    // --- DOD Particle Simulation System Test
+    World particle_world;
+    particle_world.Init();
+    ParticleSimulationSystem* part_sys = particle_world.AddSystem<ParticleSimulationSystem>();
+
+    Entity emitter_ent = particle_world.Entities().Create("emitter");
+    particle_world.Entities().Get<LocalTransform>(emitter_ent)->position = Vec3(0.0f, 1.0f, 0.0f);
+    auto& emitter = particle_world.Entities().Add<ParticleEmitterComponent>(emitter_ent);
+    emitter.max_particles = 100;
+    emitter.emission_rate = 50.0f;
+
+    FrameTime p_ft{0.1f, 0.1f, 0.1f, 1};
+    particle_world.RunPhase(UpdatePhase::Simulation, p_ft);
+
+    check(emitter.active_count > 0, "particle emitter spawned active particles in SoA buffers");
+    check(emitter.positions[0].y != 0.0f, "particle position updated by simulation");
+    particle_world.Shutdown();
+
+    // --- Audio Subsystem Architecture Test
+    World audio_world;
+    audio_world.Init();
+    auto audio_backend = CreateNullAudioBackend();
+    check(audio_backend && audio_backend->Init(), "null audio backend initialized");
+
+    AudioSystem* audio_sys = audio_world.AddSystem<AudioSystem>(*audio_backend);
+    Entity audio_ent = audio_world.Entities().Create("sound_source");
+    auto& src = audio_world.Entities().Add<AudioSourceComponent>(audio_ent);
+    src.sound_path = "assets/sound/engine.wav";
+    src.play_on_start = true;
+
+    audio_world.RunPhase(UpdatePhase::Simulation, p_ft);
+    check(src.handle.IsValid() && src.is_playing, "audio source loaded and playing via AudioSystem");
+    audio_world.Shutdown();
+
+    // --- Skeletal Animation & Skinning Palette Test
+    World anim_world;
+    anim_world.Init();
+    AnimationSystem* anim_sys = anim_world.AddSystem<AnimationSystem>();
+
+    auto skel = std::make_shared<Skeleton>();
+    Joint root_j{"Root", -1, Transform{Vec3(0, 0, 0)}, Mat4(1.0f)};
+    Joint arm_j{"Arm", 0, Transform{Vec3(0, 2.0f, 0)}, Mat4(1.0f)};
+    skel->joints.push_back(root_j);
+    skel->joints.push_back(arm_j);
+
+    auto clip = std::make_shared<AnimationClip>();
+    clip->name = "ArmRotate";
+    clip->duration = 1.0f;
+    JointTrack track;
+    track.joint_index = 1;
+    track.rotation_keys.push_back({0.0f, Quat(1.0f, 0.0f, 0.0f, 0.0f)});
+    track.rotation_keys.push_back({1.0f, glm::angleAxis(kHalfPi, Vec3(0.0f, 0.0f, 1.0f))});
+    clip->tracks.push_back(track);
+
+    Entity char_ent = anim_world.Entities().Create("character");
+    auto& anim_comp = anim_world.Entities().Add<AnimatorComponent>(char_ent);
+    anim_comp.skeleton = skel;
+    anim_comp.current_clip = clip;
+    anim_comp.is_playing = true;
+
+    anim_world.RunPhase(UpdatePhase::Simulation, p_ft);
+    check(!anim_comp.skinning_palette.empty(), "animation system computes skinning palette");
+    check(anim_comp.skinning_palette.size() == 2, "skinning palette has 2 joint matrices");
+    check(anim_comp.current_time > 0.0f, "animation playback advances time");
+    anim_world.Shutdown();
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures;

@@ -16,5 +16,5 @@ add_library(lucida::framework ALIAS lucida_framework)
 
 target_include_directories(lucida_framework PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(lucida_framework
-    PUBLIC  lucida::core lucida::runtime lucida::input lucida::render lucida::physics lucida::resource
+    PUBLIC  lucida::core lucida::runtime lucida::input lucida::render lucida::physics lucida::resource lucida::audio lucida::animation
     PRIVATE lucida_imgui)

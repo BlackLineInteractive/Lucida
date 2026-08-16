@@ -31,6 +31,12 @@ struct UiState {
     bool show_stats_overlay = true;
     bool show_graphics_settings = true;
     bool show_viewport  = true;
+    bool show_console   = true;
+    bool show_content_browser = true;
+
+    char hierarchy_search[128] = {0};
+    char content_search[128]   = {0};
+    std::string content_browser_path = "assets";
 
     bool request_quit       = false;
     bool request_fullscreen = false;
@@ -136,6 +142,8 @@ private:
                          const ImVec2& image_min, const ImVec2& image_size);
     void DrawManualModal(UiState& ui);
     void DrawPreferencesWindow(UiState& ui, CameraController& camera, RenderSettings& settings);
+    void DrawConsole(UiState& ui);
+    void DrawContentBrowser(World& world, UiState& ui, SceneAssets& assets);
     void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
                    const char* name);
     void TrackMaterialEdit(SceneAssets& assets, i32 mat_index, const GPUMaterial& current,

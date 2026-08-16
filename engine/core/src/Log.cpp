@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
+#include <vector>
 
 namespace lucida {
 namespace {
@@ -23,9 +24,15 @@ constexpr const char* kLevelStyle[] = {
 };
 constexpr const char* kLevelTag[] = { "trace", "debug", "info ", "warn ", "error" };
 
+struct LogSinkEntry {
+    LogSinkFn fn = nullptr;
+    void*     user_data = nullptr;
+};
+
 struct LogState {
     LogLevel   global = LogLevel::Info;
     LogLevel   channel[static_cast<usize>(LogChannel::Count)];
+    std::vector<LogSinkEntry> sinks;
     std::mutex mutex;
 
     LogState() {
@@ -53,6 +60,24 @@ bool LogEnabled(LogChannel channel, LogLevel level) {
     return level >= effective && effective != LogLevel::Off;
 }
 
+void LogAddSink(LogSinkFn sink, void* user_data) {
+    if (!sink) return;
+    std::lock_guard<std::mutex> lock(State().mutex);
+    State().sinks.push_back({sink, user_data});
+}
+
+void LogRemoveSink(LogSinkFn sink) {
+    if (!sink) return;
+    std::lock_guard<std::mutex> lock(State().mutex);
+    auto& sinks = State().sinks;
+    for (auto it = sinks.begin(); it != sinks.end(); ++it) {
+        if (it->fn == sink) {
+            sinks.erase(it);
+            break;
+        }
+    }
+}
+
 void LogWrite(LogChannel channel, LogLevel level, const char* fmt, ...) {
     const usize lvl = static_cast<usize>(level);
     if (lvl >= static_cast<usize>(LogLevel::Off)) return;
@@ -68,6 +93,10 @@ void LogWrite(LogChannel channel, LogLevel level, const char* fmt, ...) {
     std::fprintf(stderr, "%s[%s]\x1b[0m \x1b[1m%-9s\x1b[0m %s\n",
                  kLevelStyle[lvl], kLevelTag[lvl],
                  kChannelNames[static_cast<usize>(channel)], message);
+
+    for (const auto& sink : State().sinks) {
+        if (sink.fn) sink.fn(channel, level, message, sink.user_data);
+    }
 }
 
 namespace diag {

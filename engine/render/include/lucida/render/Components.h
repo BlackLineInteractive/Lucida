@@ -118,4 +118,10 @@ struct CameraTag {};
 // Parent/child relations themselves are handled by core's `Parent` component.
 struct SceneGraphNode {};
 
+// General entity tag & layer classification for gameplay logic, search, and collision filtering
+struct TagComponent {
+    std::string tag = "Default";
+    u32         layer = 0;
+};
+
 } // namespace lucida
