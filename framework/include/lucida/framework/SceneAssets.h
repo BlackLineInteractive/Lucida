@@ -7,7 +7,7 @@
 // This is the change that turns a renderer into an editor: the world is entities
 // with components, and `RenderScene` becomes a *view* of them rebuilt for the
 // backend rather than the place the world lives. Before it, primitives were raw
-// arrays inside a scene struct — nothing to select, nothing to inspect, nothing
+// arrays inside a scene struct - nothing to select, nothing to inspect, nothing
 // to move.
 //
 // What stays outside the ECS is the material palette and the environment: they

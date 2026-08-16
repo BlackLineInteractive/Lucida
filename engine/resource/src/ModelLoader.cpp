@@ -34,7 +34,7 @@ namespace lucida {
 
 // Area-average resample. The previous implementation took a single bilinear tap
 // per destination pixel, which for a 4K source into a small destination reads
-// four texels out of every few hundred and throws the rest away — that is
+// four texels out of every few hundred and throws the rest away - that is
 // aliasing by construction, and it is a large part of why Sponza looked noisy.
 // Averaging the full source footprint keeps the detail as detail.
 static void ResizeBox(const uint8_t* src, int sw, int sh, uint8_t* dst, int dw, int dh) {
@@ -170,7 +170,7 @@ static void BuildBVH(std::vector<GPUTriangle>& tris,
     using Tri = bvh::v2::Tri<Scalar, 3>;
 
     // Note: the builder only consumes bounding boxes and centroids. An array of
-  // bvh::Tri used to be built alongside them and never read — for Sponza4k that
+  // bvh::Tri used to be built alongside them and never read - for Sponza4k that
   // was 207 MB allocated and thrown away.
   std::vector<Bbox> bboxes;
   std::vector<Vec3> centers;
@@ -209,7 +209,7 @@ static void BuildBVH(std::vector<GPUTriangle>& tris,
 
   // Apply the BVH's ordering to the triangles in place, by walking the
   // permutation's cycles. Materialising a reordered copy instead cost a second
-  // full triangle array — 735 MB on Sponza4k, at the point of peak usage.
+  // full triangle array - 735 MB on Sponza4k, at the point of peak usage.
   {
     std::vector<bool> done(count, false);
     for (size_t i = 0; i < (size_t)count; i++) {
@@ -323,7 +323,7 @@ MeshData LoadModel(const std::string& path, float target_size) {
     result.tex_size = tex_size;
     result.orm_size = orm_size;
     result.texture_array_data.resize(num_mats * slice_texels * 4, 255); // white default
-    // Default ORM: fully rough, fully dielectric — the safe reading for a
+    // Default ORM: fully rough, fully dielectric - the safe reading for a
     // material whose real values we could not find.
     result.orm_array_data.assign(num_mats * orm_texels * 4, 0);
     for (size_t i = 0; i < num_mats * orm_texels; i++) {
@@ -429,7 +429,7 @@ MeshData LoadModel(const std::string& path, float target_size) {
             if (!(gm.flags & MATFLAG_HAS_ORM_TEX)) {
                 // No map: the glTF factors are the only information available.
                 // Treat the (1,1) default pair as "unspecified" rather than as a
-                // literal rough mirror — that reading is what turned all of
+                // literal rough mirror - that reading is what turned all of
                 // Sponza into metal.
                 if (gm.metallic >= 0.999f && gm.roughness >= 0.999f) {
                     gm.metallic  = 0.0f;
@@ -584,7 +584,7 @@ MeshData LoadModel(const std::string& path, float target_size) {
 
     // Centre horizontally and scale, but seat the model on y = 0 rather than
     // centring it vertically. Centring put half of Sponza below the origin, so
-    // the scene's floor plane sliced through the arcade at mid-height — which is
+    // the scene's floor plane sliced through the arcade at mid-height - which is
     // most of why the model looked wrong once loaded.
     const float centre[3] = {cx, cy, cz};
     for (auto& t : result.triangles) {

@@ -9,7 +9,7 @@
 // running and needs no readback, no pick buffer and no extra GPU pass.
 //
 // It tests bounding boxes, not triangles. For selecting an object that is the
-// right answer — a click near a chair's silhouette means the chair — and it
+// right answer - a click near a chair's silhouette means the chair - and it
 // costs a slab test per entity instead of a BVH traversal.
 
 #include "lucida/core/ecs/Registry.h"

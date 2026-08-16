@@ -5,7 +5,7 @@
 // The two systems that keep physics, entities and the renderer in step.
 //
 // They exist so nothing else has to remember the order. Physics writes
-// transforms, the world resolves hierarchy, the renderer reads the result —
+// transforms, the world resolves hierarchy, the renderer reads the result -
 // once per frame, in that order, in one place.
 
 #include "lucida/physics/PhysicsBackend.h"

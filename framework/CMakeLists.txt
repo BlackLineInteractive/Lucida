@@ -1,4 +1,4 @@
-# lucida::framework — tools and UI/UX. The only engine-side target that links
+# lucida::framework - tools and UI/UX. The only engine-side target that links
 # ImGui; gameplay and backends stay free of it.
 
 add_library(lucida_framework STATIC

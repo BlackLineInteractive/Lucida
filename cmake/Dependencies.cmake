@@ -2,10 +2,10 @@
 # committed: `git clone && cmake -B build` is the whole setup on every platform.
 #
 # Two mechanisms, picked per dependency:
-#   lucida_fetch_headers() — header-only or no usable CMake (glm, bvh, imgui).
+#   lucida_fetch_headers() - header-only or no usable CMake (glm, bvh, imgui).
 #     Downloads a release tarball and makes an INTERFACE target. Avoids
 #     configuring a foreign project just to get include paths.
-#   FetchContent_MakeAvailable() — real builds (SDL2, assimp, Jolt, Bullet),
+#   FetchContent_MakeAvailable() - real builds (SDL2, assimp, Jolt, Bullet),
 #     each preceded by find_package so a system install wins and CI stays fast.
 
 include(FetchContent)
@@ -99,7 +99,7 @@ set(LUCIDA_IMGUI_DIR "${lucida_imgui_src_SOURCE_DIR}" CACHE INTERNAL "")
 lucida_fetch_headers(imgui_fd URL "https://github.com/aiekick/ImGuiFileDialog/archive/refs/tags/v0.6.7.tar.gz")
 set(LUCIDA_IFD_DIR "${lucida_imgui_fd_SOURCE_DIR}" CACHE INTERNAL "")
 
-# ImAnim (Soufiane KHIAT, MIT) — tweening for ImGui. Widgets that answer the
+# ImAnim (Soufiane KHIAT, MIT) - tweening for ImGui. Widgets that answer the
 # pointer instead of snapping; the easing and colour-space blending are already
 # solved here, so we do not write our own.
 lucida_fetch_headers(imanim URL "https://github.com/soufianekhiat/ImAnim/archive/refs/heads/main.tar.gz")

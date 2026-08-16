@@ -1,4 +1,4 @@
-# Lucida Engine — Architecture
+# Lucida Engine - Architecture
 
 This document fixes the **rules** the engine grows by. Anything that contradicts them
 does not enter the tree. Every module is tied to a specific part of the sources:
@@ -6,18 +6,18 @@ does not enter the tree. Every module is tied to a specific part of the sources:
 | Source | Short | Role here |
 | --- | --- | --- |
 | Jason Gregory, *Game Engine Architecture* (3rd ed.) | **GEA** | runtime layering, which subsystems exist |
-| Robert Nystrom, *Game Programming Patterns* — gameprogrammingpatterns.com | **GPP** | patterns inside those layers |
-| Richard Fabian, *Data-Oriented Design* — dataorienteddesign.com/dodbook | **DOD** | memory layout, SoA, ECS |
+| Robert Nystrom, *Game Programming Patterns* - gameprogrammingpatterns.com | **GPP** | patterns inside those layers |
+| Richard Fabian, *Data-Oriented Design* - dataorienteddesign.com/dodbook | **DOD** | memory layout, SoA, ECS |
 
 Chapters actually leaned on, by the books' real table of contents:
 
-* **GPP ch.3 Sequencing** — Game Loop, Update Method, Double Buffer  `engine/runtime`
-* **GPP ch.5 Decoupling** — Component, Event Queue, Service Locator  `engine/core`
-* **GPP ch.6 Optimization** — Data Locality, Object Pool, Spatial Partition, Dirty Flag
-* **DOD ch.2 Relational Databases** — normalisation, primary keys  handles, not pointers
-* **DOD ch.4 Component Based Objects** — components instead of hierarchies
-* **DOD ch.8 Optimisations** — SoA over AoS  the `GPUTriPos` / `GPUTriAttr` split
-* **DOD ch.9 Helping the Compiler** — cache behaviour, aliasing, branch prediction
+* **GPP ch.3 Sequencing** - Game Loop, Update Method, Double Buffer  `engine/runtime`
+* **GPP ch.5 Decoupling** - Component, Event Queue, Service Locator  `engine/core`
+* **GPP ch.6 Optimization** - Data Locality, Object Pool, Spatial Partition, Dirty Flag
+* **DOD ch.2 Relational Databases** - normalisation, primary keys  handles, not pointers
+* **DOD ch.4 Component Based Objects** - components instead of hierarchies
+* **DOD ch.8 Optimisations** - SoA over AoS  the `GPUTriPos` / `GPUTriAttr` split
+* **DOD ch.9 Helping the Compiler** - cache behaviour, aliasing, branch prediction
 
 Where the engine is going: [ROADMAP.md](ROADMAP.md).
 What it must cost: [PERFORMANCE.md](PERFORMANCE.md).
@@ -41,7 +41,7 @@ never the reverse.
 
 
 
-    runtime    render     physics   resource     input       GEA 1.6.9–1.6.14
+    runtime    render     physics   resource     input       GEA 1.6.9-1.6.14
     game loop front end  interface  manager     HID layer
     world     IRenderB.
 
@@ -51,7 +51,7 @@ never the reverse.
 
      engine/core/         memory, containers, math   GEA 1.6.5 (core systems)
                           diag, events, services     GEA 1.6.4 (platform layer)
-                          ecs, platform              DOD 1–4
+                          ecs, platform              DOD 1-4
 
 
      backends/           implementations: render_metal, render_vulkan, render_gl,
@@ -98,20 +98,20 @@ choice, is in [ROADMAP.md](ROADMAP.md).
 
 ## 3. Modules
 
-### `engine/core` — GEA 1.6.4–1.6.5, DOD
+### `engine/core` - GEA 1.6.4-1.6.5, DOD
 
 | Folder | Contents | Source |
 | --- | --- | --- |
 | `platform/` | fixed-width types, platform detection, monotonic clock | GEA 1.6.4, 8.5 |
 | `memory/` | `LinearAllocator` with markers, `PoolAllocator`, `FrameArena` | GEA 6.2 |
 | `container/` | generational `Handle`, dense-storage `HandleTable` | DOD 2; GPP: Object Pool |
-| `math/` | facade over glm plus `AABB`, `Ray`, `Transform` | — |
+| `math/` | facade over glm plus `AABB`, `Ray`, `Transform` | - |
 | `diag/` | `LUCIDA_ASSERT`/`VERIFY`, channelled log, scoped profiler | GEA 3.3.3, 3.5 |
 | `event/` | fixed-capacity `EventQueue` | GPP ch.5 |
 | `service/` | `Locator<T>` | GPP ch.5 |
 | `ecs/` | `Registry` facade over EnTT, transform hierarchy | DOD 4; GPP ch.5 |
 
-### `engine/runtime` — GPP ch.3
+### `engine/runtime` - GPP ch.3
 
 Fixed-step simulation with render interpolation, `World`, systems, `Application`.
 
@@ -122,9 +122,9 @@ No graphics API appears here.
 
 ### `engine/physics`
 
-`IPhysicsBackend`, `BodyDesc`, `VehicleDesc` — a clean abstraction over Jolt/Bullet.
+`IPhysicsBackend`, `BodyDesc`, `VehicleDesc` - a clean abstraction over Jolt/Bullet.
 
-### `engine/resource` — GEA 6.2
+### `engine/resource` - GEA 6.2
 
 Mesh loading, texture array packing, BLAS construction, scene files and projects.
 
@@ -168,17 +168,17 @@ Verified: `lucida_sandbox --bench 90 --shot f.png` gives 57.8 fps at 1971×1065 
 
 ### Measured baseline
 
-Reference hardware — MacBook Pro 16", Intel i9-9880H, **AMD Radeon Pro 5500M 8 GB**,
+Reference hardware - MacBook Pro 16", Intel i9-9880H, **AMD Radeon Pro 5500M 8 GB**,
 Metal 3. Mid-range mobile GPU with no ray tracing hardware at all: everything below
 runs as compute.
 
 | Scene | Resolution | Path | Frame rate |
 | --- | --- | --- | --- |
-| Sponza 4K (~5.7 M triangles, 4K textures) | 1080×720 | full RT, unoptimised | **15–30 fps** |
+| Sponza 4K (~5.7 M triangles, 4K textures) | 1080×720 | full RT, unoptimised | **15-30 fps** |
 | Primitives + water + fog (demo 0.3) | 1971×1065 | full RT | 57.8 fps |
 
 What matters as much as the number: **this method cannot produce noise or ghosting.**
-Not "does not today" — cannot. Tracing is deterministic Whitted-style with analytic
+Not "does not today" - cannot. Tracing is deterministic Whitted-style with analytic
 soft shadows and AO instead of stochastic sampling, so there is no variance to
 denoise and no history to accumulate. The image is final at frame one.
 
@@ -190,8 +190,8 @@ after tracing. It was doing exactly that; see the fix below.
 
 ### Fixed in M7: torn ghosting on moving objects
 
-`shader_v03.metal` wrote motion vectors on the assumption stated in its own comment —
-"the scene is static, so all motion comes from the camera" — reprojecting the world hit
+`shader_v03.metal` wrote motion vectors on the assumption stated in its own comment -
+"the scene is static, so all motion comes from the camera" - reprojecting the world hit
 point through `prev_view_proj` and nothing else. Any instance whose own transform
 changed since the previous frame reported camera motion only, so MetalFX resolved
 history from the wrong pixels and tore.
@@ -203,7 +203,7 @@ applies `prev_view_proj`. Static instances have both transforms equal, so the ma
 collapses to the camera-only case and nothing regresses.
 
 The previous transform advances once per *rendered frame* (`RollInstanceMotion`), not
-per `SetInstanceTransform` call — including on the frame an object stops, where prev has
+per `SetInstanceTransform` call - including on the frame an object stops, where prev has
 to catch up to current or a stationary object keeps smearing.
 
 ### Fixed: black window whenever MetalFX was not upscaling
@@ -228,7 +228,7 @@ nothing. A test that does not exercise the presentation path does not test prese
 `Init` set the render size from the surface and then called `SyncLayerSize`, which only
 acts on a *change*. Having just written that exact size, it saw none and created
 nothing. The renderer traced into null textures for the whole session unless something
-later resized the window — which is why it usually worked: the application compared the
+later resized the window - which is why it usually worked: the application compared the
 drawable size against the config and called `Resize`. When a saved config already held
 the current window size, no resize happened and the window stayed black with `Rays 0`.
 
@@ -236,7 +236,7 @@ A startup is not a resize. Targets are now created explicitly in `Init`.
 
 Two symptoms that looked like separate bugs came from this one: the black window, and
 UI panels from several frames stacked on top of each other. Nothing wrote the drawable,
-and the ImGui pass loaded it — so each frame's panels landed on a recycled drawable that
+and the ImGui pass loaded it - so each frame's panels landed on a recycled drawable that
 still held an older frame. The load action now follows whether anything actually wrote
 the drawable this frame, rather than a mode flag, so that class of artefact cannot come
 back.
@@ -246,7 +246,7 @@ back.
 Moving the presented image to the drawable with the whole-texture
 `copyFromTexture:toTexture:` crashed inside the AMD Metal driver. That convenience form
 requires identical dimensions, formats *and* mip counts, and when they differ it does
-not report an error — it dereferences. The compute copy that replaced it makes no such
+not report an error - it dereferences. The compute copy that replaced it makes no such
 demand and samples across any size difference, which is also what the renderer already
 relied on before a present texture existed.
 
@@ -257,7 +257,7 @@ the one that degrades to a crash in someone else's code.
 
 Both were invisible until the scene became data and something contradicted them:
 
-* The tracer traced analytic primitives **or** mesh instances, never both — spheres and
+* The tracer traced analytic primitives **or** mesh instances, never both - spheres and
   cubes sat in the `else` branch of the instance loop.
 * `AddMesh` zeroed the sphere, cube and light counts, so loading a model silently
   deleted the primitives and unlit the world.

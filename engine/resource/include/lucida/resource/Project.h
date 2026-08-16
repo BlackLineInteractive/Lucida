@@ -54,7 +54,7 @@ public:
 
     // Project-relative to absolute, and back. Resolve returns the input
     // untouched when it is already absolute, so a path pasted from elsewhere
-    // still works — it just will not survive being moved.
+    // still works - it just will not survive being moved.
     std::string Resolve(const std::string& relative) const;
     std::string MakeRelative(const std::string& absolute) const;
 
@@ -63,7 +63,7 @@ private:
     ProjectSettings m_settings;
 };
 
-// Recently opened projects, stored per user rather than per project — it is
+// Recently opened projects, stored per user rather than per project - it is
 // state about the person, not about the game.
 class RecentProjects {
 public:

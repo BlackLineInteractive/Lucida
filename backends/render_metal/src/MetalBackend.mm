@@ -177,7 +177,7 @@ class MetalBackend final : public IRenderBackend {
   // Render targets for Multi-pass & MetalFX
   // What the screen shows, at output resolution. Everything presents into this
   // and it goes to the drawable from here, so a readback of it is a readback of
-  // the image the user is looking at — the previous arrangement let the tracer
+  // the image the user is looking at - the previous arrangement let the tracer
   // pass verification while the window stayed black.
   id<MTLTexture> m_tex_present = nil;  // BGRA8 (output res)
   id<MTLTexture> m_tex_gbuffer = nil; // RGBA16F (ray-res color)
@@ -222,7 +222,7 @@ class MetalBackend final : public IRenderBackend {
   int m_orm_tex_dim = 1;
 
   // MetalFX history is only invalidated on genuine discontinuities (resize,
-  // scene swap, mesh load) — never on ordinary camera movement, which is
+  // scene swap, mesh load) - never on ordinary camera movement, which is
   // exactly when the accumulation is most valuable.
   bool m_reset_history = true;
   uint64_t m_frame_counter = 0;
@@ -260,7 +260,7 @@ class MetalBackend final : public IRenderBackend {
 
   // Advances every instance's previous transform by one frame. Runs before the
   // upload, so what the GPU sees is exactly "where this was when it was last
-  // drawn" — including the frame an object stops, where prev must catch up to
+  // drawn" - including the frame an object stops, where prev must catch up to
   // current or the upscaler keeps smearing a stationary object.
   void RollInstanceMotion() {
     for (size_t i = 0; i < m_instances.size(); i++) {
@@ -331,7 +331,7 @@ class MetalBackend final : public IRenderBackend {
 
   // Upload `bytes` of `data` into a GPU-private (VRAM-resident) buffer.
   // On a discrete GPU, StorageModeShared buffers stay in host memory and every
-  // read crosses PCIe — fatal for BVH/triangle traversal, which is nothing but
+  // read crosses PCIe - fatal for BVH/triangle traversal, which is nothing but
   // scattered reads. Private storage puts them in VRAM.
   id<MTLBuffer> MakePrivateBuffer(const void *data, size_t bytes) {
     bytes = std::max<size_t>(bytes, 16);
@@ -503,7 +503,7 @@ public:
     m_layer.framebufferOnly = NO; // allow compute shader writes
 
     // SyncLayerSize only reacts to a *change*, and Init has just set the size to
-    // what the surface reports — so it saw no change and created nothing. The
+    // what the surface reports - so it saw no change and created nothing. The
     // renderer then traced into null textures for the whole session, which looked
     // exactly like a black window. Targets are created here, unconditionally,
     // because startup is not a resize.
@@ -756,7 +756,7 @@ public:
     m_uniforms.num_bvh_nodes = m_num_bvh_nodes;
     // Deliberately leaves the analytic counts alone. Adding a mesh used to zero
     // spheres, cubes and lights, on the assumption that a mesh replaces the
-    // scene — so loading a model silently unlit the world and deleted its
+    // scene - so loading a model silently unlit the world and deleted its
     // primitives. A mesh is one more thing in the scene, not the scene.
     m_reset_history = true;
     m_have_prev_vp = false;
@@ -1053,7 +1053,7 @@ public:
 
       // MetalFX only earns its cost when it is actually upscaling. At 1:1 it
       // has nothing to reconstruct, and it is not present at all on older
-      // machines — so the copy below is the path that must always work, and the
+      // machines - so the copy below is the path that must always work, and the
       // scaler is the optimisation layered on top of it.
       // Tracks whether anything wrote the drawable this frame. The ImGui pass
       // keys its load action off this rather than off a mode flag: if nothing
@@ -1099,7 +1099,7 @@ public:
       // A whole-texture blit was the obvious way to get from the present texture
       // to the drawable, and it crashed inside the driver: that convenience
       // method demands identical dimensions, formats and mip counts, and gives
-      // no diagnostic when they differ — it dereferences. The compute copy makes
+      // no diagnostic when they differ - it dereferences. The compute copy makes
       // no such demand, samples across any size difference, and is the path the
       // renderer already trusted before this texture existed.
       if (!m_viewport_as_panel && m_tex_present) {
@@ -1153,7 +1153,7 @@ public:
 
   // Reads the traced (pre-upscale) colour target back to the CPU. This is the
   // image the ray tracer actually produced, which is what you want to inspect
-  // when judging shading — MetalFX upscaling is a separate stage on top.
+  // when judging shading - MetalFX upscaling is a separate stage on top.
   bool ReadbackFrame(std::vector<uint8_t> &rgba, int &w, int &h) override {
     if (!m_tex_present) return false;
 

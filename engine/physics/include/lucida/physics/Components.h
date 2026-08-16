@@ -12,8 +12,8 @@ struct RigidBody {
     BodyHandle body;
 };
 
-// A driveable vehicle. Input is written by whatever controls it — the player,
-// an AI, a replay — and the backend turns it into forces.
+// A driveable vehicle. Input is written by whatever controls it - the player,
+// an AI, a replay - and the backend turns it into forces.
 struct Vehicle {
     VehicleHandle handle;
     VehicleInput  input;

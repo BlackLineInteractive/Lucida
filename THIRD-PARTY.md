@@ -1,7 +1,7 @@
 # Third-party components
 
 Lucida Engine is licensed under the **GNU General Public License v3.0 or later**
-(see [LICENSE](LICENSE)). Nothing third-party is vendored in this repository — every
+(see [LICENSE](LICENSE)). Nothing third-party is vendored in this repository - every
 dependency below is fetched at configure time by `cmake/Dependencies.cmake` and keeps
 its own licence.
 
@@ -20,7 +20,7 @@ its own licence.
 | [Assimp](https://github.com/assimp/assimp) | BSD-3-Clause | yes | model import |
 
 Every licence above is permissive, so the combined work may be distributed under the
-GPL-3.0. The permissive notices must still be preserved in binary distributions — the
+GPL-3.0. The permissive notices must still be preserved in binary distributions - the
 table above plus the upstream licence files satisfy that.
 
 ## Planned (roadmap)
@@ -43,7 +43,7 @@ table above plus the upstream licence files satisfy that.
 
 Two licences on that list need care when the time comes:
 
-* **FreeType** is dual-licensed FTL / GPL-2.0-or-later. Take the FTL option — GPL-2.0
+* **FreeType** is dual-licensed FTL / GPL-2.0-or-later. Take the FTL option - GPL-2.0
   *only* would be incompatible with GPL-3.0.
 * **Apache-2.0** components (slang, KTX) may be combined into a GPL-3.0 work, but not
   the other way round. That is the direction Lucida needs, so it is fine.

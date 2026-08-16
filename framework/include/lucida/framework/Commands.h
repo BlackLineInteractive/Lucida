@@ -6,7 +6,7 @@
 //
 // The rule that makes it work, and that editors get wrong: an edit is one
 // command from the user's point of view, not one per frame. Dragging a slider
-// for two seconds is a single undo entry — captured when the control is grabbed,
+// for two seconds is a single undo entry - captured when the control is grabbed,
 // pushed when it is released. Anything that writes a component directly, without
 // going through here, does not exist as far as undo is concerned.
 

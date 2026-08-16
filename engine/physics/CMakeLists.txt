@@ -1,4 +1,4 @@
-# lucida::physics — vendor-neutral interface only. Jolt and Bullet live under
+# lucida::physics - vendor-neutral interface only. Jolt and Bullet live under
 # backends/ and are never linked into this target.
 
 add_library(lucida_physics INTERFACE)

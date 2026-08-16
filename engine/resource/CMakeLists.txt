@@ -1,4 +1,4 @@
-# lucida::resource — asset import. Assimp and stb stop here; nothing above this
+# lucida::resource - asset import. Assimp and stb stop here; nothing above this
 # module knows what a file format is.
 
 add_library(lucida_resource STATIC

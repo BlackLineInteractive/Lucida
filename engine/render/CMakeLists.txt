@@ -1,4 +1,4 @@
-# lucida::render — front end and backend interface. Header-only for now:
+# lucida::render - front end and backend interface. Header-only for now:
 # every concrete graphics API lives under backends/.
 
 add_library(lucida_render INTERFACE)

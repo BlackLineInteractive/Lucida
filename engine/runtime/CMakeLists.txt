@@ -1,4 +1,4 @@
-# lucida::runtime — game loop and world. Links core only, on purpose:
+# lucida::runtime - game loop and world. Links core only, on purpose:
 # the loop must not know which renderer or physics backend exists.
 
 add_library(lucida_runtime STATIC

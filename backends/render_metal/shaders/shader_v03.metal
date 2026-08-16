@@ -142,8 +142,8 @@ Ray make_ray(float3 o, float3 d) { return {o, normalize(d)}; }
 //
 // The traversal keeps only (t, u, v, triangle index) while walking the tree and
 // reconstructs the normal / UV / material exactly once, after the closest hit is
-// known. Interpolating and normalising per candidate triangle — as the previous
-// version did — costs a normalize() and a full HitInfo copy for every triangle
+// known. Interpolating and normalising per candidate triangle - as the previous
+// version did - costs a normalize() and a full HitInfo copy for every triangle
 // tested, most of which are immediately discarded.
 
 struct TriHit { float t; float u, v; int idx; };
@@ -828,7 +828,7 @@ float3 sky_color(float3 dir, constant Uniforms& u) {
 //
 // The analytic terms below (calc_analytic_ao / calc_gi) only ever loop over
 // spheres, planes and cubes, so a loaded mesh received *no* occlusion and *no*
-// bounce light — calc_analytic_ao returns a flat 1.0 and calc_gi contributes
+// bounce light - calc_analytic_ao returns a flat 1.0 and calc_gi contributes
 // nothing. Sponza was therefore lit by a single point light meant for a scene of
 // three spheres, which is why it read as flat and why anything the point light
 // could not reach went black.
@@ -845,7 +845,7 @@ constant int    kAORays       = 6;
 
 // Ambient occlusion by short any-hit rays over the cosine hemisphere. The
 // directions come from a golden-angle spiral: fixed, identical for every pixel,
-// so the result is completely deterministic — no noise to filter back out.
+// so the result is completely deterministic - no noise to filter back out.
 float trace_ao(float3 p, float3 N, float3 geo_n, float t, float radius,
                device const BVHNode* nodes, device const TriPos* tris,
                device const Instance* instances,
@@ -1031,7 +1031,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
     // The primary hit distance (used by the fog term) is taken from the first
     // iteration of the loop below rather than from a second, identical
-    // find_closest() call — that duplicate doubled the cost of every primary ray.
+    // find_closest() call - that duplicate doubled the cost of every primary ray.
     first_dist = 60.0;
     first_inst = -1;
     bool first_iteration = true;
@@ -1100,7 +1100,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 // Alpha. Sponza's grime and banner decals are separate polygons
                 // laid over the walls, ~70% transparent, meant to blend. Ignoring
                 // alpha drew them as opaque grey slabs that hid the stonework
-                // behind — the flat polygonal patches on the walls. Continuing
+                // behind - the flat polygonal patches on the walls. Continuing
                 // the ray with the complementary weight composites them properly;
                 // the existing ray stack already does exactly this job.
                 // Alpha, but only for materials the loader confirmed actually
@@ -1243,7 +1243,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
             // albedo as diffuse; metals tint the specular with albedo and have
             // no diffuse at all. Driving both from `metallic` replaces the old
             // hard DIFFUSE/METAL branch, which had no diffuse term for anything
-            // classified as metal — the reason textured Sponza read as grey.
+            // classified as metal - the reason textured Sponza read as grey.
             float  metallic  = clamp(mat.metallic, 0.0f, 1.0f);
             float  roughness = clamp(mat.roughness, 0.03f, 1.0f);
             float3 F0        = mix(float3(0.04), alb, metallic);
@@ -1437,7 +1437,7 @@ float4 march_fog(float3 origin, float3 dir, float primary_dist, float jitter,
     return float4(vol_color, transmittance);
 }
 
-// Closest-hit distance only — no shading. Used by the fog kernel to bound its
+// Closest-hit distance only - no shading. Used by the fog kernel to bound its
 // march without paying for a full trace_ray().
 //
 // The fog kernel runs at a fraction of the ray resolution and already resolves a
@@ -1560,7 +1560,7 @@ float4 upsample_fog(texture2d<float, access::sample> fogTex,
     return sum / wsum;
 }
 
-// ACES tonemapping — RRT + ODT fit by Stephen Hill.
+// ACES tonemapping - RRT + ODT fit by Stephen Hill.
 // Pre-exposed for a slightly lifted shadow floor (cinematic look, avoids
 // pure-black crushed shadows that look too CG).
 float3 aces_approx(float3 v) {
@@ -1817,7 +1817,7 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
     // ---- MetalFX guidance buffers.
     //
     // These used to be written as constants (0.5 and 0), which left the temporal
-    // scaler with no way to reproject history — so it could only ever blur, and
+    // scaler with no way to reproject history - so it could only ever blur, and
     // the host compensated by resetting history on every camera move, discarding
     // the accumulation entirely. Both halves are fixed: real depth and real
     // motion here, reset only on genuine discontinuities on the host.
@@ -1857,8 +1857,8 @@ kernel void raytrace_kernel(texture2d<float, access::write> outTexture [[texture
 // Copies the traced image to the drawable.
 //
 // Without this the only path to the screen was MetalFX, so a machine without it
-// — or a render scale of 1:1, where a temporal *upscaler* has nothing to
-// upscale — presented a black window while the tracer worked perfectly into an
+// - or a render scale of 1:1, where a temporal *upscaler* has nothing to
+// upscale - presented a black window while the tracer worked perfectly into an
 // offscreen texture. Linear sampling covers the upscale when the scaler is off.
 kernel void present_kernel(texture2d<float, access::sample> src [[texture(0)]],
                            texture2d<float, access::write>  dst [[texture(1)]],

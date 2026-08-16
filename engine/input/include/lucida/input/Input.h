@@ -35,7 +35,7 @@ struct InputState {
     bool Pressed(Action a)  const { return pressed[static_cast<usize>(a)]; }
     bool Released(Action a) const { return released[static_cast<usize>(a)]; }
 
-    // x: right positive, y: forward positive. Not normalised — the caller
+    // x: right positive, y: forward positive. Not normalised - the caller
     // decides whether diagonal movement should be clamped.
     Vec2 MoveAxis() const {
         return Vec2(f32(Down(Action::MoveRight))   - f32(Down(Action::MoveLeft)),

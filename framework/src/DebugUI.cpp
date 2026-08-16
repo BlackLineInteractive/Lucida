@@ -116,11 +116,11 @@ void DebugUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSettin
     }
 
     if (ui.show_viewport && viewport_texture)
-        DrawViewport(world, ui, viewport_texture, viewport_aspect, camera);
+        DrawViewport(world, ui, viewport_texture, viewport_aspect, camera, assets, stats, settings, time);
     if (ui.show_hierarchy) DrawHierarchy(world, ui); // Calls DrawSceneGraph
     if (ui.show_inspector) DrawInspector(world, ui, assets);
     if (ui.show_graphics_settings) DrawGraphicsSettings(ui, assets, settings, camera);
-    if (ui.show_stats)     DrawStats(stats, time);
+    if (ui.show_stats_panel)       DrawStatsPanel(world, assets, stats, time, settings, ui);
 
     if (ImGuiFileDialog::Instance()->Display("LoadModel", ImGuiWindowFlags_NoCollapse,
                                              ImVec2(600, 400))) {
@@ -175,7 +175,9 @@ void DebugUI::DrawMenuBar(UiState& ui) {
         ImGui::MenuItem("Hierarchy", nullptr, &ui.show_hierarchy);
         ImGui::MenuItem("Inspector", nullptr, &ui.show_inspector);
         ImGui::MenuItem("Graphics Settings", nullptr, &ui.show_graphics_settings);
-        ImGui::MenuItem("Statistics", nullptr, &ui.show_stats);
+        ImGui::Separator();
+        ImGui::MenuItem("Statistics (HUD Overlay)", nullptr, &ui.show_stats_overlay);
+        ImGui::MenuItem("Statistics (Docked Panel)", nullptr, &ui.show_stats_panel);
         ImGui::Separator();
         if (ImGui::MenuItem("Reset layout")) m_reset_layout = true;
         if (ImGui::MenuItem("Fullscreen", "F11")) ui.request_fullscreen = true;
@@ -197,7 +199,8 @@ void DebugUI::DrawMenuBar(UiState& ui) {
 }
 
 void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
-                           const CameraController& camera) {
+                           const CameraController& camera, const SceneAssets& assets,
+                           const RenderStats& stats, const RenderSettings& settings, const FrameTime& time) {
     // No padding: the image is the panel, and a border of window background
     // around a rendered frame reads as a bug.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -233,9 +236,7 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
         // Track hover state so SandboxApp can gate camera input.
         ui.viewport_hovered = image_hovered;
 
-        // RMB held over viewport → activate look-around (Blender / UE style).
-        // We track the "started inside" flag to avoid capturing drags that began
-        // on a UI element and accidentally entered the image area.
+        // RMB held over viewport -> activate look-around (Blender / UE style).
         static bool rmb_started_in_viewport = false;
         if (image_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
             rmb_started_in_viewport = true;
@@ -264,64 +265,82 @@ void DebugUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
             ui.selection = hit.entity;   // a miss clears the selection, as it should
         }
 
-        // ---- Gizmo toolbar (Dark Frosted Glass HUD) ----------------------
-        const ImVec2 win_pos = ImGui::GetWindowPos();
-        ImDrawList*  dl      = ImGui::GetWindowDrawList();
+        // ---- Gizmo Toolbar (Auto-resizing dark glass pill) ---------------
+        ImGui::SetCursorPos(ImVec2(img_offset.x + 10.0f, img_offset.y + 10.0f));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(14, 16, 22, 235));
+        ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(55, 60, 75, 200));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f, 4.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 3.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
 
-        const float  tb_h    = 34.0f;
-        const float  tb_w    = 520.0f;
-        const float  tb_x    = 12.0f;
-        const float  tb_y    = 10.0f;
+        if (ImGui::BeginChild("ViewportToolbar", ImVec2(0, 32.0f),
+                               ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysUseWindowPadding,
+                               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+            // Mode buttons
+            const char* ops[] = { "Translate (T)", "Rotate (R)", "Scale (S)" };
+            for (int i = 0; i < 3; ++i) {
+                const bool sel = (ui.gizmo_operation == i);
+                if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(50, 110, 220, 240));
+                else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
+                if (ImGui::Button(ops[i])) ui.gizmo_operation = i;
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+            }
 
-        const ImVec2 pill_min(win_pos.x + img_offset.x + tb_x,
-                              win_pos.y + img_offset.y + tb_y);
-        const ImVec2 pill_max(pill_min.x + tb_w, pill_min.y + tb_h);
-        dl->AddRectFilled(pill_min, pill_max,
-                          IM_COL32(14, 16, 22, 235), 6.0f);
-        dl->AddRect(pill_min, pill_max,
-                    IM_COL32(55, 60, 75, 200), 6.0f);
+            ImGui::SameLine(0, 4.0f);
+            ImGui::TextDisabled("|");
+            ImGui::SameLine(0, 4.0f);
 
-        // Place controls inside the pill
-        ImGui::SetCursorPos(ImVec2(img_offset.x + tb_x + 8.0f,
-                                   img_offset.y + tb_y + 5.0f));
+            // Space buttons
+            const char* spaces[] = { "Local", "World" };
+            for (int i = 0; i < 2; ++i) {
+                const bool sel = (ui.gizmo_space == i);
+                if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(40, 150, 90, 240));
+                else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
+                if (ImGui::Button(spaces[i])) ui.gizmo_space = i;
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+            }
 
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(230, 232, 240, 255));
+            ImGui::SameLine(0, 4.0f);
+            ImGui::TextDisabled("|");
+            ImGui::SameLine(0, 4.0f);
 
-        ImGui::BeginGroup();
-        // Mode buttons: Translate / Rotate / Scale
-        const char* ops[] = { "Translate (T)", "Rotate (R)", "Scale (S)" };
-        for (int i = 0; i < 3; ++i) {
-            const bool sel = ui.gizmo_operation == i;
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(50, 110, 220, 220));
-            else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(30, 34, 45, 180));
-            if (ImGui::SmallButton(ops[i])) ui.gizmo_operation = i;
+            // Snap toggle button
+            const bool snap_active = ui.snap_enabled;
+            if (snap_active) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 130, 40, 240));
+            else             ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
+            if (ImGui::Button("Snap")) ui.snap_enabled = !ui.snap_enabled;
             ImGui::PopStyleColor();
-            ImGui::SameLine();
-        }
-        ImGui::SameLine(0, 10);
 
-        // Coordinate space: Local / World
-        const char* spaces[] = { "Local", "World" };
-        for (int i = 0; i < 2; ++i) {
-            const bool sel = ui.gizmo_space == i;
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(40, 150, 90, 220));
-            else     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(30, 34, 45, 180));
-            if (ImGui::SmallButton(spaces[i])) ui.gizmo_space = i;
+            if (ui.snap_enabled) {
+                ImGui::SameLine(0, 4.0f);
+                ImGui::SetNextItemWidth(45.0f);
+                ImGui::DragFloat("##snap_val", &ui.snap_position.x, 0.05f, 0.01f, 10.0f, "%.2f");
+            }
+
+            ImGui::SameLine(0, 4.0f);
+            ImGui::TextDisabled("|");
+            ImGui::SameLine(0, 4.0f);
+
+            // Stats HUD toggle button
+            const bool stats_active = ui.show_stats_overlay;
+            if (stats_active) ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(110, 60, 210, 240));
+            else              ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(32, 36, 48, 200));
+            if (ImGui::Button("Stats HUD")) ui.show_stats_overlay = !ui.show_stats_overlay;
             ImGui::PopStyleColor();
-            ImGui::SameLine();
         }
-        ImGui::SameLine(0, 10);
+        ImGui::EndChild();
+        ImGui::PopStyleVar(6);
+        ImGui::PopStyleColor(2);
 
-        // Snap
-        ImGui::Checkbox("Snap", &ui.snap_enabled);
-        if (ui.snap_enabled) {
-            ImGui::SameLine(0, 6);
-            ImGui::SetNextItemWidth(45.0f);
-            ImGui::DragFloat("##snap_pos", &ui.snap_position.x, 0.05f, 0.01f, 10.0f, "%.2f");
+        // Draw Stats Overlay directly on Viewport if enabled
+        if (ui.show_stats_overlay) {
+            DrawStatsOverlay(world, assets, stats, time, settings, ui, image_min, size);
         }
-        ImGui::EndGroup();
-
-        ImGui::PopStyleColor();   // Text
 
         DrawGizmo(world, ui, const_cast<CameraController&>(camera), aspect, image_min, size);
     } else {
@@ -703,30 +722,101 @@ void DebugUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f32
     }
 }
 
-void DebugUI::DrawStats(const RenderStats& stats, const FrameTime& time) {
-    if (!ImGui::Begin("Statistics", nullptr)) {
+void DebugUI::DrawStatsPanel(World& world, const SceneAssets& assets, const RenderStats& stats,
+                            const FrameTime& time, const RenderSettings& settings, const UiState& ui) {
+    bool open = ui.show_stats_panel;
+    if (!ImGui::Begin("Statistics", const_cast<bool*>(&ui.show_stats_panel))) {
         ImGui::End();
         return;
     }
 
-    ImGui::Text("%.1f fps", m_fps_ema);
-    ImGui::Separator();
-    LabelledText("CPU", "%.2f ms", time.real_delta * 1000.0f);
-    LabelledText("GPU", "%.2f ms", stats.gpu_frame_ms);
-    LabelledText("Rays", "%d", stats.ray_count);
-    LabelledText("Triangles", "%d", stats.tri_count);
-    LabelledText("Ticks", "%u", time.tick_count);
+    if (BeginSection("Performance", true)) {
+        const ImVec4 fps_color = (m_fps_ema >= 50.0f) ? ImVec4(0.3f, 0.9f, 0.4f, 1.0f)
+                               : (m_fps_ema >= 30.0f) ? ImVec4(0.9f, 0.8f, 0.2f, 1.0f)
+                                                      : ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
+        ImGui::TextColored(fps_color, "%.1f FPS", m_fps_ema);
+        ImGui::SameLine(130.0f);
+        ImGui::Text("%.2f ms frame", time.real_delta * 1000.0f);
+        LabelledText("CPU", "%.2f ms", time.real_delta * 1000.0f);
+        LabelledText("GPU", "%.2f ms", stats.gpu_frame_ms);
+        LabelledText("Ticks", "%u", time.tick_count);
+        EndSection();
+    }
+
+    if (BeginSection("Ray Tracer", true)) {
+        LabelledText("Viewport", "%d x %d", ui.viewport_width, ui.viewport_height);
+        LabelledText("Scale", "%.2f (%.0f%%)", settings.render_scale, settings.render_scale * 100.0f);
+        LabelledText("Rays", "%d", stats.ray_count);
+        LabelledText("Samples", "%d spp", settings.samples);
+        LabelledText("Max Depth", "%d", settings.max_depth);
+        EndSection();
+    }
+
+    if (BeginSection("Scene Breakdown", true)) {
+        LabelledText("Entities", "%zu", world.Entities().Count());
+        LabelledText("Triangles", "%d", stats.tri_count);
+        LabelledText("Materials", "%zu", assets.materials.size());
+        EndSection();
+    }
 
     usize slot_count = 0;
     const ProfileSlot* slots = ProfileSlots(slot_count);
-    if (slot_count > 0) {
-        ImGui::Separator();
+    if (slot_count > 0 && BeginSection("CPU Profiler", true)) {
         for (usize i = 0; i < slot_count; ++i) {
             if (slots[i].name) LabelledText(slots[i].name, "%.3f ms", slots[i].millis_avg);
         }
+        EndSection();
     }
 
     ImGui::End();
+}
+
+void DebugUI::DrawStatsOverlay(World& world, const SceneAssets& assets, const RenderStats& stats,
+                              const FrameTime& time, const RenderSettings& settings, const UiState& ui,
+                              const ImVec2& image_min, const ImVec2& image_size) {
+    if (image_size.x < 240.0f || image_size.y < 120.0f) return;
+
+    // Place at top-right corner of the rendered viewport
+    const float pad = 10.0f;
+    const float w   = 200.0f;
+    const float h   = 90.0f;
+    const ImVec2 pos(image_min.x + image_size.x - w - pad, image_min.y + pad);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 rect_max(pos.x + w, pos.y + h);
+    dl->AddRectFilled(pos, rect_max, IM_COL32(14, 16, 22, 225), 6.0f);
+    dl->AddRect(pos, rect_max, IM_COL32(55, 60, 75, 180), 6.0f);
+
+    ImVec2 cur(pos.x + 8.0f, pos.y + 6.0f);
+
+    // FPS with color coding
+    const ImU32 fps_col = (m_fps_ema >= 50.0f) ? IM_COL32(80, 220, 100, 255)
+                        : (m_fps_ema >= 30.0f) ? IM_COL32(230, 200, 60, 255)
+                                               : IM_COL32(230, 70, 70, 255);
+
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "%.1f FPS", m_fps_ema);
+    dl->AddText(cur, fps_col, buf);
+
+    std::snprintf(buf, sizeof(buf), "%.2f ms", time.real_delta * 1000.0f);
+    dl->AddText(ImVec2(pos.x + w - 65.0f, cur.y), IM_COL32(200, 200, 215, 255), buf);
+
+    cur.y += 18.0f;
+    dl->AddLine(ImVec2(pos.x + 6.0f, cur.y), ImVec2(pos.x + w - 6.0f, cur.y), IM_COL32(50, 55, 70, 180));
+    cur.y += 4.0f;
+
+    std::snprintf(buf, sizeof(buf), "Res: %dx%d (%.0f%%)",
+                  ui.viewport_width, ui.viewport_height, settings.render_scale * 100.0f);
+    dl->AddText(cur, IM_COL32(170, 175, 190, 255), buf);
+    cur.y += 16.0f;
+
+    const usize entity_count = world.Entities().Count();
+    std::snprintf(buf, sizeof(buf), "Entities: %zu  |  Mats: %zu", entity_count, assets.materials.size());
+    dl->AddText(cur, IM_COL32(170, 175, 190, 255), buf);
+    cur.y += 16.0f;
+
+    std::snprintf(buf, sizeof(buf), "Rays: %d  |  Tris: %d", stats.ray_count, stats.tri_count);
+    dl->AddText(cur, IM_COL32(170, 175, 190, 255), buf);
 }
 
 } // namespace lucida

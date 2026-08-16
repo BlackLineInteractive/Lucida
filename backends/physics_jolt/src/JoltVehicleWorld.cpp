@@ -53,7 +53,7 @@ namespace Layers {
     static constexpr JPH::uint        NUM_LAYERS = 2;
 }
 
-// ── Simple object–layer pair filter ─────────────────────────────────────────
+// ── Simple object-layer pair filter ─────────────────────────────────────────
 class ObjectLayerPairFilterImpl : public JPH::ObjectLayerPairFilter {
 public:
     bool ShouldCollide(JPH::ObjectLayer l1, JPH::ObjectLayer l2) const override {
@@ -166,7 +166,7 @@ void PhysicsWorld::Init() {
     auto& body_iface = impl->physics_system->GetBodyInterface();
 
     // ── Ground plane ────────────────────────────────────────────────────────
-    // Half-space at y=0 — an enormous flat box works fine for a flat world.
+    // Half-space at y=0 - an enormous flat box works fine for a flat world.
     JPH::BoxShapeSettings ground_shape(JPH::Vec3(500.0f, 0.5f, 500.0f));
     ground_shape.SetEmbedded();
     JPH::BodyCreationSettings gs(
@@ -242,7 +242,7 @@ void PhysicsWorld::Init() {
         w->mSuspensionSpring.mDamping   = 0.5f;
         // Longitudinal friction (Pacejka-inspired, Jolt uses a simple slip curve)
         w->mMaxSteerAngle        = front ? JPH::DegreesToRadians(32.0f) : 0.0f;
-        // Lateral friction (cornering) — wide muscle car tyre, decent grip
+        // Lateral friction (cornering) - wide muscle car tyre, decent grip
         return w;
     };
 
@@ -265,11 +265,11 @@ void PhysicsWorld::Init() {
     // ── WheeledVehicleController ────────────────────────────────────────────
     auto* ctrl = new JPH::WheeledVehicleControllerSettings();
 
-    // Engine — 302 cu.in. (4.9 L) V8, 290 hp / 290 ft·lb
+    // Engine - 302 cu.in. (4.9 L) V8, 290 hp / 290 ft·lb
     ctrl->mEngine.mMaxTorque          = 420.0f;   // N·m peak
     ctrl->mEngine.mMinRPM             = 700.0f;
     ctrl->mEngine.mMaxRPM             = 6200.0f;
-    // Normalised torque curve (0=idle, 1=redline) — typical V8 broad band
+    // Normalised torque curve (0=idle, 1=redline) - typical V8 broad band
     ctrl->mEngine.mNormalizedTorque.Reserve(6);
     ctrl->mEngine.mNormalizedTorque.AddPoint(0.00f, 0.60f);  // idle torque
     ctrl->mEngine.mNormalizedTorque.AddPoint(0.20f, 0.85f);  // building
@@ -278,7 +278,7 @@ void PhysicsWorld::Init() {
     ctrl->mEngine.mNormalizedTorque.AddPoint(0.85f, 0.80f);  // near redline
     ctrl->mEngine.mNormalizedTorque.AddPoint(1.00f, 0.55f);  // redline
 
-    // Transmission — Boss 302 Toploader 4-speed (simulate as auto with same ratios)
+    // Transmission - Boss 302 Toploader 4-speed (simulate as auto with same ratios)
     ctrl->mTransmission.mMode = JPH::ETransmissionMode::Auto;
     ctrl->mTransmission.mGearRatios        = { 3.50f, 2.14f, 1.36f, 1.00f };
     ctrl->mTransmission.mReverseGearRatios = { -3.00f };
@@ -287,7 +287,7 @@ void PhysicsWorld::Init() {
     ctrl->mTransmission.mShiftUpRPM        = 5400.0f;
     ctrl->mTransmission.mShiftDownRPM      = 2200.0f;
 
-    // Differential — RWD, Traction-Lok limited slip (Boss 302 standard)
+    // Differential - RWD, Traction-Lok limited slip (Boss 302 standard)
     JPH::VehicleDifferentialSettings diff;
     diff.mLeftWheel          = 2;     // RL
     diff.mRightWheel         = 3;     // RR
@@ -297,7 +297,7 @@ void PhysicsWorld::Init() {
     diff.mEngineTorqueRatio   = 1.0f; // 100% engine torque to rear
     ctrl->mDifferentials = { diff };
 
-    // Tyre friction model — Pacejka-like lateral slip
+    // Tyre friction model - Pacejka-like lateral slip
     // Front wheels: slightly less grip (understeer tendency = more stable)
     // Rear wheels: slightly more grip (but RWD will oversteer under hard throttle)
     for (auto* ws : { wFL.GetPtr(), wFR.GetPtr() }) {
@@ -326,7 +326,7 @@ void PhysicsWorld::Init() {
     // ── Create & add constraint ──────────────────────────────────────────────
     impl->vehicle = new JPH::VehicleConstraint(*car_body, vehicle_settings);
 
-    // Collision tester — cast a cylinder down from each wheel
+    // Collision tester - cast a cylinder down from each wheel
     JPH::Ref<JPH::VehicleCollisionTesterCastCylinder> tester =
         new JPH::VehicleCollisionTesterCastCylinder(Layers::MOVING, 0.05f);
     impl->vehicle->SetVehicleCollisionTester(tester);
@@ -344,7 +344,7 @@ void PhysicsWorld::Init() {
     is_initialised = true;
     std::cout << "[Physics] Jolt v"
               << JPH_VERSION_MAJOR << "." << JPH_VERSION_MINOR
-              << " initialised — Mustang Boss 302 ready.\n";
+              << " initialised - Mustang Boss 302 ready.\n";
 }
 
 // ──────────────────────────────────────────── PhysicsWorld::Step ─────────────

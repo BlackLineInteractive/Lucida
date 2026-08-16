@@ -7,7 +7,7 @@
 // A thin facade over EnTT. Thin on purpose and honest about it: an ECS worth
 // using is a template library, so hiding it completely behind a PIMPL would
 // throw away the typed views that are the entire point. What this buys is one
-// place that names the types — `lucida::Entity`, `lucida::Registry` — so the
+// place that names the types - `lucida::Entity`, `lucida::Registry` - so the
 // day EnTT is replaced, the change is here rather than in every system.
 //
 // The rule that still holds: application and gameplay code includes this

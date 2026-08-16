@@ -115,7 +115,7 @@ struct GPUInstance {
     // The transform this instance had in the previously rendered frame.
     // Temporal upscaling needs to know where a surface *was*, and reprojecting
     // through the camera alone answers that only for geometry that did not move
-    // — which is why moving objects used to tear. Equal to local_to_world for
+    // - which is why moving objects used to tear. Equal to local_to_world for
     // anything static, so the shader maths collapses to the camera-only case.
     float prev_local_to_world[12];      // 144
 };

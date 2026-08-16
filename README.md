@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <em>lucida</em> — the brightest star in a constellation.
+  <em>lucida</em> - the brightest star in a constellation.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 ---
 
 A modular real-time ray tracing engine, aimed narrowly at **procedural materials and
-selective ray tracing** — spending rays only where they are visible so ray-traced games
+selective ray tracing** - spending rays only where they are visible so ray-traced games
 run on ordinary hardware.
 
 Architecture follows three sources strictly: **Game Engine Architecture** (Gregory) for
@@ -42,22 +42,22 @@ patterns inside those layers, **Data-Oriented Design** (Fabian) for memory layou
 
 ## Where it stands
 
-On a MacBook Pro 16" (i9-9880H, **AMD Radeon Pro 5500M 8 GB** — a mid-range mobile GPU
+On a MacBook Pro 16" (i9-9880H, **AMD Radeon Pro 5500M 8 GB** - a mid-range mobile GPU
 with no ray tracing hardware, everything in compute):
 
 | Scene | Resolution | Path | Frame rate |
 | --- | --- | --- | --- |
-| Sponza 4K (~5.7 M triangles) | 1080×720 | full RT, unoptimised | **15–30 fps** |
+| Sponza 4K (~5.7 M triangles) | 1080×720 | full RT, unoptimised | **15-30 fps** |
 | Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 57.8 fps |
 
-This method **cannot** produce noise or ghosting — not "does not yet". Tracing is
+This method **cannot** produce noise or ghosting - not "does not yet". Tracing is
 deterministic Whitted-style with analytic soft shadows and AO rather than stochastic
 sampling, so there is no variance to denoise and no history to accumulate. The image is
 final at frame one, and every optimisation on the roadmap has to keep it that way.
 
 (The torn ghosting that used to show on moving objects was never the tracer: the MetalFX
 upscaler was given motion vectors that described camera movement only. Motion is now
-computed per instance — see
+computed per instance - see
 [ARCHITECTURE.md](docs/ARCHITECTURE.md#fixed-in-m7-torn-ghosting-on-moving-objects).)
 
 ---
@@ -83,9 +83,9 @@ cmake --build build -j
 | Windows 10+ | x86_64, x86 | OpenGL 4.3 / Vulkan | same |
 
 Core, runtime, resource, physics, input and framework build on all three. Exactly one
-render backend is production-ready today — Metal. The GL and Vulkan sources sit in
+render backend is production-ready today - Metal. The GL and Vulkan sources sit in
 `backends/render_gl` and `backends/render_vulkan` in the form inherited from
-RayTracer_Unified and are not yet wired to the current interface (see roadmap M12–M13).
+RayTracer_Unified and are not yet wired to the current interface (see roadmap M12-M13).
 
 **Debian / Ubuntu**
 
@@ -193,13 +193,13 @@ Lucida/
 
 The rule that holds it together: **a module sees only what its
 `target_link_libraries` lists.** No `engine/*` file includes SDL2, Metal, Jolt or
-ImGui — choosing backends is the application's job.
+ImGui - choosing backends is the application's job.
 
 ---
 
 ## Licence
 
-Lucida Engine is free software under the **GNU General Public License v3.0 or later** —
+Lucida Engine is free software under the **GNU General Public License v3.0 or later** -
 see [LICENSE](LICENSE). You may use, study, modify and redistribute it; derived works
 that you distribute must carry the same freedoms.
 
@@ -217,9 +217,9 @@ Copyright (C) 2026 BlackLine Interactive
 
 Development notes, builds and breakdowns:
 
-* Telegram — <https://t.me/blacklineinteractive>
-* YouTube — <https://youtube.com/@blacklineinteractive>
+* Telegram - <https://t.me/blacklineinteractive>
+* YouTube - <https://youtube.com/@blacklineinteractive>
 
 Issues and pull requests are welcome. If you are opening a pull request, read
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first — the dependency rules there are
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first - the dependency rules there are
 enforced by CMake, and a change that breaks them will not link.

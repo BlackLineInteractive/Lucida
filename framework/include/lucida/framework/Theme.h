@@ -5,7 +5,7 @@
 // Editor theme and animated widgets.
 //
 // The palette is carried over from Climax Game Engine Toolkit: a cool neutral
-// chrome with a single warm accent that marks state — checkmarks, slider grabs,
+// chrome with a single warm accent that marks state - checkmarks, slider grabs,
 // the active tab, selection. One accent is enough hierarchy; a paintbox is not.
 //
 // Motion goes through ImAnim rather than hand-rolled lerps: hover and press are

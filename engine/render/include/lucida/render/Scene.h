@@ -5,7 +5,7 @@
 // Scene description, as data.
 //
 // A backend receives one of these and uploads it. It does not know how the scene
-// was assembled — code, a JSON file or an editor — and it holds no scene of its
+// was assembled - code, a JSON file or an editor - and it holds no scene of its
 // own. That is the whole point of this header: before it existed, the demo scenes
 // lived inside the Metal backend, which made a second backend impossible to write
 // and a scene impossible to author.
@@ -32,7 +32,7 @@ struct SceneEnvironment {
     f32  fog_density  = 0.022f;
     i32  fog_steps    = 16;
 
-    // Sky gradient — neutral dark studio tones (Blender/Unreal viewport style).
+    // Sky gradient - neutral dark studio tones (Blender/Unreal viewport style).
     Vec3 sky_zenith{0.06f, 0.09f, 0.16f};
     Vec3 sky_horizon{0.18f, 0.22f, 0.28f};
     Vec3 sky_ground{0.04f, 0.04f, 0.06f};

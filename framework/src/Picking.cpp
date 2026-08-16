@@ -11,7 +11,7 @@ namespace {
 // Slab test in the box's own space. Returns the entry distance, or a miss.
 bool IntersectAABB(const Ray& ray, const Vec3& box_min, const Vec3& box_max, f32& out_t) {
     // Division by a zero component gives an infinity, and the min/max below
-    // resolve it correctly — no need to special-case an axis-aligned ray.
+    // resolve it correctly - no need to special-case an axis-aligned ray.
     const Vec3 inv = 1.0f / ray.direction;
     const Vec3 t0 = (box_min - ray.origin) * inv;
     const Vec3 t1 = (box_max - ray.origin) * inv;

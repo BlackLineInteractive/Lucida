@@ -4,7 +4,7 @@
 #pragma once
 // The editor shell: menu bar, dock space and panels.
 //
-// Immediate mode, so there is no widget state to keep in sync — every panel
+// Immediate mode, so there is no widget state to keep in sync - every panel
 // reads the live structs and writes them back. The framework layer is where
 // tools live; nothing below it links ImGui.
 
@@ -27,7 +27,8 @@ struct UiState {
     bool show_menu      = true;
     bool show_hierarchy = true;
     bool show_inspector = true;
-    bool show_stats     = true;
+    bool show_stats_panel   = false;
+    bool show_stats_overlay = true;
     bool show_graphics_settings = true;
     bool show_viewport  = true;
 
@@ -77,14 +78,19 @@ private:
     void BuildDefaultLayout(unsigned dockspace_id);
     void DrawMenuBar(UiState& ui);
     void DrawViewport(World& world, UiState& ui, void* texture, f32 aspect,
-                      const CameraController& camera);
+                      const CameraController& camera, const SceneAssets& assets,
+                      const RenderStats& stats, const RenderSettings& settings, const FrameTime& time);
     void DrawHierarchy(World& world, UiState& ui);
     void DrawSceneGraph(World& world, UiState& ui, Entity root_or_null);
     void DrawInspector(World& world, UiState& ui, SceneAssets& assets);
     void DrawGraphicsSettings(UiState& ui, SceneAssets& assets, RenderSettings& settings, CameraController& camera);
     void DrawGizmo(World& world, UiState& ui, CameraController& camera, f32 aspect,
                    const ImVec2& image_min, const ImVec2& image_size);
-    void DrawStats(const RenderStats& stats, const FrameTime& time);
+    void DrawStatsPanel(World& world, const SceneAssets& assets, const RenderStats& stats,
+                        const FrameTime& time, const RenderSettings& settings, const UiState& ui);
+    void DrawStatsOverlay(World& world, const SceneAssets& assets, const RenderStats& stats,
+                         const FrameTime& time, const RenderSettings& settings, const UiState& ui,
+                         const ImVec2& image_min, const ImVec2& image_size);
     void TrackEdit(Registry& registry, Entity entity, const LocalTransform& current,
                    const char* name);
 

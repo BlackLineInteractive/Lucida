@@ -6,7 +6,7 @@
 //
 // Sender and receiver are decoupled in time as well as in code: the producer
 // pushes and returns, the consumer drains at a point the frame chooses. Fixed
-// capacity ring buffer — no allocation while the game is running.
+// capacity ring buffer - no allocation while the game is running.
 
 #include "lucida/core/diag/Assert.h"
 #include "lucida/core/diag/Log.h"

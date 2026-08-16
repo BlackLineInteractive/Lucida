@@ -1,4 +1,4 @@
-# lucida::core — depends on nothing but the standard library and glm.
+# lucida::core - depends on nothing but the standard library and glm.
 # Anything that needs SDL, Metal, Jolt or ImGui does not belong in this target.
 
 add_library(lucida_core STATIC

@@ -19,14 +19,14 @@ What breadth makes *structurally* hard for them is where a narrow engine wins:
 |---|---|---|
 | Shader compilation stutter | Thousands of permutations, compiled on demand, cached per driver | One tracing kernel with tiers as branches. Precompiled variants, cached to disk (M12). **Target: zero compilation during play** |
 | Long editor startup | Enormous asset databases, plugin graphs, module loading | **Target: editor open to first frame under 2 s on the reference machine** |
-| Texture memory | PBR authoring means gigabytes of maps | Procedural materials are the *default*, not the only option — conventional textures stay fully supported. The win is that a scene *can* be built without them. **Target: a procedurally dressed Sponza-scale scene under 200 MB VRAM** |
+| Texture memory | PBR authoring means gigabytes of maps | Procedural materials are the *default*, not the only option - conventional textures stay fully supported. The win is that a scene *can* be built without them. **Target: a procedurally dressed Sponza-scale scene under 200 MB VRAM** |
 | Frame-time spikes | GC, streaming hitches, PSO creation mid-frame | No allocation in the frame loop (arena), no mid-frame pipeline creation. **Target: 99th percentile frame under 1.5x median** |
 | Build size and cold start | Runtime carries everything | Modules link only what an app uses. **Target: shipped game binary under 20 MB** |
 
 The unusual specifics are the point: an engine that only does ray tracing does not need
 a rasteriser, a shadow-map system, a light-probe baker, a reflection-probe system or a
 GI baker. Every one of those is a subsystem the big engines must carry and Lucida
-deletes. That is where the optimisation budget comes from — not from writing tighter
+deletes. That is where the optimisation budget comes from - not from writing tighter
 loops than Epic.
 
 ## Mobile: one effect, one ray
@@ -35,7 +35,7 @@ Android and iOS get the same engine with the ray budget cut to the bone. The tie
 system (M8) is what makes that possible without a separate mobile renderer.
 
 The shape of it: shade everything with the zero-ray Baseline path, and spend the budget
-on **one** traced effect per scene — a mirror, a water surface, a glass panel — chosen
+on **one** traced effect per scene - a mirror, a water surface, a glass panel - chosen
 by the material's `EffectMask`. One reflective surface traced properly reads as "this
 game has ray tracing" far more convincingly than a whole scene traced badly.
 
@@ -71,7 +71,7 @@ below are on this machine unless stated.
 | Starter project, 1 sphere | 3584x1938 | full RT, no upscale | 56.2 fps | 11.3 ms |
 
 **The viewport traces at the panel's resolution, not the window's.** On the reference
-layout the centre dock measures 2286x1376 against a 3584x1938 window — 3.1 M pixels
+layout the centre dock measures 2286x1376 against a 3584x1938 window - 3.1 M pixels
 instead of 6.9 M, so the editor traces **2.2x fewer rays** than it did while showing the
 same image. The panel measures itself each frame and the renderer follows; targets are
 rebuilt only past a 32-pixel threshold, so dragging a splitter scales the last image
@@ -126,7 +126,7 @@ Memory:
 Today, by hand: `--bench N --shot out.png` prints frame, GPU and profiler slots.
 
 The first automated piece exists: `cmake -B build -DLUCIDA_BUILD_TESTS=ON` and
-`ctest --test-dir build` run the editor checks — picking maths and the undo stack —
+`ctest --test-dir build` run the editor checks - picking maths and the undo stack -
 with no window and no GPU, so they run anywhere CI does.
 
 Planned, and the reason this document exists:

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Editor behaviour that is easy to break and impossible to notice: picking maths
-// and the undo stack. No window, no GPU — these are questions about entities.
+// and the undo stack. No window, no GPU - these are questions about entities.
 //
 // Run with `ctest --test-dir build` or by executing the binary directly; it
 // returns the number of failed checks.

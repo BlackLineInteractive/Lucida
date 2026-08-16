@@ -7,7 +7,7 @@
 // A scene that exists only as C++ is a demo. This is the line the project
 // crosses to become an engine: the world can be changed without a compiler.
 //
-// The format is JSON and is meant to be edited by hand — enums are written as
+// The format is JSON and is meant to be edited by hand - enums are written as
 // names, materials are referenced by name rather than by index, so inserting a
 // material at the top of a file does not repaint everything below it.
 

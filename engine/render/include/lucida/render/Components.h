@@ -12,7 +12,7 @@
 namespace lucida {
 
 // An entity drawn as a mesh instance. The transform comes from the entity's
-// WorldTransform, so moving the entity moves the instance — nothing else has to
+// WorldTransform, so moving the entity moves the instance - nothing else has to
 // remember to keep the two in step.
 struct MeshInstance {
     MeshHandle     mesh;
@@ -28,7 +28,7 @@ struct LocalBounds {
 };
 
 // An analytic primitive: geometry described by a handful of numbers rather than
-// by triangles. This is where the engine's cheapness comes from — a sphere is
+// by triangles. This is where the engine's cheapness comes from - a sphere is
 // twelve floats and an exact intersection, not a mesh to build a BVH over.
 enum class PrimitiveType : u8 { Sphere = 0, Box, Plane, Cylinder, Cone, Torus, Disk, Count };
 

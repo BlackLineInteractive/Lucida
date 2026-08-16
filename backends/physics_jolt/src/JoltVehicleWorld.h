@@ -10,9 +10,9 @@
 //
 // Architecture
 // ────────────
-//  • PhysicsWorld::Init()  — creates Jolt systems, static ground plane, and
+//  • PhysicsWorld::Init()  - creates Jolt systems, static ground plane, and
 //    the car body rigid body with VehicleConstraint.
-//  • PhysicsWorld::Step()  — advances the simulation by dt seconds,
+//  • PhysicsWorld::Step()  - advances the simulation by dt seconds,
 //    reads throttle/brake/steer/handbrake from CarInput.
 //  • The caller reads car_pos / car_rot / wheels[] every frame.
 //  • All units are SI (metres, kg, N, rad).

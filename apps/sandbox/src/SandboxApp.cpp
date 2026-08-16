@@ -301,7 +301,7 @@ public:
 
 private:
     // Builds a scene and hands it over. Note the split: the backend takes the
-    // geometry, the application takes the spawn point — placing a camera is not
+    // geometry, the application takes the spawn point - placing a camera is not
     // the renderer's job.
     void LoadScene(World& world, scenes::BuiltIn which) {
         Registry& entities = world.Entities();

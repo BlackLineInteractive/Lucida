@@ -1,4 +1,4 @@
-# lucida::input — HID abstraction (GEA ch.8). Knows nothing about SDL; the
+# lucida::input - HID abstraction (GEA ch.8). Knows nothing about SDL; the
 # platform backend fills the state, gameplay reads actions.
 
 add_library(lucida_input INTERFACE)
