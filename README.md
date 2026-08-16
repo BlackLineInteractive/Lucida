@@ -29,6 +29,14 @@ Architecture follows three sources strictly: **Game Engine Architecture** (Grego
 * Frame and memory budgets, and where a small engine beats a large one: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
 
 <p align="center">
+  <img src="media/0.3.png" alt="Lucida Engine 0.3 Viewport" width="100%">
+</p>
+
+<p align="center">
+  <img src="media/0.3(2).png" alt="Lucida Engine 0.3 Editor" width="100%">
+</p>
+
+<p align="center">
   <img src="media/0.2.png" alt="Lucida Engine 0.2 Viewport" width="100%">
 </p>
 
@@ -153,7 +161,7 @@ another machine and opened there.
 `--bench` needs nobody watching: it is how you check the renderer is alive without
 looking at a window.
 
-### Controls
+### Controls & Shortcuts
 
 | Keys / Mouse | Action |
 | --- | --- |
@@ -161,11 +169,24 @@ looking at a window.
 | RMB + W A S D | Fly camera movement |
 | RMB + Q / E | Fly down / up |
 | RMB + Shift | Sprint speed boost |
-| RMB + Scroll | Adjust camera fly speed on the fly |
+| RMB + Scroll | Adjust camera fly speed interactively |
 | F | Focus camera on selected object |
-| T / R / S (1 / 2 / 3) | Switch Gizmo mode (Translate / Rotate / Scale) |
+| 1 / 2 / 3 (or T / R / S) | Switch Gizmo mode (Translate / Rotate / Scale) |
+| Cmd+Z (Ctrl+Z) | Global Undo (Transforms, Materials, Hierarchy, Primitives, Deletion) |
+| Cmd+Shift+Z / Cmd+Y | Global Redo |
+| Cmd+D (Ctrl+D) | Duplicate selected entity with full state |
+| Delete / Backspace | Delete selected entity (restorable via Undo) |
 | Tab / Esc | Toggle UI overlay and cursor capture |
 | F11 | Toggle Fullscreen |
+
+### Key Engine Features
+
+- **Unified Metal Compute Ray Tracer**: Deterministic Whitted RT with analytic soft shadows, directional sun casting, golden-angle hemisphere AO, multi-frequency trochoidal water waves, and volumetric fog.
+- **Hardware Upscaling**: Sub-pixel Halton jittering with per-instance Motion Vectors and Apple MetalFX Temporal Upscaling.
+- **Live PBR & Material Inspector**: 1-click automotive and metallic presets, live Albedo/Metallic/Roughness/Emission/IOR editing, and normal map support.
+- **Complete Scene Hierarchy**: Multi-part 3D model node tree extraction, drag-and-drop parenting, and 3D non-uniform scaling with uniform lock toggle.
+- **Global Undo / Redo Architecture**: Command pattern with `EntitySnapshot` component serialization covering all viewport and inspector interactions.
+- **Real-Time Lighting & Post-Processing**: Live sun positioning, sky irradiance, ACES/Reinhard/Filmic tonemapping, gamma correction, and Bayer dithering.
 
 ---
 
