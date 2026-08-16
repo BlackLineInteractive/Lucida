@@ -11,11 +11,8 @@
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-blue.svg">
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
   <img alt="Renderer" src="https://img.shields.io/badge/renderer-Metal%20ray%20tracing-orange.svg">
-</p>
-
-<p align="center">
-  <a href="https://t.me/blacklineinteractive">Telegram</a> ·
-  <a href="https://youtube.com/@blacklineinteractive">YouTube</a>
+  <a href="https://t.me/blacklineinteractive"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-2CA5E0?logo=telegram&logoColor=white"></a>
+  <a href="https://youtube.com/@blacklineinteractive"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-FF0000?logo=youtube&logoColor=white"></a>
 </p>
 
 ---
@@ -236,8 +233,10 @@ Copyright (C) 2026 BlackLine Interactive
 
 Development notes, builds and breakdowns:
 
-* Telegram - <https://t.me/blacklineinteractive>
-* YouTube - <https://youtube.com/@blacklineinteractive>
+<p align="left">
+  <a href="https://t.me/blacklineinteractive"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"></a>
+  <a href="https://youtube.com/@blacklineinteractive"><img alt="YouTube" src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
+</p>
 
 Issues and pull requests are welcome. If you are opening a pull request, read
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first - the dependency rules there are
