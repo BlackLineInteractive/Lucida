@@ -1,180 +1,182 @@
 # Lucida Engine — Status vs. Reference Books
 
-> Звіт порівняння поточного стану рушія з GEA (Gregory), PBRT, RTR та іншими джерелами.
-> Оновлюється вручну після кожного milestone.
+> Comparison of the current engine state against GEA (Gregory), RTR (Möller),
+> PBRT (Pharr) and DOD (Fabian). Updated manually after each milestone.
 
 ---
 
-## Легенда
+## Legend
 
-| Значок | Стан |
-|--------|------|
-| ✅ | Реалізовано, тести проходять |
-| 🔶 | Частково — є scaffold / stub |
-| ❌ | Відсутнє — тільки в роадмапі |
-
----
-
-## 1. Шари рушія (GEA ch. 1.6 — Runtime Engine Architecture)
-
-| Шар | GEA | Lucida | Стан |
-|-----|-----|--------|------|
-| Platform / OS | Window, input, audio, video | `platform_sdl2`, SDL2 event pump | ✅ |
-| Core Systems | Memory, containers, math, logging | `engine/core` — FrameArena, Pool, GLM | ✅ |
-| Resource Manager | Async load, cache, hot reload | `engine/resource` — sync + Assimp; hot reload | 🔶 async ❌ |
-| Rendering Engine | Scene graph, visibility, lighting | `render_metal` — Whitted RT on Metal | ✅ |
-| Physics & Collision | Rigid, soft, queries | `physics_jolt` — Jolt Physics | 🔶 full soft body ❌ |
-| Animation | Skeleton, blend tree, IK | `engine/animation` — component scaffolds | 🔶 runtime blend ❌ |
-| Human Interface (Input) | Actions, not scancodes | `engine/input` — action map | ✅ |
-| Audio | Spatial, streaming, mixer | `engine/audio` — miniaudio backend | 🔶 spatial 3D ❌ |
-| Online / Networking | Replication, RPC | `GameplayComponents.h` NetworkXxx stubs | 🔶 stubs only ❌ |
-| Gameplay Foundation | World, ECS, game loop | `engine/runtime` — World + fixed step | ✅ |
-| Game-Specific | AI, scripting, UI, nodes | `runtime/GameplayComponents.h` — 107 nodes | 🔶 logic ❌ |
+| Mark | Meaning |
+|------|---------|
+| done | Implemented, tests passing |
+| partial | Scaffold / stub exists, logic missing |
+| missing | Not yet started — on roadmap only |
 
 ---
 
-## 2. Підсистеми (GEA ch. 1)
+## 1. Engine Layers  (GEA ch. 1.6 — Runtime Engine Architecture)
 
-### 2.1 Рендеринг
-
-| Функція | Джерело | Стан |
-|---------|---------|------|
-| Two-level BVH (TLAS/BLAS) | RTR ch. 25 | ✅ |
-| Radiance Cascades GI | Golubev 2022 | ✅ |
-| Whitted RT (analytic shadows, AO) | PBRT ch. 14 | ✅ |
-| MetalFX Temporal Upscaling + motion vectors | Apple docs | ✅ |
-| PBR — albedo, metallic, roughness, normal, AO, emissive | RTR ch. 9 | ✅ |
-| SSAO | RTR ch. 11 | ✅ |
-| HBAO / GTAO | RTR ch. 11 | ❌ (settings enum є, kernel відсутній) |
-| FXAA | RTR ch. 5 | ❌ |
-| SMAA | Jimenez 2012 | ❌ |
-| TAA | RTR ch. 5 | ✅ (MetalFX temporal) |
-| Frustum Culling | GEA ch. 14 | 🔶 camera only |
-| Occlusion Culling | GEA ch. 14 | ❌ |
-| RT-специфічне culling (BVH traversal, coherent rays) | RTR ch. 25 | ✅ |
-| Cascade Shadow Maps | RTR ch. 7 | ❌ |
-| Volumetric Fog | PBRT ch. 15 | ✅ |
-| Decal rendering | RTR | 🔶 component є |
-| GPU Instancing / HLOD | GEA | 🔶 stubs |
-| Texture Streaming / Basis Universal | GEA ch. 6 | ❌ |
-| Mesh LOD | GEA | 🔶 LODGroup component, logic ❌ |
-| UV Unwrapping tools | editor | ❌ |
-
-### 2.2 Фізика (GEA ch. 12)
-
-| Функція | Стан |
-|---------|------|
-| Rigid body dynamics (Jolt) | ✅ |
-| Collision detection (Jolt) | ✅ |
-| Raycast / shape cast queries | ✅ |
-| Trigger volumes | ✅ |
-| Character controller | 🔶 component, Jolt Character ❌ wired |
-| Wheeled vehicle | 🔶 component, Jolt VehicleConstraint ❌ |
-| Physics joints (Hinge, Fixed, …) | 🔶 component ✅, constraint ❌ |
-| Soft body / cloth | 🔶 component, simulation ❌ |
-| Destruction | 🔶 component, Voronoi ❌ |
-| Buoyancy | 🔶 component ✅, water coupling ❌ |
-| Bullet fallback backend | ❌ (M19) |
-
-### 2.3 Анімація (GEA ch. 11)
-
-| Функція | Стан |
-|---------|------|
-| Skeleton import (Assimp) | 🔶 |
-| Clip playback | 🔶 |
-| Cross-fade / blend tree | ❌ |
-| IK (FABRIK / CCD) | 🔶 component, solver ❌ |
-| Morph targets | 🔶 component |
-| Procedural animation (LPAS / Euphoria) | ❌ (M24) |
-
-### 2.4 AI (GEA ch. 18)
-
-| Функція | Стан |
-|---------|------|
-| NavMesh bake (Recast/Detour) | ❌ |
-| Pathfinding (A*) | ❌ |
-| Behavior tree runtime | 🔶 component, executor ❌ |
-| FSM | 🔶 component, transitions ❌ |
-| Perception (sight/sound) | 🔶 component |
-| Blackboard | 🔶 component |
-| Steering behaviors | ❌ |
-| Crowd simulation | ❌ |
-
-### 2.5 Аудіо (GEA ch. 13)
-
-| Функція | Стан |
-|---------|------|
-| Mono/stereo playback (miniaudio) | ✅ |
-| Spatial 3D audio | 🔶 component, 3D pan ❌ |
-| Reverb zones | 🔶 component |
-| Music streaming | 🔶 MusicTrackComponent |
-| Mixer / bus routing | ❌ |
-| DSP effects | ❌ |
-
-### 2.6 Editor (GEA — Tool Chain)
-
-| Функція | Стан |
-|---------|------|
-| ImGui dockspace + panels | ✅ |
-| Viewport (ray traced) | ✅ |
-| Scene Hierarchy з drag-drop | ✅ |
-| Inspector (transform, material) | ✅ |
-| Global Undo/Redo (Command pattern) | ✅ |
-| Asset Browser (PNG/JPG/HDR) | ❌ |
-| UV Editor | ❌ |
-| Terrain brush tools | ❌ |
-| Mesh editing (vert/edge/face) | ❌ |
-| Play mode | ❌ (M22) |
-| Project save / load (.json) | 🔶 |
-| Build & Ship (standalone) | ❌ (M23) |
-| Scripting (Lua + sol2) | ❌ (M17) |
-| Profiler overlay (Tracy) | ❌ (M18) |
-| Node-based material editor | ❌ (M9) |
-
-### 2.7 Мережа
-
-| Функція | Стан |
-|---------|------|
-| Network Identity / Transport | 🔶 stubs |
-| State replication | ❌ |
-| RPC | 🔶 stub |
-| Client/Server loop | ❌ |
+| Layer | GEA definition | Lucida | Status |
+|-------|---------------|--------|--------|
+| Platform / OS | Window, input, audio, video | `platform_sdl2`, SDL2 event pump | done |
+| Core Systems | Memory, containers, math, logging | `engine/core` — FrameArena, Pool, GLM | done |
+| Resource Manager | Async load, cache, hot reload | `engine/resource` — sync + Assimp | partial — async missing |
+| Rendering Engine | Scene graph, visibility, lighting | `render_metal` — Whitted RT on Metal | done |
+| Physics & Collision | Rigid, soft, queries | `physics_jolt` — Jolt Physics | partial — soft body missing |
+| Animation | Skeleton, blend tree, IK | `engine/animation` — scaffolds | partial — runtime blend missing |
+| Human Interface | Actions, not scancodes | `engine/input` — action map | done |
+| Audio | Spatial, streaming, mixer | `engine/audio` — miniaudio | partial — spatial 3D missing |
+| Networking | Replication, RPC | `GameplayComponents.h` stubs | partial — transport missing |
+| Gameplay Foundation | World, ECS, game loop | `engine/runtime` — World + fixed step | done |
+| Game-Specific | AI, scripting, UI, nodes | 107 nodes in `GameplayComponents.h` | partial — logic missing |
 
 ---
 
-## 3. Пріоритетний роадмап
+## 2. Subsystems
 
-| Пріоритет | Задача | Відповідає |
-|-----------|--------|-----------|
-| 🔴 1 | **Character Controller** — Jolt Character wired to CharacterBodyNode | GEA ch. 12 |
-| 🔴 2 | **NavMesh bake (Recast/Detour)** + A\* pathfinding | GEA ch. 18 |
-| 🔴 3 | **Play Mode** — snapshot/restore world, systems run only in Play | M22 |
-| 🔴 4 | **Asset Browser** — PNG/JPG/HDR texture, model picker | GEA tool chain |
-| 🟡 5 | **Behavior Tree executor** — tick BT per AI entity each frame | GEA ch. 18 |
-| 🟡 6 | **Spatial audio (HRTF)** — wire 3D position to miniaudio panner | GEA ch. 13 |
-| 🟡 7 | **Animation clip playback** — sample skeleton, apply to SkinnedMesh | GEA ch. 11 |
-| 🟡 8 | **Wheeled Vehicle** — wire to Jolt VehicleConstraint | GEA ch. 12 |
-| 🟡 9 | **Lua scripting** (sol2) — hot reload, game logic | M17 |
-| 🟢 10 | **HBAO/GTAO** kernel in Metal compute | RTR ch. 11 |
-| 🟢 11 | **Cascade Shadow Maps** | RTR ch. 7 |
-| 🟢 12 | **Async asset loading** (job system, enkiTS) | M11 + M14 |
-| 🟢 13 | **Mesh LOD** runtime switching | GEA |
-| 🟢 14 | **UV editor** panel | editor |
-| 🟢 15 | **Occlusion Culling** (portal or HZB) | GEA ch. 14 |
-| ⚪ 16 | Soft body / Cloth simulation | GEA ch. 12 |
-| ⚪ 17 | LPAS — Euphoria-grade procedural ragdoll | M24 |
-| ⚪ 18 | Networking — actual transport layer (ENet) | GEA |
-| ⚪ 19 | Vulkan backend | M13 |
+### 2.1 Rendering
+
+| Feature | Source | Status |
+|---------|--------|--------|
+| Two-level BVH (TLAS / BLAS) | RTR ch. 25 | done |
+| Radiance Cascades GI | Golubev 2022 | done |
+| Whitted RT (analytic shadows, AO) | PBRT ch. 14 | done |
+| MetalFX Temporal Upscaling + motion vectors | Apple docs | done |
+| PBR — albedo, metallic, roughness, normal, AO, emissive | RTR ch. 9 | done |
+| SSAO | RTR ch. 11 | done |
+| HBAO / GTAO | RTR ch. 11 | missing — enum exists, kernel absent |
+| FXAA | RTR ch. 5 | missing |
+| SMAA | Jimenez 2012 | missing |
+| TAA | RTR ch. 5 | done — via MetalFX temporal |
+| Frustum Culling | GEA ch. 14 | partial — camera only |
+| Occlusion Culling | GEA ch. 14 | missing |
+| RT-specific culling (coherent ray traversal) | RTR ch. 25 | done |
+| Cascade Shadow Maps | RTR ch. 7 | missing |
+| Volumetric Fog + trochoidal water | PBRT ch. 15 | done |
+| Decal rendering | RTR | partial — component exists |
+| GPU Instancing / HLOD | GEA | partial — stubs only |
+| Texture Streaming / Basis Universal | GEA ch. 6 | missing |
+| Mesh LOD | GEA | partial — component exists, no runtime switch |
+| UV editor | editor | missing |
+
+### 2.2 Physics  (GEA ch. 12)
+
+| Feature | Status |
+|---------|--------|
+| Rigid body dynamics (Jolt) | done |
+| Collision detection (Jolt) | done |
+| Raycast / shape cast queries | done |
+| Trigger volumes | done |
+| Character controller | partial — component done, Jolt Character not wired |
+| Wheeled vehicle | partial — component done, Jolt VehicleConstraint not wired |
+| Physics joints (Hinge, Fixed, …) | partial — component done, constraint not wired |
+| Soft body / cloth | partial — component done, simulation missing |
+| Destruction | partial — component done, Voronoi missing |
+| Buoyancy | partial — component done, water coupling missing |
+| Bullet fallback backend | missing (M19) |
+
+### 2.3 Animation  (GEA ch. 11)
+
+| Feature | Status |
+|---------|--------|
+| Skeleton import (Assimp) | partial |
+| Clip playback | partial |
+| Cross-fade / blend tree | missing |
+| IK (FABRIK / CCD) | partial — component done, solver missing |
+| Morph targets | partial — component done |
+| Procedural animation (LPAS / Euphoria) | missing (M24) |
+
+### 2.4 AI  (GEA ch. 18)
+
+| Feature | Status |
+|---------|--------|
+| NavMesh bake (Recast / Detour) | missing |
+| Pathfinding (A*) | missing |
+| Behavior tree runtime | partial — component done, executor missing |
+| FSM | partial — component done, transitions missing |
+| Perception (sight / sound) | partial — component done |
+| Blackboard | partial — component done |
+| Steering behaviors | missing |
+| Crowd simulation | missing |
+
+### 2.5 Audio  (GEA ch. 13)
+
+| Feature | Status |
+|---------|--------|
+| Mono / stereo playback (miniaudio) | done |
+| Spatial 3D audio (HRTF) | partial — component done, panner not wired |
+| Reverb zones | partial — component done |
+| Music streaming | partial — component done |
+| Mixer / bus routing | missing |
+| DSP effects | missing |
+
+### 2.6 Editor  (GEA — Tool Chain)
+
+| Feature | Status |
+|---------|--------|
+| ImGui dockspace + panels | done |
+| Viewport (ray traced) | done |
+| Scene Hierarchy with drag-drop | done |
+| Inspector (transform, material) | done |
+| Global Undo / Redo (Command pattern) | done |
+| Asset Browser (PNG / JPG / HDR / models) | missing |
+| UV Editor | missing |
+| Terrain brush tools | missing |
+| Mesh editing (vertex / edge / face) | missing |
+| Play Mode | missing (M22) |
+| Project save / load (.json) | partial |
+| Build and ship (standalone) | missing (M23) |
+| Scripting (Lua + sol2) | missing (M17) |
+| Profiler overlay (Tracy) | missing (M18) |
+| Node-based material editor | missing (M9) |
+
+### 2.7 Networking
+
+| Feature | Status |
+|---------|--------|
+| Network Identity / Transport | partial — stubs only |
+| State replication | missing |
+| RPC | partial — stub only |
+| Client / Server loop | missing |
 
 ---
 
-## 4. Унікальне (production-рівень вже зараз)
+## 3. Priority Roadmap
 
-- ✅ Детермінований RT без RT-ядер — повністю на compute
-- ✅ Radiance Cascades GI — не стохастика, без денойзингу
-- ✅ TLAS/BLAS двох-рівнева BVH з оновленням per-frame
-- ✅ MetalFX Temporal з per-instance motion vectors
-- ✅ Global Undo/Redo через Command + EntitySnapshot
-- ✅ 107 нод у 17 підсистемах — повний словник gameplay сцени
-- ✅ Суворе DOD (SoA) в hot path, FrameArena замість heap
-- ✅ Layering enforced by CMake (модуль не бачить бекенд)
+Sorted by impact on the Engine-to-Game path (GEA 1.6).
+
+| Priority | Task | Maps to |
+|----------|------|---------|
+| P1 | Character Controller — Jolt Character wired to CharacterBodyNode | GEA ch. 12 |
+| P1 | NavMesh bake (Recast / Detour) + A* pathfinding | GEA ch. 18 |
+| P1 | Play Mode — snapshot / restore world; systems active only in Play | M22 |
+| P1 | Asset Browser — PNG / JPG / HDR texture and model picker panel | GEA tool chain |
+| P2 | Behavior Tree executor — tick BT per AI entity each frame | GEA ch. 18 |
+| P2 | Spatial audio (HRTF) — wire 3D position to miniaudio panner | GEA ch. 13 |
+| P2 | Animation clip playback — sample skeleton, apply to SkinnedMesh | GEA ch. 11 |
+| P2 | Wheeled Vehicle — wire component to Jolt VehicleConstraint | GEA ch. 12 |
+| P2 | Lua scripting (sol2) — hot reload, game logic from script | M17 |
+| P3 | HBAO / GTAO kernel in Metal compute | RTR ch. 11 |
+| P3 | Cascade Shadow Maps | RTR ch. 7 |
+| P3 | Async asset loading (enkiTS job system) | M11 + M14 |
+| P3 | Mesh LOD runtime switching | GEA |
+| P3 | UV editor panel | editor |
+| P3 | Occlusion Culling (portal or HZB) | GEA ch. 14 |
+| P4 | Soft body / cloth simulation | GEA ch. 12 |
+| P4 | LPAS — Euphoria-grade procedural ragdoll | M24 |
+| P4 | Networking transport layer (ENet) | GEA |
+| P4 | Vulkan backend | M13 |
+
+---
+
+## 4. Already at Production-Engine Quality
+
+- Deterministic RT on ordinary GPU — no ray tracing hardware required
+- Radiance Cascades GI — not stochastic, no denoising, image final at frame one
+- TLAS / BLAS two-level BVH with per-frame instance updates
+- MetalFX Temporal with per-instance motion vectors — no ghosting
+- Global Undo / Redo via Command + EntitySnapshot
+- 107 nodes across 17 subsystems — complete gameplay scene vocabulary
+- Strict DOD (SoA) in hot path, FrameArena instead of heap allocations
+- Layering enforced by CMake — no engine module sees a backend header

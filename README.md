@@ -88,35 +88,67 @@ cmake --build build -j
 
 ### Platforms
 
-| Platform | Architectures | Renderer | State |
-| --- | --- | --- | --- |
-| macOS 13+ | x86_64, arm64 | Metal + MetalFX | complete tracing path |
-| Linux (Debian/Ubuntu) | x86_64, arm64 | OpenGL 4.3 compute | backend not yet ported to `IRenderBackend` |
-| Windows 10+ | x86_64, x86 | OpenGL 4.3 / Vulkan | same |
+| Platform | Architecture | Renderer | Status |
+|----------|-------------|----------|--------|
+| macOS 13+ | x86\_64 (Intel) | Metal + MetalFX | Complete tracing path |
+| macOS 13+ | arm64 (Apple Silicon) | Metal + MetalFX | Complete tracing path |
+| macOS 13+ | Universal (x86\_64 + arm64) | Metal + MetalFX | `LUCIDA_MACOS_UNIVERSAL=ON` |
+| Linux (Debian / Ubuntu) | x86\_64 | OpenGL 4.3 compute | Backend not yet ported to `IRenderBackend` |
+| Linux (Debian / Ubuntu) | arm64 (RPi 5, Jetson) | OpenGL ES 3.1 compute | Same — stub only |
+| Linux (Debian / Ubuntu) | x86 (32-bit) | OpenGL 4.3 compute | Same — stub only |
+| Windows 10+ | x86\_64 | OpenGL 4.3 / Vulkan | Stub only (M13) |
+| Windows 10+ | x86 (32-bit) | OpenGL 4.3 | Stub only |
+| Windows 10+ | arm64 (Snapdragon X) | Vulkan | Stub only (M13) |
 
-Core, runtime, resource, physics, input and framework build on all three. Exactly one
-render backend is production-ready today - Metal. The GL and Vulkan sources sit in
+Core, runtime, resource, physics, input and framework build on all targets. Exactly one
+render backend is production-ready today — Metal. The GL and Vulkan sources sit in
 `backends/render_gl` and `backends/render_vulkan` in the form inherited from
-RayTracer_Unified and are not yet wired to the current interface (see roadmap M12-M13).
+RayTracer_Unified and are not yet wired to the current interface (see roadmap M12–M13).
 
-**Debian / Ubuntu**
+**Debian / Ubuntu (x86\_64 or arm64)**
 
 ```bash
 sudo apt install build-essential cmake ninja-build libsdl2-dev libassimp-dev
+cmake -B build -G Ninja
+cmake --build build -j
 ```
 
-**Windows (MSVC)**
+**Debian / Ubuntu (x86 / 32-bit)**
 
 ```bash
-cmake -B build -G "Visual Studio 17 2022" -A x64
+sudo apt install build-essential cmake ninja-build libsdl2-dev:i386 libassimp-dev:i386 gcc-multilib
+cmake -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/linux-x86.cmake
+cmake --build build -j
+```
+
+**Windows (MSVC x86\_64 or x86)**
+
+```bash
+cmake -B build -G "Visual Studio 17 2022" -A x64   # or -A Win32 for 32-bit
 cmake --build build --config RelWithDebInfo
 ```
 
-**macOS universal (x86_64 + arm64)**
+**Windows (Clang-cl / arm64)**
+
+```bash
+cmake -B build -G "Visual Studio 17 2022" -A ARM64
+cmake --build build --config RelWithDebInfo
+```
+
+**macOS (x86\_64 or arm64 — native arch)**
+
+```bash
+cmake -B build
+cmake --build build -j
+```
+
+**macOS Universal (x86\_64 + arm64)**
 
 ```bash
 cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
+cmake --build build -j
 ```
+
 
 ### CMake options
 
