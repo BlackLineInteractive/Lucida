@@ -5,6 +5,7 @@
 #include "lucida/core/diag/Log.h"
 
 #include <stb_image.h>
+#include <FastNoiseLite.h>
 #include <algorithm>
 
 namespace lucida {
@@ -120,6 +121,57 @@ void TextureManager::UnloadTexture(TextureHandle handle) {
 void TextureManager::Clear() {
     m_textures.clear();
     m_path_to_handle.clear();
+}
+
+TextureHandle TextureManager::GenerateNoiseTexture(const std::string& name, i32 width, i32 height,
+                                                   i32 noise_type, f32 frequency, i32 octaves,
+                                                   u32 seed) {
+    FastNoiseLite noise;
+    noise.SetSeed((int)seed);
+    noise.SetFrequency(frequency);
+
+    switch (noise_type) {
+    case 0: // OpenSimplex2
+        noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+        break;
+    case 1: // Perlin
+        noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
+        break;
+    case 2: // Cellular / Voronoi
+        noise.SetNoiseType(FastNoiseLite::NoiseType_Cellular);
+        noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_EuclideanSq);
+        noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance);
+        break;
+    case 3: // Value
+        noise.SetNoiseType(FastNoiseLite::NoiseType_Value);
+        break;
+    default:
+        noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+        break;
+    }
+
+    if (octaves > 1) {
+        noise.SetFractalType(FastNoiseLite::FractalType_FBm);
+        noise.SetFractalOctaves(octaves);
+        noise.SetFractalLacunarity(2.0f);
+        noise.SetFractalGain(0.5f);
+    }
+
+    std::vector<u8> pixels((size_t)width * height * 4);
+    for (i32 y = 0; y < height; y++) {
+        for (i32 x = 0; x < width; x++) {
+            float val = noise.GetNoise((float)x, (float)y);
+            // Remap [-1, 1] to [0, 255]
+            u8 byte_val = (u8)std::clamp((val * 0.5f + 0.5f) * 255.0f, 0.0f, 255.0f);
+            size_t idx = ((size_t)y * width + x) * 4;
+            pixels[idx + 0] = byte_val;
+            pixels[idx + 1] = byte_val;
+            pixels[idx + 2] = byte_val;
+            pixels[idx + 3] = 255;
+        }
+    }
+
+    return RegisterTexture(name, width, height, 4, TextureFormat::RGBA8_UNORM, pixels);
 }
 
 } // namespace lucida
