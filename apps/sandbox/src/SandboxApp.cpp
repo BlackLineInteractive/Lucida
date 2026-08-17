@@ -23,6 +23,7 @@
 #include "lucida/framework/SceneLibrary.h"
 #include "lucida/framework/Systems.h"
 #include "lucida/physics/Components.h"
+#include <imgui.h>
 #include "lucida/render/Components.h"
 #include "lucida/resource/ModelLoader.h"
 #include "lucida/resource/Project.h"
@@ -379,16 +380,45 @@ public:
         }
 
         // Camera control:
-        //   Game mode (no menu): mouse is captured, free FPS camera.
-        //   Editor mode: when RMB is held inside viewport, capture mouse and fly.
-        const bool in_game_mode   = !m_ui_state.show_menu;
-        const bool editor_looking = m_ui_state.show_menu && m_ui_state.viewport_rmb;
-
-        if (in_game_mode || editor_looking) {
+        //   Game mode (no menu / fullscreen): mouse is captured, free FPS camera.
+        //   Editor mode: interactive fly camera (RMB + WASD/QE + Shift), MMB pan, and wheel zoom.
+        if (!m_ui_state.show_menu) {
             m_platform->SetMouseCaptured(true);
             m_camera.Update(m_input, time.real_delta);
         } else {
             m_platform->SetMouseCaptured(false);
+
+            if (m_ui_state.viewport_rmb) {
+                // RMB Drag Fly-Look
+                const ImVec2 md = ImGui::GetIO().MouseDelta;
+                m_camera.Camera().yaw   += md.x * m_camera.Tuning().look_sensitivity;
+                m_camera.Camera().pitch -= md.y * m_camera.Tuning().look_sensitivity;
+                m_camera.Camera().pitch  = Clamp(m_camera.Camera().pitch, -m_camera.Tuning().pitch_limit, m_camera.Tuning().pitch_limit);
+
+                // WASDQE Fly Movement
+                const f32 speed = (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? m_camera.Tuning().fly_speed * m_camera.Tuning().sprint_mul : m_camera.Tuning().fly_speed);
+                Vec3 move(0.0f);
+                if (ImGui::IsKeyDown(ImGuiKey_W)) move += m_camera.Camera().Forward();
+                if (ImGui::IsKeyDown(ImGuiKey_S)) move -= m_camera.Camera().Forward();
+                if (ImGui::IsKeyDown(ImGuiKey_D)) move += m_camera.Camera().Right();
+                if (ImGui::IsKeyDown(ImGuiKey_A)) move -= m_camera.Camera().Right();
+                if (ImGui::IsKeyDown(ImGuiKey_E) || ImGui::IsKeyDown(ImGuiKey_Space)) move += Vec3(0, 1, 0);
+                if (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) move -= Vec3(0, 1, 0);
+                if (glm::length(move) > kEpsilon) move = glm::normalize(move);
+                m_camera.Camera().position += move * speed * time.real_delta;
+            } else if (m_ui_state.viewport_hovered) {
+                // MMB Drag Pan
+                if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+                    const ImVec2 md = ImGui::GetIO().MouseDelta;
+                    const f32 pan_speed = 0.008f * (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 2.5f : 1.0f);
+                    m_camera.Camera().position -= (m_camera.Camera().Right() * md.x - m_camera.Camera().Up() * md.y) * pan_speed;
+                }
+                // Mouse Wheel Zoom
+                if (ImGui::GetIO().MouseWheel != 0.0f) {
+                    const f32 zoom_speed = 1.5f * (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 2.5f : 1.0f);
+                    m_camera.Camera().position += m_camera.Camera().Forward() * (ImGui::GetIO().MouseWheel * zoom_speed);
+                }
+            }
         }
 
         CameraState active_camera = m_camera.Camera();

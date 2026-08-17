@@ -11,8 +11,14 @@ add_library(lucida_framework STATIC
     src/NavMeshSystem.cpp
     src/Commands.cpp
     src/Picking.cpp
-    src/DebugUI.cpp
+    src/EditorUI.cpp
+    src/EditorViewport.cpp
+    src/EditorInspector.cpp
+    src/EditorHierarchy.cpp
+    src/EditorTextureBrowser.cpp
+    src/EditorConsole.cpp
     src/EditorMeshModeling.cpp
+    src/DebugUI.cpp
     ${LUCIDA_IFD_DIR}/ImGuiFileDialog.cpp
 )
 add_library(lucida::framework ALIAS lucida_framework)

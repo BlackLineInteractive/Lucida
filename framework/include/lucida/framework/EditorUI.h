@@ -103,6 +103,7 @@ struct UiState {
     i32 viewport_height = 0;
     bool viewport_hovered = false;   // true when mouse is over the viewport panel
     bool viewport_rmb     = false;   // true while RMB is held inside the viewport
+    bool viewport_toolbar_collapsed = false; // collapse top viewport toolbar
 
     scenes::BuiltIn scene = scenes::BuiltIn::Empty;
     bool request_scene_reload = false;
@@ -151,6 +152,7 @@ class EditorUI {
 public:
     void Init();
     void Shutdown();
+    static void ApplyTheme();
 
     CommandStack& Commands() { return m_commands; }
 

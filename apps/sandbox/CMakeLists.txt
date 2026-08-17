@@ -10,6 +10,7 @@ target_link_libraries(lucida_sandbox PRIVATE
     lucida::input
     lucida::framework
     lucida::platform_sdl2
+    lucida_imgui
     lucida_stb)
 
 if(LUCIDA_RENDER_METAL)
