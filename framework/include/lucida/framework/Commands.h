@@ -7,6 +7,7 @@
 #include "lucida/render/Components.h"
 #include "lucida/physics/Components.h"
 #include "lucida/render/Scene.h"
+#include "lucida/resource/MeshBuilder.h"
 #include "lucida/framework/SceneAssets.h"
 
 #include <functional>
@@ -83,7 +84,18 @@ public:
 
 private:
     void Write(const LocalTransform& value) {
-        if (LocalTransform* local = m_registry.Get<LocalTransform>(m_entity)) *local = value;
+        if (!m_registry.Valid(m_entity)) return;
+        if (LocalTransform* local = m_registry.Get<LocalTransform>(m_entity)) {
+            *local = value;
+            if (PrimitiveShape* shape = m_registry.Get<PrimitiveShape>(m_entity)) {
+                const Vec3 half = shape->HalfExtents() * local->scale;
+                if (LocalBounds* bounds = m_registry.Get<LocalBounds>(m_entity)) {
+                    bounds->min = -half;
+                    bounds->max =  half;
+                }
+            }
+            UpdateWorldTransforms(m_registry);
+        }
     }
 
     Registry&      m_registry;
@@ -91,6 +103,84 @@ private:
     LocalTransform m_before;
     LocalTransform m_after;
     std::string    m_name;
+};
+
+// Shape Edit Command (Dimensions, Extrusion, Radius, Height, Normals)
+class ShapeEditCommand final : public ICommand {
+public:
+    ShapeEditCommand(Registry& registry, Entity entity,
+                     const PrimitiveShape& before, const PrimitiveShape& after,
+                     std::string name = "Edit Shape")
+        : m_registry(registry), m_entity(entity), m_before(before), m_after(after),
+          m_name(std::move(name)) {}
+
+    void Apply() override  { Write(m_after); }
+    void Revert() override { Write(m_before); }
+    const char* Name() const override { return m_name.c_str(); }
+
+private:
+    void Write(const PrimitiveShape& value) {
+        if (!m_registry.Valid(m_entity)) return;
+        if (PrimitiveShape* shape = m_registry.Get<PrimitiveShape>(m_entity)) {
+            *shape = value;
+            Vec3 scale = Vec3(1.0f);
+            if (const LocalTransform* lt = m_registry.Get<LocalTransform>(m_entity)) scale = lt->scale;
+            const Vec3 half = shape->HalfExtents() * scale;
+            if (LocalBounds* bounds = m_registry.Get<LocalBounds>(m_entity)) {
+                bounds->min = -half;
+                bounds->max =  half;
+            }
+            UpdateWorldTransforms(m_registry);
+        }
+    }
+
+    Registry&      m_registry;
+    Entity         m_entity;
+    PrimitiveShape m_before;
+    PrimitiveShape m_after;
+    std::string    m_name;
+};
+
+// Mesh Sub-Element Edit Command (Vertices, Edges, Faces, Inset, Extrude, Bevel, Subdivide)
+class MeshEditCommand final : public ICommand {
+public:
+    MeshEditCommand(Registry& registry, Entity entity,
+                    const EditableMesh& before, const EditableMesh& after,
+                    IRenderBackend* renderer = nullptr,
+                    std::string name = "Mesh Edit")
+        : m_registry(registry), m_entity(entity), m_before(before), m_after(after),
+          m_renderer(renderer), m_name(std::move(name)) {}
+
+    void Apply() override  { Write(m_after); }
+    void Revert() override { Write(m_before); }
+    const char* Name() const override { return m_name.c_str(); }
+
+private:
+    void Write(const EditableMesh& value) {
+        if (!m_registry.Valid(m_entity)) return;
+        if (EditableMeshComponent* emc = m_registry.Get<EditableMeshComponent>(m_entity)) {
+            emc->mesh = value;
+            emc->dirty = true;
+            MeshData md = emc->mesh.BuildMeshData();
+            if (MeshInstance* mi = m_registry.Get<MeshInstance>(m_entity)) {
+                if (m_renderer && mi->mesh.IsValid()) {
+                    m_renderer->UpdateMesh(mi->mesh, md);
+                }
+            }
+            if (LocalBounds* bounds = m_registry.Get<LocalBounds>(m_entity)) {
+                bounds->min = md.aabb_min;
+                bounds->max = md.aabb_max;
+            }
+            UpdateWorldTransforms(m_registry);
+        }
+    }
+
+    Registry&          m_registry;
+    Entity             m_entity;
+    EditableMesh       m_before;
+    EditableMesh       m_after;
+    IRenderBackend*    m_renderer = nullptr;
+    std::string        m_name;
 };
 
 // Material Command
@@ -140,6 +230,7 @@ private:
         } else {
             m_registry.Remove<Parent>(m_entity);
         }
+        UpdateWorldTransforms(m_registry);
     }
 
     Registry&   m_registry;
@@ -273,11 +364,14 @@ public:
     void Apply() override {
         if (!m_registry.Valid(m_entity)) {
             m_entity = m_snapshot.Restore(m_registry);
+            UpdateWorldTransforms(m_registry);
         }
     }
     void Revert() override {
         if (m_registry.Valid(m_entity)) {
+            m_snapshot = EntitySnapshot::Capture(m_registry, m_entity);
             m_registry.Destroy(m_entity);
+            UpdateWorldTransforms(m_registry);
         }
     }
     const char* Name() const override { return m_name.c_str(); }
@@ -300,11 +394,14 @@ public:
 
     void Apply() override {
         if (m_registry.Valid(m_entity)) {
+            m_snapshot = EntitySnapshot::Capture(m_registry, m_entity);
             m_registry.Destroy(m_entity);
+            UpdateWorldTransforms(m_registry);
         }
     }
     void Revert() override {
         m_entity = m_snapshot.Restore(m_registry);
+        UpdateWorldTransforms(m_registry);
     }
     const char* Name() const override { return m_name.c_str(); }
 

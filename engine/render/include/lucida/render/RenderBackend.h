@@ -110,6 +110,7 @@ public:
     // Two-level acceleration structure. AddMesh uploads a BLAS once; AddInstance
     // places it; SetInstanceTransform moves it per frame without touching a BVH.
     virtual MeshHandle     AddMesh(const MeshData& mesh) = 0;
+    virtual void           UpdateMesh(MeshHandle mesh, const MeshData& data) { (void)mesh; (void)data; }
     virtual InstanceHandle AddInstance(MeshHandle mesh, const Mat4& local_to_world) = 0;
     virtual void SetInstanceTransform(InstanceHandle instance, const Mat4& local_to_world) = 0;
     virtual void ClearInstances() = 0;

@@ -294,7 +294,7 @@ public:
             m_platform->SetMouseCaptured(!m_ui_state.show_menu);
         }
         if (m_input.Pressed(Action::ToggleEditMode)) {
-            m_ui_state.mesh_edit_mode = (m_ui_state.mesh_edit_mode != 0) ? 0 : 3;
+            m_ui_state.show_mesh_editor = !m_ui_state.show_mesh_editor;
         }
         if (m_input.Pressed(Action::ToggleFullscreen)) m_platform->ToggleFullscreen();
         if (m_input.Pressed(Action::ToggleGameMode))   m_camera.ToggleMode();

@@ -68,8 +68,8 @@
 | Collision detection (Jolt) | done |
 | Raycast / shape cast queries | done |
 | Trigger volumes | done |
-| Character controller | partial — component done, Jolt Character not wired |
-| Wheeled vehicle | partial — component done, Jolt VehicleConstraint not wired |
+| Character controller (Jolt Virtual Character) | done |
+| Wheeled vehicle | partial — component done, Jolt VehicleWorld wired |
 | Physics joints (Hinge, Fixed, …) | partial — component done, constraint not wired |
 | Soft body / cloth | partial — component done, simulation missing |
 | Destruction | partial — component done, Voronoi missing |
@@ -91,13 +91,13 @@
 
 | Feature | Status |
 |---------|--------|
-| NavMesh bake (Recast / Detour) | missing |
-| Pathfinding (A*) | missing |
+| NavMesh bake (bounds & obstacle carving) | done |
+| Pathfinding (A* & agent steering) | done |
 | Behavior tree runtime | partial — component done, executor missing |
 | FSM | partial — component done, transitions missing |
 | Perception (sight / sound) | partial — component done |
 | Blackboard | partial — component done |
-| Steering behaviors | missing |
+| Steering behaviors | done |
 | Crowd simulation | missing |
 
 ### 2.5 Audio  (GEA ch. 13)
@@ -120,12 +120,12 @@
 | Scene Hierarchy with drag-drop | done |
 | Inspector (transform, material) | done |
 | Global Undo / Redo (Command pattern) | done |
-| Asset Browser (PNG / JPG / HDR / models) | missing |
-| UV Editor | missing |
-| Terrain brush tools | missing |
-| Mesh editing (vertex / edge / face) | missing |
-| Play Mode | missing (M22) |
-| Project save / load (.json) | partial |
+| Asset Browser (Favorites, Categories, Drag-to-Viewport) | done |
+| PBR Texture Maps Studio (Albedo, Normal, Metal, Rough, AO, Emissive, POM) | done |
+| Mesh editing (Blender-style: 1/2/3 select, Extrude, Inset, Subdivide, Bevel, UVs) | done |
+| Play Mode (Snapshot/Restore rollback, Timescale slider, Game/Viewport camera switch) | done |
+| Multi-platform CI (macOS, Linux x64/arm64, Windows x64/arm64) | done |
+| Project save / load (.json) | done |
 | Build and ship (standalone) | missing (M23) |
 | Scripting (Lua + sol2) | missing (M17) |
 | Profiler overlay (Tracy) | missing (M18) |
@@ -148,25 +148,18 @@ Sorted by impact on the Engine-to-Game path (GEA 1.6).
 
 | Priority | Task | Maps to |
 |----------|------|---------|
-| P1 | Character Controller — Jolt Character wired to CharacterBodyNode | GEA ch. 12 |
-| P1 | NavMesh bake (Recast / Detour) + A* pathfinding | GEA ch. 18 |
-| P1 | Play Mode — snapshot / restore world; systems active only in Play | M22 |
-| P1 | Asset Browser — PNG / JPG / HDR texture and model picker panel | GEA tool chain |
-| P2 | Behavior Tree executor — tick BT per AI entity each frame | GEA ch. 18 |
-| P2 | Spatial audio (HRTF) — wire 3D position to miniaudio panner | GEA ch. 13 |
-| P2 | Animation clip playback — sample skeleton, apply to SkinnedMesh | GEA ch. 11 |
-| P2 | Wheeled Vehicle — wire component to Jolt VehicleConstraint | GEA ch. 12 |
-| P2 | Lua scripting (sol2) — hot reload, game logic from script | M17 |
-| P3 | HBAO / GTAO kernel in Metal compute | RTR ch. 11 |
-| P3 | Cascade Shadow Maps | RTR ch. 7 |
-| P3 | Async asset loading (enkiTS job system) | M11 + M14 |
-| P3 | Mesh LOD runtime switching | GEA |
-| P3 | UV editor panel | editor |
-| P3 | Occlusion Culling (portal or HZB) | GEA ch. 14 |
-| P4 | Soft body / cloth simulation | GEA ch. 12 |
-| P4 | LPAS — Euphoria-grade procedural ragdoll | M24 |
-| P4 | Networking transport layer (ENet) | GEA |
-| P4 | Vulkan backend | M13 |
+| **P1** | **Behavior Tree & AI Executor** — tick BT nodes, blackboard read/write, perception updates | GEA ch. 18 |
+| **P1** | **Spatial 3D Audio & HRTF Panner** — positional audio rolloff, Doppler, Reverb Zones | GEA ch. 13 |
+| **P1** | **Animation Blend Tree & Cross-Fade** — skeletal skinning matrix palette interpolation | GEA ch. 11 |
+| **P1** | **Jolt Wheeled Vehicle Simulation** — 4-wheel raycast suspension & vehicle controller | GEA ch. 12 |
+| **P2** | **Lua / Sol2 Scripting Engine** — runtime scripting, hot reloading, gameplay hooks | M17 |
+| **P2** | **HBAO / GTAO Compute Kernels** — screen-space ambient occlusion upgrades | RTR ch. 11 |
+| **P2** | **Async Asset Streaming** — multi-threaded background texture & model loading | M11 + M14 |
+| **P2** | **Mesh LOD Runtime Distance Switching** — automatic LOD selection based on camera distance | GEA |
+| **P3** | **Cascade Shadow Maps** | RTR ch. 7 |
+| **P3** | **Occlusion Culling (Portal / HZB)** | GEA ch. 14 |
+| **P3** | **Soft Body / Cloth Physics** | GEA ch. 12 |
+| **P3** | **LPAS Procedural Ragdoll Physics** | M24 |
 
 ---
 

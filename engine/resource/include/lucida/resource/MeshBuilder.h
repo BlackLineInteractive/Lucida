@@ -85,6 +85,11 @@ struct EditableMesh {
     MeshData BuildMeshData(int material_index = 0) const;
 };
 
+struct EditableMeshComponent {
+    EditableMesh mesh;
+    bool dirty = true;
+};
+
 class MeshBuilder {
 public:
     // Procedural Primitives

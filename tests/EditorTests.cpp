@@ -118,6 +118,35 @@ int main() {
     stack.Undo();
     check(reg.Count() >= 3, "undo deletion restores entity");
 
+    // --- Shape Edit Undo/Redo
+    Entity shape_ent = reg.Create("shape_ent");
+    PrimitiveShape shape_before{PrimitiveType::Box, Vec3(1.0f)};
+    reg.Add<PrimitiveShape>(shape_ent, shape_before);
+    reg.Add<LocalBounds>(shape_ent, LocalBounds{-shape_before.HalfExtents(), shape_before.HalfExtents()});
+    PrimitiveShape shape_after = shape_before;
+    shape_after.size = Vec3(2.5f, 3.0f, 4.0f);
+    stack.Execute(std::make_unique<ShapeEditCommand>(reg, shape_ent, shape_before, shape_after, "Extrude Box"));
+    check(reg.Get<PrimitiveShape>(shape_ent)->size.x == 2.5f, "shape edit applied");
+    check(reg.Get<LocalBounds>(shape_ent)->max.y == 3.0f, "shape edit updates bounding box");
+    stack.Undo();
+    check(reg.Get<PrimitiveShape>(shape_ent)->size.x == 1.0f, "shape undo restored");
+    check(reg.Get<LocalBounds>(shape_ent)->max.y == 1.0f, "shape undo restored bounding box");
+    stack.Redo();
+    check(reg.Get<PrimitiveShape>(shape_ent)->size.x == 2.5f, "shape redo reapplied");
+
+    // --- Mesh Sub-Element Edit (Blender Mode) Undo/Redo
+    Entity mesh_ent = reg.Create("mesh_ent");
+    EditableMesh mesh_before = MeshBuilder::CreateCube(Vec3(1.0f));
+    reg.Add<EditableMeshComponent>(mesh_ent, EditableMeshComponent{mesh_before, true});
+    EditableMesh mesh_after = mesh_before;
+    mesh_after.ExtrudeFace(0, 2.0f);
+    stack.Execute(std::make_unique<MeshEditCommand>(reg, mesh_ent, mesh_before, mesh_after, nullptr, "Extrude Face"));
+    check(reg.Get<EditableMeshComponent>(mesh_ent)->mesh.faces.size() > mesh_before.faces.size(), "mesh face extrude applied");
+    stack.Undo();
+    check(reg.Get<EditableMeshComponent>(mesh_ent)->mesh.faces.size() == mesh_before.faces.size(), "mesh extrude undo restored original faces");
+    stack.Redo();
+    check(reg.Get<EditableMeshComponent>(mesh_ent)->mesh.faces.size() > mesh_before.faces.size(), "mesh extrude redo reapplied");
+
     // --- Material Edit Undo/Redo
     SceneAssets assets;
     GPUMaterial mat_before{}; mat_before.type = 0; mat_before.albedo[0] = 0.5f;
