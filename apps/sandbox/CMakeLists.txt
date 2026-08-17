@@ -42,7 +42,8 @@ target_link_libraries(lucida_sandbox PRIVATE
     lucida::framework
     lucida::platform_sdl2
     lucida_imgui
-    lucida_stb)
+    lucida_stb
+    lucida_fastnoise)
 
 if(LUCIDA_RENDER_METAL)
     target_link_libraries(lucida_sandbox PRIVATE lucida::render_metal)

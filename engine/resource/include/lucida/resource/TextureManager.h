@@ -44,6 +44,9 @@ public:
     TextureHandle LoadTexture(const std::string& filepath, bool flip_y = false);
     TextureHandle RegisterTexture(const std::string& name, i32 width, i32 height, i32 channels,
                                   TextureFormat format, const std::vector<u8>& data);
+    TextureHandle GenerateNoiseTexture(const std::string& name, i32 width = 512, i32 height = 512,
+                                       i32 noise_type = 0, f32 frequency = 0.01f, i32 octaves = 4,
+                                       u32 seed = 1337);
 
     const TextureInfo* GetTexture(TextureHandle handle) const;
     const TextureInfo* FindTexture(const std::string& filepath) const;

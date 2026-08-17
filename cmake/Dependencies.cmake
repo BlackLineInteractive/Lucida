@@ -111,7 +111,7 @@ set(LUCIDA_IMGUIZMO_DIR "${lucida_imguizmo_SOURCE_DIR}" CACHE INTERNAL "")
 # --- stb single headers ------------------------------------------------------
 set(LUCIDA_STB_DIR "${LUCIDA_DEPS_DIR}/stb")
 file(MAKE_DIRECTORY "${LUCIDA_STB_DIR}")
-foreach(hdr stb_image.h stb_image_write.h)
+foreach(hdr stb_image.h stb_image_write.h stb_perlin.h)
     if(NOT EXISTS "${LUCIDA_STB_DIR}/${hdr}")
         file(DOWNLOAD "https://raw.githubusercontent.com/nothings/stb/master/${hdr}"
                       "${LUCIDA_STB_DIR}/${hdr}" STATUS dl)
@@ -123,6 +123,21 @@ foreach(hdr stb_image.h stb_image_write.h)
 endforeach()
 add_library(lucida_stb INTERFACE)
 target_include_directories(lucida_stb SYSTEM INTERFACE "${LUCIDA_STB_DIR}")
+
+# --- FastNoiseLite -----------------------------------------------------------
+set(LUCIDA_FASTNOISE_DIR "${LUCIDA_DEPS_DIR}/fastnoise")
+if(NOT EXISTS "${LUCIDA_FASTNOISE_DIR}/FastNoiseLite.h")
+    file(MAKE_DIRECTORY "${LUCIDA_FASTNOISE_DIR}")
+    file(DOWNLOAD
+        "https://raw.githubusercontent.com/Auburn/FastNoiseLite/master/Cpp/FastNoiseLite.h"
+        "${LUCIDA_FASTNOISE_DIR}/FastNoiseLite.h" STATUS dl)
+    list(GET dl 0 code)
+    if(NOT code EQUAL 0)
+        message(FATAL_ERROR "[deps] FastNoiseLite: download failed (${dl})")
+    endif()
+endif()
+add_library(lucida_fastnoise INTERFACE)
+target_include_directories(lucida_fastnoise SYSTEM INTERFACE "${LUCIDA_FASTNOISE_DIR}")
 
 # --- nlohmann/json ------------------------------------------------------------
 # Single header, so no archive: scenes, config and saves are read once per launch

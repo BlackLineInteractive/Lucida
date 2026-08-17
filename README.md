@@ -35,23 +35,31 @@ Built to deliver high visual fidelity, real-time procedural materials, active ph
 ## Showcase
 
 <p align="center">
-  <img src="media/0.6.png" alt="Lucida Engine 0.6 New UI" width="100%">
+  <img src="media/renderer_1.png" alt="Lucida Engine Renderer Full RT" width="100%">
 </p>
 
 <p align="center">
-  <img src="media/0.5.png" alt="Lucida Engine 0.5 Viewport" width="100%">
+  <img src="media/renderer_2.png" alt="Lucida Engine Renderer Full RT" width="100%">
 </p>
 
 <p align="center">
-  <img src="media/0.4.png" alt="Lucida Engine 0.4 Viewport" width="100%">
+  <img src="media/renderer_3.png" alt="Lucida Engine Renderer Full RT" width="100%">
 </p>
 
 <p align="center">
-  <img src="media/0.3.png" alt="Lucida Engine 0.3 Viewport" width="100%">
+  <img src="media/0.6.5.png" alt="Lucida Engine 0.6.5" width="100%">
 </p>
 
 <p align="center">
-  <img src="media/0.3(2).png" alt="Lucida Engine 0.3 Editor" width="100%">
+  <img src="media/0.5.png" alt="Lucida Engine 0.5" width="100%">
+</p>
+
+<p align="center">
+  <img src="media/0.3(2).png" alt="Lucida Engine 0.3(2)" width="100%">
+</p>
+
+<p align="center">
+  <img src="media/0.2(2).png" alt="Lucida Engine 0.2(2)" width="100%">
 </p>
 
 ---

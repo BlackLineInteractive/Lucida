@@ -366,17 +366,40 @@ void EditorUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Cam
                         mat_changed = true;
                     }
 
-                    if (ImGui::ColorEdit3("Albedo / Paint Color", m.albedo)) mat_changed = true;
+                    if (m.type == 2) {
+                        ImGui::TextDisabled("Glass Settings:");
+                        if (ImGui::ColorEdit3("Glass Tint / Color", m.albedo)) mat_changed = true;
+                        if (ImGui::SliderFloat("IOR (Refraction)", &m.refractive_index, 1.0f, 2.8f, "%.3f")) mat_changed = true;
+                        if (ImGui::SliderFloat("Surface Roughness", &m.roughness, 0.0f, 1.0f, "%.3f")) mat_changed = true;
 
-                    if (ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f, "%.3f")) mat_changed = true;
-                    if (ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f, "%.3f")) mat_changed = true;
+                        ImGui::TextDisabled("Glass Presets:");
+                        if (ImGui::SmallButton("Clear (1.52)")) {
+                            m.albedo[0]=0.98f; m.albedo[1]=0.99f; m.albedo[2]=1.0f;
+                            m.refractive_index=1.52f; m.roughness=0.0f; mat_changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Auto Smoke")) {
+                            m.albedo[0]=0.55f; m.albedo[1]=0.60f; m.albedo[2]=0.65f;
+                            m.refractive_index=1.52f; m.roughness=0.0f; mat_changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Ruby Taillight")) {
+                            m.albedo[0]=0.88f; m.albedo[1]=0.04f; m.albedo[2]=0.04f;
+                            m.refractive_index=1.55f; m.roughness=0.0f; mat_changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Amber")) {
+                            m.albedo[0]=0.95f; m.albedo[1]=0.48f; m.albedo[2]=0.02f;
+                            m.refractive_index=1.52f; m.roughness=0.0f; mat_changed = true;
+                        }
+                    } else {
+                        if (ImGui::ColorEdit3("Albedo / Paint Color", m.albedo)) mat_changed = true;
+                        if (ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f, "%.3f")) mat_changed = true;
+                        if (ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f, "%.3f")) mat_changed = true;
+                    }
 
                     if (m.type == 3 || (m.emission[0] + m.emission[1] + m.emission[2] > 0.001f)) {
                         if (ImGui::ColorEdit3("Emission Color", m.emission)) mat_changed = true;
-                    }
-
-                    if (m.type == 2) {
-                        if (ImGui::SliderFloat("IOR (Glass Refraction)", &m.refractive_index, 1.0f, 2.5f, "%.2f")) mat_changed = true;
                     }
 
                     if (mat_changed) {

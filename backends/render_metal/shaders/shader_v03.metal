@@ -1436,8 +1436,8 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
             }
 
             float cos_i = abs(dot(cur.direction, Nf));
-            float n2 = max(mat.refractive_index, 1.52f);
-            float fresnel_r = clamp(schlick(cos_i, 1.0f, n2).x, 0.04f, 0.80f);
+            float n2 = max(mat.refractive_index, 1.05f);
+            float fresnel_r = clamp(schlick(cos_i, 1.0f, n2).x, 0.04f, 0.98f);
 
             // Add surface specular highlight from active scene lights and sun
             result += contrib * spec_light;
@@ -1446,7 +1446,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
             if (sp < MAX_STACK && depth > 1) {
                 // Reflected ray
-                if (fresnel_r > 0.04f) {
+                if (fresnel_r > 0.02f) {
                     stack_ray[sp] = make_ray(offset_ray(hit.point, Nf, R, hit.t), R);
                     stack_contrib[sp] = contrib * fresnel_r;
                     stack_depth[sp] = depth - 1;
@@ -1454,8 +1454,8 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 }
                 // Transmitted ray
                 float trans_w = 1.0f - fresnel_r;
-                if (trans_w > 0.02f) {
-                    float3 trans_pt = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
+                if (trans_w > 0.01f) {
+                    float3 trans_pt = hit.point + cur.direction * 1e-4f;
                     stack_ray[sp] = make_ray(trans_pt, cur.direction);
                     stack_contrib[sp] = contrib * trans_w * glass_tint;
                     stack_depth[sp] = depth - 1;
