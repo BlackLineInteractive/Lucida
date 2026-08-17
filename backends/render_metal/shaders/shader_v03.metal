@@ -299,10 +299,10 @@ HitInfo resolve_tri_hit(Ray ray, TriHit th, device const TriPos* tris,
         geom_tangent   = normalize(cross(up, info.normal));
         geom_bitangent = normalize(cross(info.normal, geom_tangent));
     }
-    geom_tangent   = normalize(geom_tangent - info.normal * dot(info.normal, geom_tangent));
-    geom_bitangent = normalize(cross(info.normal, geom_tangent));
+    geom_tangent = normalize(geom_tangent - info.normal * dot(info.normal, geom_tangent));
+    float handedness = (dot(cross(info.normal, geom_tangent), geom_bitangent) < 0.0f) ? -1.0f : 1.0f;
     info.tangent   = geom_tangent;
-    info.bitangent = geom_bitangent;
+    info.bitangent = cross(info.normal, geom_tangent) * handedness;
     return info;
 }
 
@@ -1155,7 +1155,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                     // Cutout alpha (e.g. badge cutouts, grille mesh holes, engine decals)
                     if (alpha < 0.35f) {
                         if (sp < MAX_STACK) {
-                            float3 cont_o = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
+                            float3 cont_o = hit.point + cur.direction * 1e-4f;
                             stack_ray[sp]     = make_ray(cont_o, cur.direction);
                             stack_contrib[sp] = contrib;
                             stack_depth[sp]   = depth;
@@ -1166,7 +1166,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                     // Semi-transparent alpha blending
                     if (alpha < 0.99f) {
                         if (sp < MAX_STACK) {
-                            float3 cont_o = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
+                            float3 cont_o = hit.point + cur.direction * 1e-4f;
                             stack_ray[sp]     = make_ray(cont_o, cur.direction);
                             stack_contrib[sp] = contrib * (1.0f - alpha);
                             stack_depth[sp]   = depth;

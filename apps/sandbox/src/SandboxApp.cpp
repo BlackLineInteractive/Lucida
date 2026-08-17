@@ -697,7 +697,7 @@ private:
         Vec3 bounds_extent = mesh.aabb_max - mesh.aabb_min;
         float radius = glm::length(bounds_extent) * 0.5f;
         if (radius < 0.1f) radius = 2.0f;
-        Vec3 eye_pos = bounds_center + Vec3(radius * 0.95f, radius * 0.40f, radius * 1.05f);
+        Vec3 eye_pos = bounds_center + Vec3(radius * 0.92f, radius * 0.36f, radius * 1.08f);
         Vec3 dir = glm::normalize(bounds_center - eye_pos);
         m_camera.Camera().position = eye_pos;
         m_camera.Camera().yaw      = std::atan2(dir.z, dir.x);
