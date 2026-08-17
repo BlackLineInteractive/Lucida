@@ -34,6 +34,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -46,18 +47,27 @@ void RegisterConsoleLogSink();
 void UnregisterConsoleLogSink();
 
 inline Mat4 LocalToWorldMatrix(const Registry& registry, Entity entity) {
-    if (const WorldTransform* wt = registry.Get<WorldTransform>(entity)) {
+    if (entity == kNullEntity || !registry.Valid(entity)) return Mat4(1.0f);
+
+    Mat4 local_mat(1.0f);
+    if (const LocalTransform* lt = registry.Get<LocalTransform>(entity)) {
+        local_mat = lt->ToMatrix();
+    } else if (const WorldTransform* wt = registry.Get<WorldTransform>(entity)) {
         return wt->matrix;
     }
-    if (const LocalTransform* lt = registry.Get<LocalTransform>(entity)) {
-        return lt->ToMatrix();
+
+    if (const Parent* p = registry.Get<Parent>(entity)) {
+        if (p->entity != kNullEntity && registry.Valid(p->entity)) {
+            return LocalToWorldMatrix(registry, p->entity) * local_mat;
+        }
     }
-    return Mat4(1.0f);
+    return local_mat;
 }
 
 inline Mat4 ParentWorldInverse(const Registry& registry, Entity entity) {
+    if (entity == kNullEntity || !registry.Valid(entity)) return Mat4(1.0f);
     if (const Parent* p = registry.Get<Parent>(entity)) {
-        if (p->entity != kNullEntity) {
+        if (p->entity != kNullEntity && registry.Valid(p->entity)) {
             return glm::inverse(LocalToWorldMatrix(registry, p->entity));
         }
     }

@@ -33,6 +33,10 @@ Built to deliver breathtaking visual fidelity, real-time procedural materials, a
 ## Showcase
 
 <p align="center">
+  <img src="media/0.4.png" alt="Lucida Engine 0.4 New Viewport" width="100%">
+</p>
+
+<p align="center">
   <img src="media/0.3.png" alt="Lucida Engine 0.3 Viewport" width="100%">
 </p>
 

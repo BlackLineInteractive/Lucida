@@ -530,29 +530,8 @@ void EditorUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f3
     ImGuizmo::SetRect(image_min.x, image_min.y, image_size.x, image_size.y);
 
     const CameraState& cam = camera.Camera();
-    Vec3 fwd   = cam.Forward();
-    Vec3 right = cam.Right();
-    Vec3 up    = cam.Up();
-
-    Mat4 view(1.0f);
-    view[0] = Vec4(right.x, up.x, -fwd.x, 0.0f);
-    view[1] = Vec4(right.y, up.y, -fwd.y, 0.0f);
-    view[2] = Vec4(right.z, up.z, -fwd.z, 0.0f);
-    view[3] = Vec4(-glm::dot(right, cam.position),
-                   -glm::dot(up,    cam.position),
-                    glm::dot(fwd,   cam.position), 1.0f);
-
-    const f32 fov   = cam.fov_y;
-    const f32 zNear = 0.1f;
-    const f32 zFar  = 1000.0f;
-    const f32 tanHalf = std::tan(fov * 0.5f);
-
-    Mat4 proj(0.0f);
-    proj[0][0] =  1.0f / (aspect * tanHalf);
-    proj[1][1] = -1.0f / tanHalf;
-    proj[2][2] =  zFar / (zNear - zFar);
-    proj[2][3] = -1.0f;
-    proj[3][2] = -(zFar * zNear) / (zFar - zNear);
+    Mat4 view = glm::lookAt(cam.position, cam.position + cam.Forward(), cam.Up());
+    Mat4 proj = glm::perspective(cam.fov_y, aspect, 0.1f, 1000.0f);
 
     ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
     if (ui.gizmo_operation == 1) op = ImGuizmo::ROTATE;
@@ -603,9 +582,9 @@ void EditorUI::DrawGizmo(World& world, UiState& ui, CameraController& camera, f3
             next.scale = Vec3(matrixScale[0], matrixScale[1], matrixScale[2]);
         }
 
-        TrackEdit(registry, ui.selection, next, "Gizmo Transform");
         *local = next;
         UpdateWorldTransforms(registry);
+        TrackEdit(registry, ui.selection, *local, "Gizmo Transform");
     } else {
         TrackEdit(registry, ui.selection, *local, "Gizmo Transform");
     }
@@ -619,31 +598,9 @@ void EditorUI::DrawViewportVisualizers(World& world, const UiState& ui, const Ca
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     const CameraState& cam = camera.Camera();
-    Vec3 fwd   = cam.Forward();
-    Vec3 right = cam.Right();
-    Vec3 up    = cam.Up();
-
-    Mat4 view(1.0f);
-    view[0] = Vec4(right.x, up.x, -fwd.x, 0.0f);
-    view[1] = Vec4(right.y, up.y, -fwd.y, 0.0f);
-    view[2] = Vec4(right.z, up.z, -fwd.z, 0.0f);
-    view[3] = Vec4(-glm::dot(right, cam.position),
-                   -glm::dot(up,    cam.position),
-                    glm::dot(fwd,   cam.position), 1.0f);
-
-    const f32 fov   = cam.fov_y;
-    const f32 zNear = 0.1f;
-    const f32 zFar  = 1000.0f;
-    const f32 tanHalf = std::tan(fov * 0.5f);
-
-    Mat4 proj(0.0f);
-    proj[0][0] =  1.0f / (aspect * tanHalf);
-    proj[1][1] = -1.0f / tanHalf;
-    proj[2][2] =  zFar / (zNear - zFar);
-    proj[2][3] = -1.0f;
-    proj[3][2] = -(zFar * zNear) / (zFar - zNear);
-
-    Mat4 vp = proj * view;
+    Mat4 view = glm::lookAt(cam.position, cam.position + cam.Forward(), cam.Up());
+    Mat4 proj = glm::perspective(cam.fov_y, aspect, 0.1f, 1000.0f);
+    Mat4 vp   = proj * view;
 
     auto project = [&](const Vec3& p_world, ImVec2& out_screen) -> bool {
         Vec4 clip = vp * Vec4(p_world, 1.0f);
@@ -651,7 +608,7 @@ void EditorUI::DrawViewportVisualizers(World& world, const UiState& ui, const Ca
         Vec3 ndc = Vec3(clip) / clip.w;
         if (ndc.z < -1.0f || ndc.z > 1.0f) return false;
         out_screen.x = image_min.x + (ndc.x * 0.5f + 0.5f) * image_size.x;
-        out_screen.y = image_min.y + (ndc.y * 0.5f + 0.5f) * image_size.y;
+        out_screen.y = image_min.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * image_size.y;
         return true;
     };
 
