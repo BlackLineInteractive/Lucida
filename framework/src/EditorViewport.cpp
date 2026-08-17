@@ -51,9 +51,15 @@ static void DrawOrientationGizmo(World& world, const UiState& ui, CameraControll
     const float dist_to_center = std::hypot(mouse_pos.x - center.x, mouse_pos.y - center.y);
     const bool gizmo_hovered = (dist_to_center <= radius + 10.0f);
 
-    // Draw subtle glass circle background
-    dl->AddCircleFilled(center, radius + 8.0f, IM_COL32(14, 16, 22, 160), 32);
-    dl->AddCircle(center, radius + 8.0f, IM_COL32(60, 65, 80, 140), 32, 1.0f);
+    const float dt = ImGui::GetIO().DeltaTime;
+    const iam_ease_desc ez_quad{iam_ease_out_quad, 0, 0, 0, 0};
+    const float bg_hover_t = iam_tween_float(ImGui::GetID("gizmo_bg"), 0, gizmo_hovered ? 1.0f : 0.0f, 0.18f, ez_quad, iam_policy_crossfade, dt, 0.0f);
+
+    // Draw subtle glass circle background with animated hover glow
+    const int bg_alpha = static_cast<int>(140 + bg_hover_t * 80.0f);
+    const int border_alpha = static_cast<int>(120 + bg_hover_t * 100.0f);
+    dl->AddCircleFilled(center, radius + 8.0f, IM_COL32(14, 16, 22, bg_alpha), 32);
+    dl->AddCircle(center, radius + 8.0f, IM_COL32(60, 75, 110, border_alpha), 32, 1.0f + bg_hover_t * 0.5f);
 
     int clicked_preset = -1;
 
@@ -63,16 +69,20 @@ static void DrawOrientationGizmo(World& world, const UiState& ui, CameraControll
         const ImVec2 pt(center.x + a.proj_x * radius, center.y + a.proj_y * radius);
 
         const float pt_dist = std::hypot(mouse_pos.x - pt.x, mouse_pos.y - pt.y);
-        const float dot_r = a.is_positive ? 7.5f : 5.0f;
-        const bool pt_hovered = (pt_dist <= dot_r + 2.0f);
+        const float base_r = a.is_positive ? 7.5f : 5.0f;
+        const bool pt_hovered = (pt_dist <= base_r + 3.0f);
+
+        const float pt_hover_t = iam_tween_float(ImGui::GetID("gizmo_axis"), i, pt_hovered ? 1.0f : 0.0f, 0.12f, ez_quad, iam_policy_crossfade, dt, 0.0f);
+        const float dot_r = base_r + pt_hover_t * 2.5f;
 
         if (a.is_positive || a.depth > -0.2f) {
-            dl->AddLine(center, pt, a.color, a.is_positive ? 2.5f : 1.5f);
+            dl->AddLine(center, pt, a.color, a.is_positive ? (2.2f + pt_hover_t * 1.0f) : 1.4f);
         }
 
-        if (pt_hovered) {
-            dl->AddCircleFilled(pt, dot_r + 2.5f, IM_COL32(255, 255, 255, 240), 16);
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (pt_hover_t > 0.001f) {
+            const int halo_alpha = static_cast<int>(pt_hover_t * 240.0f);
+            dl->AddCircleFilled(pt, dot_r + 2.0f, IM_COL32(255, 255, 255, halo_alpha), 16);
+            if (pt_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 clicked_preset = static_cast<int>(a.preset);
             }
         }
@@ -86,21 +96,30 @@ static void DrawOrientationGizmo(World& world, const UiState& ui, CameraControll
         }
     }
 
-    // Center pivot dot / reset isometric
+    // Center pivot dot / reset isometric with smooth hover
     const bool center_hovered = (dist_to_center <= 6.0f);
-    if (center_hovered) {
-        dl->AddCircleFilled(center, 7.0f, IM_COL32(255, 255, 255, 240), 16);
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            clicked_preset = static_cast<int>(ViewPreset::Isometric);
-        }
-    } else {
-        dl->AddCircleFilled(center, 4.5f, IM_COL32(180, 185, 200, 220), 16);
+    const float center_t = iam_tween_float(ImGui::GetID("gizmo_center"), 0, center_hovered ? 1.0f : 0.0f, 0.12f, ez_quad, iam_policy_crossfade, dt, 0.0f);
+    const float center_r = 4.0f + center_t * 3.0f;
+    const int center_alpha = static_cast<int>(180 + center_t * 75.0f);
+    dl->AddCircleFilled(center, center_r, IM_COL32(200, 210, 230, center_alpha), 16);
+    if (center_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        clicked_preset = static_cast<int>(ViewPreset::Isometric);
+    }
+    static bool s_gizmo_dragging = false;
+    if (gizmo_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        s_gizmo_dragging = true;
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        s_gizmo_dragging = false;
     }
 
     if (clicked_preset >= 0) {
         camera.SetViewPreset(static_cast<ViewPreset>(clicked_preset));
-    } else if (gizmo_hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-        // Orbit camera around focus target smoothly
+        s_gizmo_dragging = false;
+    } else if (s_gizmo_dragging && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+
+        // Orbit camera around focus target smoothly (Blender standard direction)
         Vec3 focal_point(0.0f);
         if (ui.selection != kNullEntity && world.Entities().Valid(ui.selection)) {
             if (const LocalTransform* lt = world.Entities().Get<LocalTransform>(ui.selection)) {
@@ -109,8 +128,8 @@ static void DrawOrientationGizmo(World& world, const UiState& ui, CameraControll
         }
         const float dist = std::max(glm::length(camera.Camera().position - focal_point), 3.0f);
         const ImVec2 delta = ImGui::GetIO().MouseDelta;
-        camera.Camera().yaw   -= delta.x * 0.015f;
-        camera.Camera().pitch -= delta.y * 0.015f;
+        camera.Camera().yaw   += delta.x * 0.012f;
+        camera.Camera().pitch -= delta.y * 0.012f;
         camera.Camera().pitch  = Clamp(camera.Camera().pitch, -1.55f, 1.55f);
         camera.Camera().position = focal_point - camera.Camera().Forward() * dist;
     }
@@ -268,7 +287,7 @@ void EditorUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect
             if (ImGui::BeginChild("ViewportToolbarCollapsed", ImVec2(0, 32.0f),
                                    ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysUseWindowPadding,
                                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
-                if (ImGui::Button("> Tools", ImVec2(68.0f, 22.0f))) {
+                if (VectorIconButton("vp_expand", VectorIcon::RightArrow, "Tools", ImVec2(78.0f, 22.0f))) {
                     ui.viewport_toolbar_collapsed = false;
                 }
                 DrawTooltip("Expand Viewport Toolbar");
@@ -279,7 +298,7 @@ void EditorUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect
                                    ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AlwaysUseWindowPadding,
                                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
                 // Collapse toggle button
-                if (ImGui::Button("<", ImVec2(24.0f, 22.0f))) {
+                if (VectorIconButton("vp_collapse", VectorIcon::LeftArrow, "", ImVec2(24.0f, 22.0f))) {
                     ui.viewport_toolbar_collapsed = true;
                 }
                 DrawTooltip("Collapse Viewport Toolbar");

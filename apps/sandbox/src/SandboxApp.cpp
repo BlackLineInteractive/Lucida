@@ -388,15 +388,19 @@ public:
         } else {
             m_platform->SetMouseCaptured(false);
 
+            const bool shift_down = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
+
             if (m_ui_state.viewport_rmb) {
-                // RMB Drag Fly-Look
+                // RMB Drag Fly-Look & Navigation
+                ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+
                 const ImVec2 md = ImGui::GetIO().MouseDelta;
                 m_camera.Camera().yaw   += md.x * m_camera.Tuning().look_sensitivity;
                 m_camera.Camera().pitch -= md.y * m_camera.Tuning().look_sensitivity;
                 m_camera.Camera().pitch  = Clamp(m_camera.Camera().pitch, -m_camera.Tuning().pitch_limit, m_camera.Tuning().pitch_limit);
 
-                // WASDQE Fly Movement
-                const f32 speed = (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? m_camera.Tuning().fly_speed * m_camera.Tuning().sprint_mul : m_camera.Tuning().fly_speed);
+                // WASDQE Fly Movement (Shift = Sprint Speed)
+                const f32 speed = shift_down ? (m_camera.Tuning().fly_speed * m_camera.Tuning().sprint_mul) : m_camera.Tuning().fly_speed;
                 Vec3 move(0.0f);
                 if (ImGui::IsKeyDown(ImGuiKey_W)) move += m_camera.Camera().Forward();
                 if (ImGui::IsKeyDown(ImGuiKey_S)) move -= m_camera.Camera().Forward();
@@ -407,15 +411,46 @@ public:
                 if (glm::length(move) > kEpsilon) move = glm::normalize(move);
                 m_camera.Camera().position += move * speed * time.real_delta;
             } else if (m_ui_state.viewport_hovered) {
-                // MMB Drag Pan
-                if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
-                    const ImVec2 md = ImGui::GetIO().MouseDelta;
-                    const f32 pan_speed = 0.008f * (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 2.5f : 1.0f);
-                    m_camera.Camera().position -= (m_camera.Camera().Right() * md.x - m_camera.Camera().Up() * md.y) * pan_speed;
+                // Direct WASDQE Navigation when viewport is hovered while holding Shift
+                if (shift_down && !ImGui::GetIO().WantTextInput) {
+                    Vec3 move(0.0f);
+                    if (ImGui::IsKeyDown(ImGuiKey_W)) move += m_camera.Camera().Forward();
+                    if (ImGui::IsKeyDown(ImGuiKey_S)) move -= m_camera.Camera().Forward();
+                    if (ImGui::IsKeyDown(ImGuiKey_D)) move += m_camera.Camera().Right();
+                    if (ImGui::IsKeyDown(ImGuiKey_A)) move -= m_camera.Camera().Right();
+                    if (ImGui::IsKeyDown(ImGuiKey_E) || ImGui::IsKeyDown(ImGuiKey_Space)) move += Vec3(0, 1, 0);
+                    if (ImGui::IsKeyDown(ImGuiKey_Q) || ImGui::IsKeyDown(ImGuiKey_LeftCtrl)) move -= Vec3(0, 1, 0);
+                    if (glm::length(move) > kEpsilon) {
+                        move = glm::normalize(move);
+                        m_camera.Camera().position += move * (m_camera.Tuning().fly_speed * m_camera.Tuning().sprint_mul) * time.real_delta;
+                    }
                 }
+
+                // Middle Mouse Button: Shift+MMB = Pan, MMB = Orbit (Blender standard)
+                if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+                    const ImVec2 md = ImGui::GetIO().MouseDelta;
+                    if (shift_down) {
+                        const f32 pan_speed = 0.008f * 2.0f;
+                        m_camera.Camera().position -= (m_camera.Camera().Right() * md.x - m_camera.Camera().Up() * md.y) * pan_speed;
+                    } else {
+                        Vec3 focal_point(0.0f);
+                        if (m_ui_state.selection != kNullEntity && world.Entities().Valid(m_ui_state.selection)) {
+                            if (const LocalTransform* lt = world.Entities().Get<LocalTransform>(m_ui_state.selection)) {
+                                focal_point = lt->position;
+                            }
+                        }
+                        const float dist = std::max(glm::length(m_camera.Camera().position - focal_point), 3.0f);
+                        m_camera.Camera().yaw   += md.x * 0.012f;
+                        m_camera.Camera().pitch -= md.y * 0.012f;
+                        m_camera.Camera().pitch  = Clamp(m_camera.Camera().pitch, -1.55f, 1.55f);
+                        m_camera.Camera().position = focal_point - m_camera.Camera().Forward() * dist;
+                    }
+                }
+
                 // Mouse Wheel Zoom
                 if (ImGui::GetIO().MouseWheel != 0.0f) {
-                    const f32 zoom_speed = 1.5f * (ImGui::IsKeyDown(ImGuiKey_LeftShift) ? 2.5f : 1.0f);
+                    const f32 zoom_speed = 1.5f * (shift_down ? 2.5f : 1.0f);
                     m_camera.Camera().position += m_camera.Camera().Forward() * (ImGui::GetIO().MouseWheel * zoom_speed);
                 }
             }

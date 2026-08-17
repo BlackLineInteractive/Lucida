@@ -166,20 +166,20 @@ inline void DrawVectorIcon(ImDrawList* dl, VectorIcon icon, ImVec2 center, float
         break;
     }
     case VectorIcon::LeftArrow: {
-        const float r = half * 0.6f;
+        const float r = half * 0.55f;
         dl->AddTriangleFilled(
-            ImVec2(center.x + r * 0.5f, center.y - r),
-            ImVec2(center.x + r * 0.5f, center.y + r),
-            ImVec2(center.x - r * 0.7f, center.y),
+            ImVec2(center.x + r * 0.55f, center.y - r * 0.75f),
+            ImVec2(center.x + r * 0.55f, center.y + r * 0.75f),
+            ImVec2(center.x - r * 0.70f, center.y),
             col);
         break;
     }
     case VectorIcon::RightArrow: {
-        const float r = half * 0.6f;
+        const float r = half * 0.55f;
         dl->AddTriangleFilled(
-            ImVec2(center.x - r * 0.5f, center.y - r),
-            ImVec2(center.x - r * 0.5f, center.y + r),
-            ImVec2(center.x + r * 0.7f, center.y),
+            ImVec2(center.x - r * 0.55f, center.y - r * 0.75f),
+            ImVec2(center.x - r * 0.55f, center.y + r * 0.75f),
+            ImVec2(center.x + r * 0.70f, center.y),
             col);
         break;
     }
@@ -209,29 +209,47 @@ inline bool VectorIconButton(const char* str_id, VectorIcon icon, const char* la
     bool hovered, held;
     bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
 
+    const float dt = ImGui::GetIO().DeltaTime;
+    const iam_ease_desc ez_quad{iam_ease_out_quad, 0, 0, 0, 0};
+    const float hover_t = iam_tween_float(id, 0, (hovered || held) ? 1.0f : 0.0f, 0.14f, ez_quad, iam_policy_crossfade, dt, 0.0f);
+    const float press_t = iam_tween_float(id, 1, held ? 1.0f : 0.0f, 0.08f, ez_quad, iam_policy_crossfade, dt, 0.0f);
+
     ImU32 col;
     if (bg_override != 0) {
-        col = bg_override;
-        if (held)         col = IM_COL32(255, 255, 255, 60);
-        else if (hovered) col = IM_COL32(255, 255, 255, 30);
+        ImVec4 base_col = ImGui::ColorConvertU32ToFloat4(bg_override);
+        ImVec4 col_vec = base_col;
+        if (press_t > 0.001f) {
+            col_vec = iam_get_blended_color(col_vec, ImVec4(1.0f, 1.0f, 1.0f, base_col.w), press_t * 0.28f, iam_col_srgb);
+        } else if (hover_t > 0.001f) {
+            col_vec = iam_get_blended_color(col_vec, ImVec4(1.0f, 1.0f, 1.0f, base_col.w), hover_t * 0.16f, iam_col_srgb);
+        }
+        col = ImGui::ColorConvertFloat4ToU32(col_vec);
     } else {
-        col = ImGui::GetColorU32((held && hovered) ? ImGuiCol_ButtonActive : hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button);
+        ImVec4 idle_col = ImGui::GetStyleColorVec4(ImGuiCol_Button);
+        ImVec4 hov_col  = ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered);
+        ImVec4 act_col  = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+        ImVec4 cur_col  = iam_get_blended_color(idle_col, hov_col, hover_t, iam_col_srgb);
+        if (press_t > 0.001f) {
+            cur_col = iam_get_blended_color(cur_col, act_col, press_t, iam_col_srgb);
+        }
+        col = ImGui::ColorConvertFloat4ToU32(cur_col);
     }
 
     ImGui::RenderNavHighlight(bb, id);
     ImGui::RenderFrame(bb.Min, bb.Max, col, true, ImGui::GetStyle().FrameRounding);
 
+    const float y_offset = press_t * 1.0f;
     float content_w = icon_w + gap + label_size.x;
     float start_x   = bb.Min.x + (bb.GetWidth() - content_w) * 0.5f;
 
     if (icon != VectorIcon::None) {
-        ImVec2 icon_center(start_x + icon_w * 0.5f, bb.Min.y + bb.GetHeight() * 0.5f);
+        ImVec2 icon_center(start_x + icon_w * 0.5f, bb.Min.y + bb.GetHeight() * 0.5f + y_offset);
         DrawVectorIcon(window->DrawList, icon, icon_center, icon_w, ImGui::GetColorU32(ImGuiCol_Text));
         start_x += icon_w + gap;
     }
 
     if (label && label[0]) {
-        ImVec2 text_pos(start_x, bb.Min.y + (bb.GetHeight() - label_size.y) * 0.5f);
+        ImVec2 text_pos(start_x, bb.Min.y + (bb.GetHeight() - label_size.y) * 0.5f + y_offset);
         ImGui::RenderText(text_pos, label);
     }
 
