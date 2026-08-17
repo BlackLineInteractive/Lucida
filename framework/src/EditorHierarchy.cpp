@@ -9,7 +9,7 @@ namespace {
 
 // Helper to determine node type icon and color
 struct NodeVisualInfo {
-    const char* icon = "❖";
+    VectorIcon  icon = VectorIcon::None;
     ImU32       color = IM_COL32(94, 166, 255, 255); // Blue
     std::string badge;
 };
@@ -17,13 +17,13 @@ struct NodeVisualInfo {
 NodeVisualInfo GetNodeVisualInfo(Registry& entities, Entity entity) {
     NodeVisualInfo info;
     if (entities.Get<GroupComponent>(entity)) {
-        info.icon = "⚯";
+        info.icon = VectorIcon::Group;
         info.color = IM_COL32(94, 166, 255, 255); // Light Blue Group
         return info;
     }
 
     if (const EditableMeshComponent* emc = entities.Get<EditableMeshComponent>(entity)) {
-        info.icon = "⬡";
+        info.icon = VectorIcon::Mesh;
         info.color = IM_COL32(80, 227, 194, 255); // Emerald Green Mesh
         const usize v_count = emc->mesh.vertices.size();
         if (v_count >= 1000) {
@@ -37,7 +37,7 @@ NodeVisualInfo GetNodeVisualInfo(Registry& entities, Entity entity) {
     }
 
     if (const MeshInstance* mi = entities.Get<MeshInstance>(entity)) {
-        info.icon = "⬡";
+        info.icon = VectorIcon::Mesh;
         info.color = IM_COL32(80, 227, 194, 255); // Emerald Green Mesh
         (void)mi;
         info.badge = "Mesh";
@@ -45,7 +45,7 @@ NodeVisualInfo GetNodeVisualInfo(Registry& entities, Entity entity) {
     }
 
     if (const PrimitiveShape* ps = entities.Get<PrimitiveShape>(entity)) {
-        info.icon = "⬡";
+        info.icon = VectorIcon::Mesh;
         info.color = IM_COL32(80, 227, 194, 255);
         switch (ps->type) {
             case PrimitiveType::Box:      info.badge = "12 tris"; break;
@@ -60,31 +60,31 @@ NodeVisualInfo GetNodeVisualInfo(Registry& entities, Entity entity) {
     }
 
     if (entities.Get<LightSource>(entity)) {
-        info.icon = "💡";
+        info.icon = VectorIcon::Light;
         info.color = IM_COL32(255, 209, 102, 255); // Amber Light
         return info;
     }
 
     if (entities.Get<CameraComponent>(entity)) {
-        info.icon = "🎥";
+        info.icon = VectorIcon::Camera;
         info.color = IM_COL32(199, 146, 234, 255); // Purple Camera
         return info;
     }
 
     if (entities.Get<AudioSourceComponent>(entity)) {
-        info.icon = "🔊";
+        info.icon = VectorIcon::Audio;
         info.color = IM_COL32(128, 203, 196, 255); // Cyan Audio
         return info;
     }
 
     if (entities.Get<RigidBody>(entity)) {
-        info.icon = "⚡";
+        info.icon = VectorIcon::Physics;
         info.color = IM_COL32(255, 138, 101, 255); // Orange Physics
         return info;
     }
 
     if (entities.Get<TerrainComponent>(entity)) {
-        info.icon = "⛰";
+        info.icon = VectorIcon::Terrain;
         info.color = IM_COL32(160, 210, 100, 255); // Green Terrain
         return info;
     }
@@ -169,14 +169,13 @@ void EditorUI::DrawSceneGraphInternal(World& world, UiState& ui, Entity current_
 
         // Draw Row Background Highlight
         if (is_selected) {
-            // Soft Emerald/Green Highlight like in screenshot
             draw_list->AddRectFilled(row_min, row_max, IM_COL32(50, 95, 68, 220), 4.0f);
             draw_list->AddRect(row_min, row_max, IM_COL32(75, 160, 110, 240), 4.0f, 0, 1.0f);
         } else if (is_hovered) {
             draw_list->AddRectFilled(row_min, row_max, IM_COL32(255, 255, 255, 18), 4.0f);
         }
 
-        // --- Tree Hierarchy Guide Lines (DOD visual structure) ---
+        // Tree Hierarchy Guide Lines
         const float indent_width = 18.0f;
         const float center_y = row_min.y + row_height * 0.5f;
 
@@ -199,33 +198,31 @@ void EditorUI::DrawSceneGraphInternal(World& world, UiState& ui, Entity current_
             draw_list->AddCircleFilled(ImVec2(line_x + 10.0f, center_y), 1.5f, IM_COL32(130, 130, 130, 200));
         }
 
-        // Node Expander Chevron / Leaf Dot
+        // Node Expander Chevron / Leaf Dot using Vector Icons
         float cur_x = row_min.x + 6.0f + depth * indent_width;
         if (has_children) {
-            const char* chevron = is_collapsed ? "▷" : "▽";
-            ImVec2 chev_size = ImGui::CalcTextSize(chevron);
-            ImVec2 chev_pos(cur_x, center_y - chev_size.y * 0.5f);
-
-            // Interactive chevron hover & click
             ImVec2 chev_min(cur_x - 2.0f, row_min.y);
-            ImVec2 chev_max(cur_x + chev_size.x + 4.0f, row_max.y);
+            ImVec2 chev_max(cur_x + 14.0f, row_max.y);
             const bool chev_hovered = ImGui::IsMouseHoveringRect(chev_min, chev_max);
 
             if (chev_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 ui.ToggleCollapsed(entity);
             }
 
-            draw_list->AddText(chev_pos, chev_hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 180, 220), chevron);
-            cur_x += chev_size.x + 6.0f;
+            DrawVectorIcon(draw_list, is_collapsed ? VectorIcon::RightArrow : VectorIcon::DownArrow,
+                           ImVec2(cur_x + 5.0f, center_y), 10.0f,
+                           chev_hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 180, 220));
+            cur_x += 14.0f;
         } else {
-            draw_list->AddText(ImVec2(cur_x + 2.0f, center_y - 6.0f), IM_COL32(100, 100, 100, 180), "•");
+            draw_list->AddCircleFilled(ImVec2(cur_x + 4.0f, center_y), 1.5f, IM_COL32(110, 110, 110, 180));
             cur_x += 14.0f;
         }
 
-        // Node Type Icon (in dedicated theme color)
-        ImVec2 icon_size = ImGui::CalcTextSize(vinfo.icon);
-        draw_list->AddText(ImVec2(cur_x, center_y - icon_size.y * 0.5f), vinfo.color, vinfo.icon);
-        cur_x += icon_size.x + 6.0f;
+        // Node Type Vector Icon
+        if (vinfo.icon != VectorIcon::None) {
+            DrawVectorIcon(draw_list, vinfo.icon, ImVec2(cur_x + 6.0f, center_y), 13.0f, vinfo.color);
+            cur_x += 16.0f;
+        }
 
         // Entity Name
         std::string display_name = is_group ? ("[Group] " + name_str) : name_str;
@@ -240,8 +237,8 @@ void EditorUI::DrawSceneGraphInternal(World& world, UiState& ui, Entity current_
             draw_list->AddText(ImVec2(cur_x, center_y - badge_size.y * 0.5f), IM_COL32(130, 140, 150, 200), vinfo.badge.c_str());
         }
 
-        // --- Right-Side Inline Interactive Controls ---
-        // 1. Multi-Select Checkbox: [✓] or [ ]
+        // --- Right-Side Inline Interactive Controls (Pure Vector Drawing) ---
+        // 1. Multi-Select Checkbox
         const float chk_x = right_start_x + 4.0f;
         const float btn_w = 20.0f;
         ImVec2 chk_min(chk_x, row_min.y + 4.0f);
@@ -254,12 +251,12 @@ void EditorUI::DrawSceneGraphInternal(World& world, UiState& ui, Entity current_
 
         if (is_selected) {
             draw_list->AddRectFilled(chk_min, chk_max, IM_COL32(75, 175, 120, 255), 3.0f);
-            draw_list->AddText(ImVec2(chk_min.x + 4.0f, center_y - 7.0f), IM_COL32(255, 255, 255, 255), "✓");
+            DrawVectorIcon(draw_list, VectorIcon::Check, ImVec2(chk_min.x + btn_w * 0.5f, center_y), 11.0f, IM_COL32(255, 255, 255, 255));
         } else {
             draw_list->AddRect(chk_min, chk_max, chk_hovered ? IM_COL32(200, 200, 200, 255) : IM_COL32(120, 120, 120, 180), 3.0f);
         }
 
-        // 2. Visibility Eye: 👁 or 🚫
+        // 2. Visibility Eye (Open / Closed)
         const float eye_x = chk_x + btn_w + 6.0f;
         ImVec2 eye_min(eye_x, row_min.y + 3.0f);
         ImVec2 eye_max(eye_x + btn_w, row_max.y - 3.0f);
@@ -276,14 +273,12 @@ void EditorUI::DrawSceneGraphInternal(World& world, UiState& ui, Entity current_
             }
         }
 
-        if (is_visible) {
-            draw_list->AddText(ImVec2(eye_min.x + 2.0f, center_y - 7.0f),
-                               eye_hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 190, 200, 220), "👁");
-        } else {
-            draw_list->AddText(ImVec2(eye_min.x + 2.0f, center_y - 7.0f), IM_COL32(255, 90, 90, 240), "🚫");
-        }
+        DrawVectorIcon(draw_list, is_visible ? VectorIcon::Eye : VectorIcon::EyeClosed,
+                       ImVec2(eye_min.x + btn_w * 0.5f, center_y), 13.0f,
+                       is_visible ? (eye_hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 190, 200, 220))
+                                  : IM_COL32(255, 90, 90, 240));
 
-        // 3. Context Menu Button: •••
+        // 3. Context Menu Button (•••)
         const float opt_x = eye_x + btn_w + 6.0f;
         ImVec2 opt_min(opt_x, row_min.y + 3.0f);
         ImVec2 opt_max(opt_x + btn_w, row_max.y - 3.0f);
@@ -293,8 +288,8 @@ void EditorUI::DrawSceneGraphInternal(World& world, UiState& ui, Entity current_
             ImGui::OpenPopup("EntityContextMenu");
         }
 
-        draw_list->AddText(ImVec2(opt_min.x + 2.0f, center_y - 7.0f),
-                           opt_hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(150, 160, 170, 200), "•••");
+        DrawVectorIcon(draw_list, VectorIcon::More, ImVec2(opt_min.x + btn_w * 0.5f, center_y), 12.0f,
+                       opt_hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(150, 160, 170, 200));
 
         // Context Menu Popup
         if (ImGui::BeginPopupContextItem("EntityContextMenu")) {
@@ -375,7 +370,7 @@ void EditorUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
 
     Registry& entities = world.Entities();
 
-    // Top Quick Action Grid Toolbar (8 Essential Operations as in Photo)
+    // Top Quick Action Grid Toolbar (Vector Icons with Animated Tween Buttons)
     const float avail_w = ImGui::GetContentRegionAvail().x;
     const float btn_w = (avail_w - 3.0f * 4.0f) / 4.0f;
     const ImVec2 tool_btn_size(btn_w, 24.0f);
@@ -384,13 +379,13 @@ void EditorUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
     const bool is_group_sel = (ui.selection != kNullEntity && entities.Get<GroupComponent>(ui.selection) != nullptr);
 
     // Row 1: Add | Delete | Join | Separate
-    if (ImGui::Button("+ Додати...", tool_btn_size)) {
+    if (VectorIconButton("tb_add", VectorIcon::Plus, TR("action_add", "Add..."), tool_btn_size, 0)) {
         ImGui::OpenPopup("AddEntityPopup");
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Створити новий об'єкт або примітив...");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_add", "Create new entity or primitive..."));
 
     ImGui::SameLine(0.0f, 4.0f);
-    if (ImGui::Button("🗑 Видалити", tool_btn_size) && has_sel) {
+    if (VectorIconButton("tb_del", VectorIcon::Cross, TR("action_delete_short", "Delete"), tool_btn_size, has_sel ? IM_COL32(160, 45, 45, 230) : 0) && has_sel) {
         for (Entity to_del : ui.selections) {
             if (entities.Valid(to_del)) {
                 m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Selection"));
@@ -398,31 +393,31 @@ void EditorUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
         }
         ui.DeselectAll();
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Видалити виділені об'єкти (Del)");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_del", "Delete selected entities (Del)"));
 
     ImGui::SameLine(0.0f, 4.0f);
-    if (ImGui::Button("⤹⤸ Злити", tool_btn_size) && ui.selections.size() >= 2) {
+    if (VectorIconButton("tb_join", VectorIcon::Join, TR("action_join_short", "Join"), tool_btn_size, ui.selections.size() >= 2 ? IM_COL32(38, 145, 75, 230) : 0) && ui.selections.size() >= 2) {
         m_commands.Execute(std::make_unique<JoinMeshesCommand>(entities, ui.selections));
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Об'єднати виділені меші в одну сутність (Ctrl+J)");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_join", "Join selected meshes into one entity (Ctrl+J)"));
 
     ImGui::SameLine(0.0f, 4.0f);
-    if (ImGui::Button("⤢ Розділити", tool_btn_size) && has_sel) {
+    if (VectorIconButton("tb_sep", VectorIcon::Separate, TR("action_separate_short", "Separate"), tool_btn_size, 0) && has_sel) {
         for (Entity e : ui.selections) {
             entities.Remove<Parent>(e);
         }
         UpdateWorldTransforms(entities);
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Від'єднати від батьківського об'єкта");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_unparent", "Unparent from parent entity"));
 
     // Row 2: Boolean | Copy | Group | Ungroup
-    if (ImGui::Button("◑ Boolean...", tool_btn_size)) {
+    if (VectorIconButton("tb_bool", VectorIcon::Boolean, TR("action_boolean", "Boolean..."), tool_btn_size, 0)) {
         ImGui::OpenPopup("BooleanModifierPopup");
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("CSG Boolean операції (Об'єднання, Віднімання, Перетин)");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_boolean", "CSG Boolean operations (Union, Difference, Intersection)"));
 
     ImGui::SameLine(0.0f, 4.0f);
-    if (ImGui::Button("❐ Копія", tool_btn_size) && has_sel) {
+    if (VectorIconButton("tb_copy", VectorIcon::Copy, TR("action_copy", "Copy"), tool_btn_size, 0) && has_sel) {
         std::vector<Entity> new_selections;
         for (Entity e : ui.selections) {
             if (entities.Valid(e)) {
@@ -437,47 +432,47 @@ void EditorUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
         ui.selections = new_selections;
         ui.selection = ui.selections.empty() ? kNullEntity : ui.selections.front();
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Дублювати виділення (Cmd+D / Ctrl+D)");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_duplicate", "Duplicate selection (Cmd+D / Ctrl+D)"));
 
     ImGui::SameLine(0.0f, 4.0f);
-    if (ImGui::Button("🔗 Група", tool_btn_size) && has_sel) {
+    if (VectorIconButton("tb_grp", VectorIcon::Group, TR("action_group_short", "Group"), tool_btn_size, has_sel ? IM_COL32(35, 110, 180, 230) : 0) && has_sel) {
         m_commands.Execute(std::make_unique<GroupEntitiesCommand>(entities, ui.selections.empty() ? std::vector<Entity>{ui.selection} : ui.selections));
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Згрупувати виділені об'єкти (Ctrl+G)");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_group", "Group selected entities (Ctrl+G)"));
 
     ImGui::SameLine(0.0f, 4.0f);
-    if (ImGui::Button("⛓ Зняти", tool_btn_size) && is_group_sel) {
+    if (VectorIconButton("tb_ungrp", VectorIcon::Ungroup, TR("action_ungroup_short", "Ungroup"), tool_btn_size, is_group_sel ? IM_COL32(180, 110, 35, 230) : 0) && is_group_sel) {
         m_commands.Execute(std::make_unique<UngroupEntitiesCommand>(entities, ui.selection));
     }
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Розгрупувати групу (Ctrl+Alt+G)");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", TR("tooltip_ungroup", "Ungroup group (Ctrl+Alt+G)"));
 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    // Header Bar: "Кадр / Сцена" with Question Help & Search
-    ImGui::TextColored(ImVec4(0.9f, 0.95f, 1.0f, 1.0f), "Кадр / Сцена");
+    // Header Bar: "Frame / Scene" with Question Help & Search
+    ImGui::TextColored(ImVec4(0.9f, 0.95f, 1.0f, 1.0f), "%s", TR("tree_frame", "Frame / Scene"));
     ImGui::SameLine();
     ImGui::TextDisabled("(%zu)", entities.Count());
     ImGui::SameLine();
     ImGui::TextDisabled("(?)");
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(
-            "Гарячі клавіші:\n"
-            " • A: Виділити все\n"
-            " • Alt+A: Зняти виділення\n"
-            " • Shift+Клік: Мультиселекція\n"
-            " • Ctrl+G: Згрупувати\n"
-            " • Ctrl+Alt+G: Розгрупувати\n"
-            " • Ctrl+J: Об'єднати меші\n"
-            " • Cmd+D / Ctrl+D: Дублювати\n"
-            " • Del: Видалити"
-        );
+        ImGui::SetTooltip("%s", TR("tooltip_shortcuts",
+            "Shortcuts:\n"
+            " • A: Select All\n"
+            " • Alt+A: Deselect All\n"
+            " • Shift+Click: Multi-select\n"
+            " • Ctrl+G: Group\n"
+            " • Ctrl+Alt+G: Ungroup\n"
+            " • Ctrl+J: Join Meshes\n"
+            " • Cmd+D / Ctrl+D: Duplicate\n"
+            " • Del: Delete"
+        ));
     }
 
     // Hierarchy Search & Filter Bar
     ImGui::SetNextItemWidth(-28.0f);
-    ImGui::InputTextWithHint("##HierarchySearch", "Пошук об'єктів...", ui.hierarchy_search, sizeof(ui.hierarchy_search));
+    ImGui::InputTextWithHint("##HierarchySearch", TR("search_entities", "Search entities..."), ui.hierarchy_search, sizeof(ui.hierarchy_search));
     ImGui::SameLine();
     if (ImGui::SmallButton("X")) {
         ui.hierarchy_search[0] = '\0';
@@ -654,13 +649,13 @@ void EditorUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
     if (ImGui::BeginPopup("BooleanModifierPopup")) {
         ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "CSG Boolean Modifiers");
         ImGui::Separator();
-        if (ImGui::MenuItem("Union (Об'єднання)")) {
+        if (ImGui::MenuItem(TR("boolean_union", "Union"))) {
             Prefab::CreateCSGNode(world, CSGOperation::Union);
         }
-        if (ImGui::MenuItem("Difference (Віднімання)")) {
+        if (ImGui::MenuItem(TR("boolean_difference", "Difference"))) {
             Prefab::CreateCSGNode(world, CSGOperation::Difference);
         }
-        if (ImGui::MenuItem("Intersection (Перетин)")) {
+        if (ImGui::MenuItem(TR("boolean_intersection", "Intersection"))) {
             Prefab::CreateCSGNode(world, CSGOperation::Intersection);
         }
         ImGui::EndPopup();
@@ -684,8 +679,8 @@ void EditorUI::DrawHierarchy(World& world, UiState& ui, SceneAssets& assets) {
 
     if (entities.Count() == 0) {
         ImGui::Spacing();
-        ImGui::TextDisabled("Порожня сцена.");
-        ImGui::TextDisabled("Натисніть '+ Додати...' або завантажте модель.");
+        ImGui::TextDisabled("%s", TR("empty_scene", "Empty scene."));
+        ImGui::TextDisabled("%s", TR("empty_scene_hint", "Click '+ Add...' or import a 3D model."));
     }
 
     ImGui::End();

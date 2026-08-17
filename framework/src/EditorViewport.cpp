@@ -733,14 +733,15 @@ void EditorUI::DrawViewportVisualizers(World& world, const UiState& ui, const Ca
 
     const CameraState& cam = camera.Camera();
     Mat4 view = glm::lookAt(cam.position, cam.position + cam.Forward(), cam.Up());
-    Mat4 proj = glm::perspective(cam.fov_y, aspect, 0.1f, 1000.0f);
+    Mat4 proj = glm::perspective(cam.fov_y, aspect, 0.05f, 2000.0f);
     Mat4 vp   = proj * view;
+
+    dl->PushClipRect(image_min, ImVec2(image_min.x + image_size.x, image_min.y + image_size.y), true);
 
     auto project = [&](const Vec3& p_world, ImVec2& out_screen) -> bool {
         Vec4 clip = vp * Vec4(p_world, 1.0f);
-        if (clip.w <= 0.01f) return false;
+        if (clip.w <= 0.02f) return false;
         Vec3 ndc = Vec3(clip) / clip.w;
-        if (ndc.z < -1.0f || ndc.z > 1.0f) return false;
         out_screen.x = image_min.x + (ndc.x * 0.5f + 0.5f) * image_size.x;
         out_screen.y = image_min.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * image_size.y;
         return true;
@@ -1035,6 +1036,8 @@ void EditorUI::DrawViewportVisualizers(World& world, const UiState& ui, const Ca
             draw_corner(Vec3(bmin.x, bmax.y, bmax.z), Vec3( bx, 0, 0), Vec3(0, -by, 0), Vec3(0, 0, -bz));
         }
     }
+
+    dl->PopClipRect();
 }
 
 } // namespace lucida

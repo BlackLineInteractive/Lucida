@@ -790,15 +790,28 @@ int main() {
     Localization::SetLanguage(Language::English);
     check(std::string(TR("menu_file")) == "File", "Localization English menu_file is File");
     check(std::string(TR("action_select_all")) == "Select All (A)", "Localization English action_select_all");
+    check(std::string(TR("action_add")) == "Add...", "Localization English action_add is Add...");
+    check(std::string(TR("tree_frame")) == "Frame / Scene", "Localization English tree_frame is Frame / Scene");
+    check(std::string(TR("action_delete_short")) == "Delete", "Localization English action_delete_short is Delete");
 
     Localization::SetLanguage(Language::Ukrainian);
     check(std::string(TR("menu_file")) == "Файл", "Localization Ukrainian menu_file is Файл");
     check(std::string(TR("action_select_all")) == "Виділити все (A)", "Localization Ukrainian action_select_all");
     check(std::string(TR("repeater_array")) == "Масив", "Localization Ukrainian repeater_array is Масив");
+    check(std::string(TR("action_add")) == "Додати...", "Localization Ukrainian action_add is Додати...");
+    check(std::string(TR("tree_frame")) == "Кадр / Сцена", "Localization Ukrainian tree_frame is Кадр / Сцена");
 
-    Localization::SetLanguage(Language::Russian);
-    check(std::string(TR("menu_file")) == "Файл", "Localization Russian menu_file is Файл");
-    check(std::string(TR("repeater_array")) == "Массив", "Localization Russian repeater_array is Массив");
+    Localization::SetLanguage(Language::German);
+    check(std::string(TR("menu_file")) == "Datei", "Localization German menu_file is Datei");
+    check(std::string(TR("action_add")) == "Hinzufügen...", "Localization German action_add is Hinzufügen...");
+
+    Localization::SetLanguage(Language::French);
+    check(std::string(TR("menu_file")) == "Fichier", "Localization French menu_file is Fichier");
+    check(std::string(TR("action_add")) == "Ajouter...", "Localization French action_add is Ajouter...");
+
+    Localization::SetLanguage(Language::Spanish);
+    check(std::string(TR("menu_file")) == "Archivo", "Localization Spanish menu_file is Archivo");
+    check(std::string(TR("action_add")) == "Añadir...", "Localization Spanish action_add is Añadir...");
 
     Localization::SetLanguage(Language::English); // Restore default
 

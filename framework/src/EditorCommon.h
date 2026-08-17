@@ -101,10 +101,26 @@ enum class VectorIcon {
     Step,
     Focus,
     Eye,
+    EyeClosed,
     Camera,
     DownArrow,
     LeftArrow,
-    RightArrow
+    RightArrow,
+    Plus,
+    Cross,
+    Join,
+    Separate,
+    Boolean,
+    Copy,
+    Group,
+    Ungroup,
+    Light,
+    Mesh,
+    Audio,
+    Physics,
+    Terrain,
+    Check,
+    More
 };
 
 inline void DrawVectorIcon(ImDrawList* dl, VectorIcon icon, ImVec2 center, float size, ImU32 col) {
@@ -157,14 +173,22 @@ inline void DrawVectorIcon(ImDrawList* dl, VectorIcon icon, ImVec2 center, float
         dl->AddCircleFilled(center, ry * 0.55f, col);
         break;
     }
+    case VectorIcon::EyeClosed: {
+        const float rx = half * 0.95f;
+        const float ry = half * 0.52f;
+        dl->AddEllipse(center, ImVec2(rx, ry), col, 0.0f, 16, 1.3f);
+        dl->AddLine(ImVec2(center.x - rx * 1.1f, center.y + ry * 1.1f),
+                    ImVec2(center.x + rx * 1.1f, center.y - ry * 1.1f), col, 1.6f);
+        break;
+    }
     case VectorIcon::Camera: {
-        const float w = half * 1.5f;
-        const float h = half * 1.0f;
-        dl->AddRect(ImVec2(center.x - w * 0.5f, center.y - h * 0.4f),
-                    ImVec2(center.x + w * 0.5f, center.y + h * 0.6f), col, 2.0f, 0, 1.4f);
-        dl->AddCircle(ImVec2(center.x, center.y + h * 0.1f), h * 0.28f, col, 12, 1.3f);
+        const float w = half * 1.4f;
+        const float h = half * 0.95f;
+        dl->AddRect(ImVec2(center.x - w * 0.5f, center.y - h * 0.35f),
+                    ImVec2(center.x + w * 0.5f, center.y + h * 0.65f), col, 2.0f, 0, 1.4f);
+        dl->AddCircle(ImVec2(center.x, center.y + h * 0.15f), h * 0.28f, col, 12, 1.3f);
         dl->AddRectFilled(ImVec2(center.x - w * 0.25f, center.y - h * 0.65f),
-                          ImVec2(center.x + w * 0.25f, center.y - h * 0.4f), col, 1.0f);
+                          ImVec2(center.x + w * 0.25f, center.y - h * 0.35f), col, 1.0f);
         break;
     }
     case VectorIcon::DownArrow: {
@@ -192,6 +216,142 @@ inline void DrawVectorIcon(ImDrawList* dl, VectorIcon icon, ImVec2 center, float
             ImVec2(center.x - r * 0.55f, center.y + r * 0.75f),
             ImVec2(center.x + r * 0.70f, center.y),
             col);
+        break;
+    }
+    case VectorIcon::Plus: {
+        const float l = half * 0.75f;
+        dl->AddLine(ImVec2(center.x - l, center.y), ImVec2(center.x + l, center.y), col, 1.8f);
+        dl->AddLine(ImVec2(center.x, center.y - l), ImVec2(center.x, center.y + l), col, 1.8f);
+        break;
+    }
+    case VectorIcon::Cross: {
+        const float l = half * 0.65f;
+        dl->AddLine(ImVec2(center.x - l, center.y - l), ImVec2(center.x + l, center.y + l), col, 1.8f);
+        dl->AddLine(ImVec2(center.x + l, center.y - l), ImVec2(center.x - l, center.y + l), col, 1.8f);
+        break;
+    }
+    case VectorIcon::Join: {
+        const float r = half * 0.7f;
+        dl->AddLine(ImVec2(center.x - r, center.y - r * 0.5f), ImVec2(center.x, center.y), col, 1.6f);
+        dl->AddLine(ImVec2(center.x + r, center.y - r * 0.5f), ImVec2(center.x, center.y), col, 1.6f);
+        dl->AddLine(ImVec2(center.x, center.y), ImVec2(center.x, center.y + r), col, 1.6f);
+        dl->AddCircleFilled(ImVec2(center.x, center.y + r), 2.0f, col);
+        break;
+    }
+    case VectorIcon::Separate: {
+        const float r = half * 0.7f;
+        dl->AddLine(ImVec2(center.x - r, center.y - r), ImVec2(center.x - r * 0.2f, center.y - r * 0.2f), col, 1.6f);
+        dl->AddLine(ImVec2(center.x + r, center.y + r), ImVec2(center.x + r * 0.2f, center.y + r * 0.2f), col, 1.6f);
+        dl->AddLine(ImVec2(center.x - r, center.y - r), ImVec2(center.x - r + 3.0f, center.y - r), col, 1.6f);
+        dl->AddLine(ImVec2(center.x + r, center.y + r), ImVec2(center.x + r - 3.0f, center.y + r), col, 1.6f);
+        break;
+    }
+    case VectorIcon::Boolean: {
+        const float r = half * 0.75f;
+        dl->AddCircle(center, r, col, 16, 1.4f);
+        dl->PathArcTo(center, r, -1.5708f, 1.5708f, 12);
+        dl->PathFillConvex(col);
+        break;
+    }
+    case VectorIcon::Copy: {
+        const float r = half * 0.55f;
+        dl->AddRect(ImVec2(center.x - r - 2.0f, center.y - r - 2.0f),
+                    ImVec2(center.x + r - 2.0f, center.y + r - 2.0f), col, 1.0f, 0, 1.3f);
+        dl->AddRect(ImVec2(center.x - r + 2.0f, center.y - r + 2.0f),
+                    ImVec2(center.x + r + 2.0f, center.y + r + 2.0f), col, 1.0f, 0, 1.3f);
+        break;
+    }
+    case VectorIcon::Group: {
+        const float r = half * 0.6f;
+        dl->AddCircle(ImVec2(center.x - r, center.y - r * 0.3f), 2.5f, col, 8, 1.5f);
+        dl->AddCircle(ImVec2(center.x + r, center.y - r * 0.3f), 2.5f, col, 8, 1.5f);
+        dl->AddCircleFilled(ImVec2(center.x, center.y + r * 0.7f), 3.0f, col);
+        dl->AddLine(ImVec2(center.x - r, center.y - r * 0.3f), ImVec2(center.x, center.y + r * 0.7f), col, 1.2f);
+        dl->AddLine(ImVec2(center.x + r, center.y - r * 0.3f), ImVec2(center.x, center.y + r * 0.7f), col, 1.2f);
+        break;
+    }
+    case VectorIcon::Ungroup: {
+        const float r = half * 0.6f;
+        dl->AddCircle(ImVec2(center.x - r, center.y), 2.5f, col, 8, 1.4f);
+        dl->AddCircle(ImVec2(center.x + r, center.y), 2.5f, col, 8, 1.4f);
+        dl->AddLine(ImVec2(center.x - 2.0f, center.y - r * 0.8f), ImVec2(center.x + 2.0f, center.y + r * 0.8f), col, 1.4f);
+        break;
+    }
+    case VectorIcon::Light: {
+        const float r = half * 0.40f;
+        dl->AddCircleFilled(center, r, col);
+        for (int k = 0; k < 8; ++k) {
+            float ang = static_cast<float>(k) * 0.785398f;
+            dl->AddLine(ImVec2(center.x + std::cos(ang) * (r + 1.5f), center.y + std::sin(ang) * (r + 1.5f)),
+                        ImVec2(center.x + std::cos(ang) * (r + 4.5f), center.y + std::sin(ang) * (r + 4.5f)),
+                        col, 1.3f);
+        }
+        break;
+    }
+    case VectorIcon::Mesh: {
+        const float r = half * 0.75f;
+        // Hexagonal wireframe prism
+        for (int k = 0; k < 6; ++k) {
+            float a0 = static_cast<float>(k) * 1.047197f;
+            float a1 = static_cast<float>(k + 1) * 1.047197f;
+            dl->AddLine(ImVec2(center.x + std::cos(a0) * r, center.y + std::sin(a0) * r),
+                        ImVec2(center.x + std::cos(a1) * r, center.y + std::sin(a1) * r), col, 1.3f);
+        }
+        dl->AddCircleFilled(center, 2.0f, col);
+        break;
+    }
+    case VectorIcon::Audio: {
+        const float r = half * 0.7f;
+        dl->AddRectFilled(ImVec2(center.x - r * 0.8f, center.y - r * 0.4f),
+                          ImVec2(center.x - r * 0.3f, center.y + r * 0.4f), col, 1.0f);
+        dl->AddTriangleFilled(ImVec2(center.x - r * 0.3f, center.y - r * 0.4f),
+                              ImVec2(center.x + r * 0.2f, center.y - r * 0.8f),
+                              ImVec2(center.x + r * 0.2f, center.y + r * 0.8f), col);
+        dl->AddTriangleFilled(ImVec2(center.x - r * 0.3f, center.y - r * 0.4f),
+                              ImVec2(center.x - r * 0.3f, center.y + r * 0.4f),
+                              ImVec2(center.x + r * 0.2f, center.y + r * 0.8f), col);
+        dl->AddLine(ImVec2(center.x + r * 0.5f, center.y - r * 0.4f),
+                    ImVec2(center.x + r * 0.5f, center.y + r * 0.4f), col, 1.2f);
+        break;
+    }
+    case VectorIcon::Physics: {
+        const float r = half * 0.8f;
+        ImVec2 p[6] = {
+            ImVec2(center.x + r * 0.2f, center.y - r),
+            ImVec2(center.x - r * 0.7f, center.y + r * 0.1f),
+            ImVec2(center.x - r * 0.05f, center.y + r * 0.1f),
+            ImVec2(center.x - r * 0.2f, center.y + r),
+            ImVec2(center.x + r * 0.7f, center.y - r * 0.1f),
+            ImVec2(center.x + r * 0.05f, center.y - r * 0.1f)
+        };
+        for (int i = 0; i < 6; ++i) {
+            dl->AddLine(p[i], p[(i + 1) % 6], col, 1.4f);
+        }
+        break;
+    }
+    case VectorIcon::Terrain: {
+        const float r = half * 0.8f;
+        dl->AddTriangle(ImVec2(center.x - r, center.y + r * 0.7f),
+                        ImVec2(center.x - r * 0.2f, center.y - r * 0.6f),
+                        ImVec2(center.x + r * 0.5f, center.y + r * 0.7f), col, 1.4f);
+        dl->AddTriangle(ImVec2(center.x, center.y + r * 0.7f),
+                        ImVec2(center.x + r * 0.4f, center.y - r * 0.2f),
+                        ImVec2(center.x + r, center.y + r * 0.7f), col, 1.2f);
+        break;
+    }
+    case VectorIcon::Check: {
+        const float r = half * 0.75f;
+        dl->AddLine(ImVec2(center.x - r * 0.8f, center.y),
+                    ImVec2(center.x - r * 0.2f, center.y + r * 0.7f), col, 1.8f);
+        dl->AddLine(ImVec2(center.x - r * 0.2f, center.y + r * 0.7f),
+                    ImVec2(center.x + r * 0.9f, center.y - r * 0.7f), col, 1.8f);
+        break;
+    }
+    case VectorIcon::More: {
+        const float r = 1.6f;
+        dl->AddCircleFilled(ImVec2(center.x - 4.5f, center.y), r, col);
+        dl->AddCircleFilled(ImVec2(center.x, center.y), r, col);
+        dl->AddCircleFilled(ImVec2(center.x + 4.5f, center.y), r, col);
         break;
     }
     default:

@@ -13,6 +13,62 @@ void EditorUI::Init() {
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
+    // Comprehensive Unicode Glyph Ranges (Latin, Cyrillic / Ukrainian, Greek, Arrows, Math, Geometric, Dingbats)
+    static const ImWchar s_full_glyph_ranges[] = {
+        0x0020, 0x00FF, // Basic Latin + Latin Supplement
+        0x0100, 0x024F, // Latin Extended-A + B
+        0x0400, 0x052F, // Cyrillic + Ukrainian (І, Ї, Є, Ґ, etc.)
+        0x2DE0, 0x2DFF, // Cyrillic Extended-A
+        0xA640, 0xA69F, // Cyrillic Extended-B
+        0x2000, 0x206F, // General Punctuation
+        0x20A0, 0x20CF, // Currency Symbols
+        0x2100, 0x214F, // Letterlike Symbols
+        0x2190, 0x21FF, // Arrows
+        0x2200, 0x22FF, // Mathematical Operators
+        0x2500, 0x257F, // Box Drawing
+        0x25A0, 0x25FF, // Geometric Shapes (■, ▲, ▼, ▶, ▷, ▽, ◈, ◉, ⬡, etc.)
+        0x2600, 0x26FF, // Miscellaneous Symbols (⚡, ⚯, ☀, ☼, ♪, etc.)
+        0x2700, 0x27BF, // Dingbats (✓, ✔, ✕, ✖, ❐, ❖, etc.)
+        0x2900, 0x297F, // Supplemental Arrows-B (⤹, ⤸, ⤢, etc.)
+        0x2B00, 0x2BFF, // Miscellaneous Symbols and Arrows (⬡, ⬢, etc.)
+        0
+    };
+
+    const char* font_candidates[] = {
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/SFNS.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/LucidaGrande.ttc",
+        "/System/Library/Fonts/Geneva.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf"
+    };
+
+    ImFont* loaded_font = nullptr;
+    for (const char* path : font_candidates) {
+        FILE* f = std::fopen(path, "rb");
+        if (f) {
+            std::fclose(f);
+            ImFontConfig cfg;
+            cfg.OversampleH = 2;
+            cfg.OversampleV = 2;
+            cfg.PixelSnapH = true;
+            loaded_font = io.Fonts->AddFontFromFileTTF(path, 15.0f, &cfg, s_full_glyph_ranges);
+            if (loaded_font) break;
+        }
+    }
+
+    if (!loaded_font) {
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        cfg.OversampleV = 2;
+        io.Fonts->AddFontDefault(&cfg);
+    }
+
     ApplyTheme();
     RegisterConsoleLogSink();
 }
