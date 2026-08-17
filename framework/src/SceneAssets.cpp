@@ -36,6 +36,7 @@ i32 SceneAssets::AddMaterial(const Material& m, i32 procedural, const std::strin
     gm.metallic         = f32(m.metallic);
     gm.refractive_index = f32(m.refractive_index);
     gm.type             = i32(m.type);
+    gm.flags            = m.flags;
     gm.proc_id          = procedural;
 
     materials.push_back(gm);

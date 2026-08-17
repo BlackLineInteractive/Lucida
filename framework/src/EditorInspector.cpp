@@ -237,25 +237,105 @@ void EditorUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Cam
                     TrackMaterialEdit(assets, mat_ref->index, m, "Material Type");
                 }
 
-                if (ImGui::ColorEdit3("Albedo", m.albedo)) {
-                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Albedo");
-                }
-                if (m.type == 4) { // Checkerboard
-                    if (ImGui::ColorEdit3("Albedo 2", m.albedo2))
-                        TrackMaterialEdit(assets, mat_ref->index, m, "Material Albedo 2");
-                }
-                if (m.type == 3) { // Emissive
-                    if (ImGui::ColorEdit3("Emission", m.emission))
-                        TrackMaterialEdit(assets, mat_ref->index, m, "Material Emission");
-                }
+                if (m.type == 2) { // Glass
+                    ImGui::TextDisabled("Glass Properties:");
 
-                if (ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f))
-                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Roughness");
-                if (ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f))
-                    TrackMaterialEdit(assets, mat_ref->index, m, "Material Metallic");
-                if (m.type == 2 || m.type == 5) { // Glass or Water
-                    if (ImGui::SliderFloat("IOR", &m.refractive_index, 1.0f, 3.0f))
-                        TrackMaterialEdit(assets, mat_ref->index, m, "Material IOR");
+                    bool is_thin = (m.flags & MATFLAG_THIN_WALLED) != 0;
+                    const char* geom_modes[] = { "Solid Glass (Full Snell Refraction / Spheres / Prisms)", "Thin-Walled (Windows / Windshields / Bulbs)" };
+                    int geom_idx = is_thin ? 1 : 0;
+                    if (ImGui::Combo("Glass Geometry", &geom_idx, geom_modes, 2)) {
+                        if (geom_idx == 1) m.flags |= MATFLAG_THIN_WALLED;
+                        else m.flags &= ~MATFLAG_THIN_WALLED;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Glass Geometry Mode");
+                    }
+
+                    if (ImGui::ColorEdit3("Glass Tint / Transmission", m.albedo))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Glass Tint");
+                    if (ImGui::ColorEdit3("Edge / Glancing Tint", m.albedo2))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Glass Edge Tint");
+                    if (ImGui::SliderFloat("IOR (Refraction Index)", &m.refractive_index, 1.0f, 3.0f, "%.3f"))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Glass IOR");
+                    if (ImGui::SliderFloat("Surface Roughness / Frosting", &m.roughness, 0.0f, 1.0f, "%.3f"))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Glass Roughness");
+                    if (ImGui::SliderFloat("Absorption Density", &m.metallic, 0.0f, 2.0f, "%.2f"))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Glass Absorption");
+                    if (ImGui::ColorEdit3("Internal Glow", m.emission))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Glass Glow");
+
+                    ImGui::TextDisabled("Glass Presets:");
+                    if (ImGui::SmallButton("Clear 1.52")) {
+                        m.albedo[0]=0.98f; m.albedo[1]=0.99f; m.albedo[2]=1.0f;
+                        m.albedo2[0]=0.0f; m.albedo2[1]=0.0f; m.albedo2[2]=0.0f;
+                        m.refractive_index=1.52f; m.roughness=0.0f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Clear Glass Preset");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Auto Smoke")) {
+                        m.albedo[0]=0.50f; m.albedo[1]=0.55f; m.albedo[2]=0.60f;
+                        m.albedo2[0]=0.30f; m.albedo2[1]=0.35f; m.albedo2[2]=0.40f;
+                        m.refractive_index=1.52f; m.roughness=0.0f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Smoke Glass Preset");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Ruby Red")) {
+                        m.albedo[0]=0.88f; m.albedo[1]=0.04f; m.albedo[2]=0.04f;
+                        m.albedo2[0]=0.95f; m.albedo2[1]=0.02f; m.albedo2[2]=0.02f;
+                        m.refractive_index=1.55f; m.roughness=0.0f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Ruby Glass Preset");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Amber")) {
+                        m.albedo[0]=0.95f; m.albedo[1]=0.48f; m.albedo[2]=0.02f;
+                        m.albedo2[0]=0.98f; m.albedo2[1]=0.35f; m.albedo2[2]=0.01f;
+                        m.refractive_index=1.52f; m.roughness=0.0f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Amber Glass Preset");
+                    }
+                    if (ImGui::SmallButton("Water 1.33")) {
+                        m.albedo[0]=0.90f; m.albedo[1]=0.96f; m.albedo[2]=1.0f;
+                        m.albedo2[0]=0.70f; m.albedo2[1]=0.85f; m.albedo2[2]=0.95f;
+                        m.refractive_index=1.333f; m.roughness=0.01f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Water Preset");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Frosted")) {
+                        m.albedo[0]=0.95f; m.albedo[1]=0.95f; m.albedo[2]=0.95f;
+                        m.refractive_index=1.52f; m.roughness=0.35f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Frosted Glass Preset");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Emerald")) {
+                        m.albedo[0]=0.10f; m.albedo[1]=0.85f; m.albedo[2]=0.35f;
+                        m.albedo2[0]=0.05f; m.albedo2[1]=0.65f; m.albedo2[2]=0.20f;
+                        m.refractive_index=1.57f; m.roughness=0.0f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Emerald Glass Preset");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Diamond 2.42")) {
+                        m.albedo[0]=1.0f; m.albedo[1]=1.0f; m.albedo[2]=1.0f;
+                        m.refractive_index=2.417f; m.roughness=0.0f; m.metallic=0.0f;
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Diamond Preset");
+                    }
+                } else {
+                    if (ImGui::ColorEdit3("Albedo", m.albedo)) {
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Material Albedo");
+                    }
+                    if (m.type == 4) { // Checkerboard
+                        if (ImGui::ColorEdit3("Albedo 2", m.albedo2))
+                            TrackMaterialEdit(assets, mat_ref->index, m, "Material Albedo 2");
+                    }
+                    if (m.type == 3) { // Emissive
+                        if (ImGui::ColorEdit3("Emission", m.emission))
+                            TrackMaterialEdit(assets, mat_ref->index, m, "Material Emission");
+                    }
+
+                    if (ImGui::SliderFloat("Roughness", &m.roughness, 0.0f, 1.0f))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Material Roughness");
+                    if (ImGui::SliderFloat("Metallic", &m.metallic, 0.0f, 1.0f))
+                        TrackMaterialEdit(assets, mat_ref->index, m, "Material Metallic");
+                    if (m.type == 5) { // Water
+                        if (ImGui::SliderFloat("IOR", &m.refractive_index, 1.0f, 3.0f))
+                            TrackMaterialEdit(assets, mat_ref->index, m, "Material IOR");
+                    }
                 }
 
                 const char* proc_types[] = {
@@ -367,30 +447,68 @@ void EditorUI::DrawInspector(World& world, UiState& ui, SceneAssets& assets, Cam
                     }
 
                     if (m.type == 2) {
-                        ImGui::TextDisabled("Glass Settings:");
-                        if (ImGui::ColorEdit3("Glass Tint / Color", m.albedo)) mat_changed = true;
-                        if (ImGui::SliderFloat("IOR (Refraction)", &m.refractive_index, 1.0f, 2.8f, "%.3f")) mat_changed = true;
-                        if (ImGui::SliderFloat("Surface Roughness", &m.roughness, 0.0f, 1.0f, "%.3f")) mat_changed = true;
+                        ImGui::TextDisabled("Glass Properties:");
+
+                        bool is_thin = (m.flags & MATFLAG_THIN_WALLED) != 0;
+                        const char* geom_modes[] = { "Solid Glass (Full Snell Refraction / Spheres / Prisms)", "Thin-Walled (Windows / Windshields / Bulbs)" };
+                        int geom_idx = is_thin ? 1 : 0;
+                        if (ImGui::Combo("Glass Geometry", &geom_idx, geom_modes, 2)) {
+                            if (geom_idx == 1) m.flags |= MATFLAG_THIN_WALLED;
+                            else m.flags &= ~MATFLAG_THIN_WALLED;
+                            mat_changed = true;
+                        }
+
+                        if (ImGui::ColorEdit3("Glass Tint / Transmission", m.albedo)) mat_changed = true;
+                        if (ImGui::ColorEdit3("Edge / Glancing Tint", m.albedo2)) mat_changed = true;
+                        if (ImGui::SliderFloat("IOR (Refraction Index)", &m.refractive_index, 1.0f, 3.0f, "%.3f")) mat_changed = true;
+                        if (ImGui::SliderFloat("Surface Roughness / Frosting", &m.roughness, 0.0f, 1.0f, "%.3f")) mat_changed = true;
+                        if (ImGui::SliderFloat("Absorption Density", &m.metallic, 0.0f, 2.0f, "%.2f")) mat_changed = true;
+                        if (ImGui::ColorEdit3("Internal Glow", m.emission)) mat_changed = true;
 
                         ImGui::TextDisabled("Glass Presets:");
                         if (ImGui::SmallButton("Clear (1.52)")) {
                             m.albedo[0]=0.98f; m.albedo[1]=0.99f; m.albedo[2]=1.0f;
-                            m.refractive_index=1.52f; m.roughness=0.0f; mat_changed = true;
+                            m.albedo2[0]=0.0f; m.albedo2[1]=0.0f; m.albedo2[2]=0.0f;
+                            m.refractive_index=1.52f; m.roughness=0.0f; m.metallic=0.0f; mat_changed = true;
                         }
                         ImGui::SameLine();
                         if (ImGui::SmallButton("Auto Smoke")) {
-                            m.albedo[0]=0.55f; m.albedo[1]=0.60f; m.albedo[2]=0.65f;
-                            m.refractive_index=1.52f; m.roughness=0.0f; mat_changed = true;
+                            m.albedo[0]=0.50f; m.albedo[1]=0.55f; m.albedo[2]=0.60f;
+                            m.albedo2[0]=0.30f; m.albedo2[1]=0.35f; m.albedo2[2]=0.40f;
+                            m.refractive_index=1.52f; m.roughness=0.0f; m.metallic=0.0f; mat_changed = true;
                         }
                         ImGui::SameLine();
                         if (ImGui::SmallButton("Ruby Taillight")) {
                             m.albedo[0]=0.88f; m.albedo[1]=0.04f; m.albedo[2]=0.04f;
-                            m.refractive_index=1.55f; m.roughness=0.0f; mat_changed = true;
+                            m.albedo2[0]=0.95f; m.albedo2[1]=0.02f; m.albedo2[2]=0.02f;
+                            m.refractive_index=1.55f; m.roughness=0.0f; m.metallic=0.0f; mat_changed = true;
                         }
                         ImGui::SameLine();
                         if (ImGui::SmallButton("Amber")) {
                             m.albedo[0]=0.95f; m.albedo[1]=0.48f; m.albedo[2]=0.02f;
-                            m.refractive_index=1.52f; m.roughness=0.0f; mat_changed = true;
+                            m.albedo2[0]=0.98f; m.albedo2[1]=0.35f; m.albedo2[2]=0.01f;
+                            m.refractive_index=1.52f; m.roughness=0.0f; m.metallic=0.0f; mat_changed = true;
+                        }
+                        if (ImGui::SmallButton("Water 1.33")) {
+                            m.albedo[0]=0.90f; m.albedo[1]=0.96f; m.albedo[2]=1.0f;
+                            m.albedo2[0]=0.70f; m.albedo2[1]=0.85f; m.albedo2[2]=0.95f;
+                            m.refractive_index=1.333f; m.roughness=0.01f; m.metallic=0.0f; mat_changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Frosted")) {
+                            m.albedo[0]=0.95f; m.albedo[1]=0.95f; m.albedo[2]=0.95f;
+                            m.refractive_index=1.52f; m.roughness=0.35f; m.metallic=0.0f; mat_changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Emerald")) {
+                            m.albedo[0]=0.10f; m.albedo[1]=0.85f; m.albedo[2]=0.35f;
+                            m.albedo2[0]=0.05f; m.albedo2[1]=0.65f; m.albedo2[2]=0.20f;
+                            m.refractive_index=1.57f; m.roughness=0.0f; m.metallic=0.0f; mat_changed = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Diamond 2.42")) {
+                            m.albedo[0]=1.0f; m.albedo[1]=1.0f; m.albedo[2]=1.0f;
+                            m.refractive_index=2.417f; m.roughness=0.0f; m.metallic=0.0f; mat_changed = true;
                         }
                     } else {
                         if (ImGui::ColorEdit3("Albedo / Paint Color", m.albedo)) mat_changed = true;

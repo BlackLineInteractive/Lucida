@@ -36,6 +36,7 @@ enum MaterialFlags {
     MATFLAG_HAS_ORM_TEX       = 1 << 1,
     MATFLAG_ALPHA_BLEND       = 1 << 2,
     MATFLAG_HAS_NORMAL_TEX    = 1 << 3,  // tangent-space normal map present
+    MATFLAG_THIN_WALLED       = 1 << 4,  // Thin-walled glass (windows/windshields) vs solid refractive glass
 };
 
 // CPU-side material, used when authoring the built-in scenes. Converted to
@@ -44,6 +45,7 @@ struct Material {
     Vec3   albedo, emission, albedo2;
     double roughness, metallic, refractive_index;
     MaterialType type;
+    int    flags = 0;
 
     // PBR Texture Maps & Channels
     std::string albedo_map;
@@ -62,7 +64,7 @@ struct Material {
     Material(MaterialType t = DIFFUSE, Vec3 alb = Vec3(0.8f), Vec3 emiss = Vec3(0.0f),
              double rough = 0.5, double metal = 0.0, double ri = 1.5, Vec3 alb2 = Vec3(0.1f))
         : albedo(alb), emission(emiss), albedo2(alb2), roughness(rough), metallic(metal),
-          refractive_index(ri), type(t) {}
+          refractive_index(ri), type(t), flags(0) {}
 };
 
 struct GPUMaterial {

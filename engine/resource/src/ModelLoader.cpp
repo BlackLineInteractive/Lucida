@@ -150,6 +150,7 @@ static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat, const std::string& 
             s.find("light_glass") != std::string::npos ||
             s.find("transparent") != std::string::npos) {
             m.type = 2; // GLASS
+            m.flags |= MATFLAG_THIN_WALLED; // Thin-walled automotive window glass
             m.refractive_index = (refracti > 1.0f) ? refracti : 1.52f;
             m.roughness = 0.0f;
             m.metallic = 0.0f;

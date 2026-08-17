@@ -17,6 +17,7 @@ constant int MATFLAG_HAS_BASECOLOR_TEX = 1 << 0;
 constant int MATFLAG_HAS_ORM_TEX       = 1 << 1;
 constant int MATFLAG_ALPHA_BLEND       = 1 << 2;
 constant int MATFLAG_HAS_NORMAL_TEX    = 1 << 3;
+constant int MATFLAG_THIN_WALLED       = 1 << 4;
 struct Sphere { packed_float3 center; float radius; int mat_index; int pad1, pad2, pad3; };
 struct Plane { packed_float3 normal; float d_offset; int mat_index; int pad1, pad2, pad3; };
 struct Cube { packed_float3 center; float pad1; packed_float3 half_size; int mat_index; };
@@ -1397,24 +1398,29 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
         if (mat.type == GLASS) {
             // Direct specular highlight from lights on glass surface
+            float3 Nf = hit.normal;
+            float cos_i = abs(dot(cur.direction, Nf));
+            float3 glass_tint = (length(alb) > 0.01) ? alb : float3(1.0);
+            if (length(mat.albedo2) > 0.01) {
+                glass_tint = mix(glass_tint, float3(mat.albedo2), pow(1.0f - cos_i, 3.0f));
+            }
+
+            // Direct specular highlight from lights on glass surface
             float3 spec_light = float3(0.0);
+            float shininess = mix(512.0f, 16.0f, clamp(mat.roughness, 0.0f, 1.0f));
             for (int i = 0; i < u.num_lights; i++) {
                 float3 to_light = lights[i].position - hit.point;
                 float dist_sq = dot(to_light, to_light);
                 float dist = sqrt(dist_sq);
                 float3 L = to_light / dist;
                 float3 H = normalize(L + V);
-                float NdotH = max(0.0, dot(N, H));
-                float NdotL = max(0.0, dot(N, L));
+                float NdotH = max(0.0, dot(Nf, H));
+                float NdotL = max(0.0, dot(Nf, L));
                 if (NdotL > 0.0) {
-                    float shininess = 256.0;
                     float spec = pow(NdotH, shininess) * ((shininess + 8.0) / 25.13274) * NdotL;
                     spec_light += lights[i].color * (lights[i].intensity / max(dist_sq, 0.01f)) * spec;
                 }
             }
-
-            float3 Nf = hit.normal;
-            float3 glass_tint = (length(alb) > 0.01) ? alb : float3(1.0);
 
             if (u.sun_enabled != 0) {
                 float3 sdir = get_sun_dir(u);
@@ -1424,7 +1430,7 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                     float vis = sun_shadow(hit.point, hit.geo_normal, hit.t, bvh_nodes, triangles, instances, u);
                     float3 H = normalize(sdir + V);
                     float NdotH = max(0.0, dot(Nf, H));
-                    float spec = pow(NdotH, 256.0) * (264.0 / 25.13274) * sun_ndl;
+                    float spec = pow(NdotH, shininess) * ((shininess + 8.0) / 25.13274) * sun_ndl;
                     spec_light += scol * spec * vis;
                     if (glass_tint.x > 0.5f && (glass_tint.y < 0.2f || glass_tint.z < 0.2f)) {
                         spec_light += scol * glass_tint * sun_ndl * vis * 0.6f;
@@ -1435,7 +1441,6 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 result += contrib * glass_tint * 0.40f;
             }
 
-            float cos_i = abs(dot(cur.direction, Nf));
             float n2 = max(mat.refractive_index, 1.05f);
             float fresnel_r = clamp(schlick(cos_i, 1.0f, n2).x, 0.04f, 0.98f);
 
@@ -1444,27 +1449,72 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
 
             float3 R = reflect(cur.direction, Nf);
 
-            if (sp < MAX_STACK && depth > 1) {
-                // Reflected ray
-                if (fresnel_r > 0.02f) {
-                    stack_ray[sp] = make_ray(offset_ray(hit.point, Nf, R, hit.t), R);
-                    stack_contrib[sp] = contrib * fresnel_r;
-                    stack_depth[sp] = depth - 1;
-                    sp++;
-                }
-                // Transmitted ray
-                float trans_w = 1.0f - fresnel_r;
-                if (trans_w > 0.01f) {
-                    float3 trans_pt = hit.point + cur.direction * 1e-4f;
-                    stack_ray[sp] = make_ray(trans_pt, cur.direction);
-                    stack_contrib[sp] = contrib * trans_w * glass_tint;
-                    stack_depth[sp] = depth - 1;
-                    sp++;
+            bool is_thin_walled = (mat.flags & MATFLAG_THIN_WALLED) != 0;
+
+            if (is_thin_walled) {
+                // Thin-walled glass (windows, windshields, lightbulb glass shell, bubbles):
+                // Transmitted ray passes straight through without bending
+                if (sp < MAX_STACK && depth > 1) {
+                    if (fresnel_r > 0.02f) {
+                        stack_ray[sp] = make_ray(offset_ray(hit.point, Nf, R, hit.t), R);
+                        stack_contrib[sp] = contrib * fresnel_r;
+                        stack_depth[sp] = depth - 1;
+                        sp++;
+                    }
+                    float trans_w = 1.0f - fresnel_r;
+                    if (trans_w > 0.01f) {
+                        float3 trans_pt = hit.point + cur.direction * 1e-4f;
+                        stack_ray[sp] = make_ray(trans_pt, cur.direction);
+                        stack_contrib[sp] = contrib * trans_w * glass_tint;
+                        stack_depth[sp] = depth - 1;
+                        sp++;
+                    }
+                } else {
+                    result += contrib * sky_color(R, u) * fresnel_r;
+                    result += contrib * sky_color(cur.direction, u) * (1.0f - fresnel_r) * glass_tint;
                 }
             } else {
-                // Fallback on stack exhaustion
-                result += contrib * sky_color(R, u) * fresnel_r;
-                result += contrib * sky_color(cur.direction, u) * (1.0f - fresnel_r) * glass_tint;
+                // Solid refractive glass (solid spheres, crystal balls, diamonds, prisms, solid statues):
+                // Full Snell's law refraction with interior ray bending and Total Internal Reflection!
+                bool entering = dot(cur.direction, hit.geo_normal) < 0.0f;
+                float3 N_snell = entering ? Nf : -Nf;
+                float eta = entering ? (1.0f / n2) : (n2 / 1.0f);
+                float3 T = refract(cur.direction, N_snell, eta);
+                bool tir = (dot(T, T) < 0.001f);
+
+                if (tir) {
+                    // Total Internal Reflection (TIR)
+                    if (sp < MAX_STACK && depth > 1) {
+                        stack_ray[sp] = make_ray(offset_ray(hit.point, N_snell, R, hit.t), R);
+                        stack_contrib[sp] = contrib * glass_tint;
+                        stack_depth[sp] = depth - 1;
+                        sp++;
+                    } else {
+                        result += contrib * sky_color(R, u) * glass_tint;
+                    }
+                } else {
+                    if (sp < MAX_STACK && depth > 1) {
+                        // Reflected ray
+                        if (fresnel_r > 0.02f) {
+                            stack_ray[sp] = make_ray(offset_ray(hit.point, N_snell, R, hit.t), R);
+                            stack_contrib[sp] = contrib * fresnel_r;
+                            stack_depth[sp] = depth - 1;
+                            sp++;
+                        }
+                        // Refracted transmitted ray bending into/out of solid glass
+                        float trans_w = 1.0f - fresnel_r;
+                        if (trans_w > 0.01f) {
+                            float3 refr_o = offset_ray(hit.point, -N_snell, T, hit.t);
+                            stack_ray[sp] = make_ray(refr_o, T);
+                            stack_contrib[sp] = contrib * trans_w * glass_tint;
+                            stack_depth[sp] = depth - 1;
+                            sp++;
+                        }
+                    } else {
+                        result += contrib * sky_color(R, u) * fresnel_r;
+                        result += contrib * sky_color(T, u) * (1.0f - fresnel_r) * glass_tint;
+                    }
+                }
             }
             continue;
         }
