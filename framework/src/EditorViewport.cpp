@@ -537,16 +537,28 @@ void EditorUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect
                 DrawTooltip("Toggle real-time performance & ray statistics HUD overlay.");
 
                 ImGui::SameLine(0, 4.0f);
-                ImGui::TextDisabled("|");
-                ImGui::SameLine(0, 4.0f);
-
-                // 3D Visualizers toggle button with Eye vector icon
+                // 3D Visualizers toggle button with Overlays settings dropdown
                 const bool viz_active = ui.show_visualizers;
                 const ImU32 viz_col = viz_active ? IM_COL32(30, 160, 180, 240) : 0;
-                if (VectorIconButton("vp_overlays", VectorIcon::Eye, "Overlays", ImVec2(82, 22), viz_col)) {
+                if (VectorIconButton("vp_overlays", VectorIcon::Eye, "Overlays", ImVec2(75, 22), viz_col)) {
                     ui.show_visualizers = !ui.show_visualizers;
                 }
-                DrawTooltip("Toggle 3D visualizers for light bounds, camera frustums, and bounding boxes.");
+                DrawTooltip("Toggle 3D visualizers for lights, cameras, and selection bounds.");
+                ImGui::SameLine(0, 1.0f);
+                if (ImGui::Button("▼##OverlaysMenu", ImVec2(18, 22))) {
+                    ImGui::OpenPopup("ViewportOverlaysPopup");
+                }
+                if (ImGui::BeginPopup("ViewportOverlaysPopup")) {
+                    ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "Viewport Overlays");
+                    ImGui::Separator();
+                    ImGui::Checkbox("Enable 3D Overlays", &ui.show_visualizers);
+                    ImGui::Checkbox("Light Icons & Rays", &ui.show_light_visualizers);
+                    ImGui::Checkbox("Camera Frustums", &ui.show_camera_frustums);
+                    ImGui::Checkbox("Selection Corner Brackets", &ui.show_selection_bounds);
+                    ImGui::Checkbox("Physics Colliders", &ui.show_collider_wireframes);
+                    ImGui::Checkbox("Performance HUD", &ui.show_stats_overlay);
+                    ImGui::EndPopup();
+                }
 
                 ImGui::SameLine(0, 4.0f);
                 ImGui::TextDisabled("|");
@@ -734,32 +746,293 @@ void EditorUI::DrawViewportVisualizers(World& world, const UiState& ui, const Ca
         return true;
     };
 
-    if (ui.selection != kNullEntity && registry.Valid(ui.selection)) {
-        if (const LocalBounds* lb = registry.Get<LocalBounds>(ui.selection)) {
-            Mat4 wm = LocalToWorldMatrix(registry, ui.selection);
-            Vec3 corners[8] = {
-                Vec3(wm * Vec4(lb->min.x, lb->min.y, lb->min.z, 1.0f)),
-                Vec3(wm * Vec4(lb->max.x, lb->min.y, lb->min.z, 1.0f)),
-                Vec3(wm * Vec4(lb->max.x, lb->max.y, lb->min.z, 1.0f)),
-                Vec3(wm * Vec4(lb->min.x, lb->max.y, lb->min.z, 1.0f)),
-                Vec3(wm * Vec4(lb->min.x, lb->min.y, lb->max.z, 1.0f)),
-                Vec3(wm * Vec4(lb->max.x, lb->min.y, lb->max.z, 1.0f)),
-                Vec3(wm * Vec4(lb->max.x, lb->max.y, lb->max.z, 1.0f)),
-                Vec3(wm * Vec4(lb->min.x, lb->max.y, lb->max.z, 1.0f))
+    auto draw_3d_line = [&](const Vec3& a, const Vec3& b, ImU32 col, float thickness = 1.2f) {
+        ImVec2 sa, sb;
+        if (project(a, sa) && project(b, sb)) {
+            dl->AddLine(sa, sb, col, thickness);
+        }
+    };
+
+    auto draw_3d_circle = [&](const Vec3& center, const Vec3& normal, float radius, ImU32 col, int segments = 24, float thickness = 1.0f) {
+        Vec3 n = glm::length(normal) > 0.001f ? glm::normalize(normal) : Vec3(0, 1, 0);
+        Vec3 u = std::abs(n.y) < 0.99f ? glm::normalize(glm::cross(n, Vec3(0, 1, 0))) : glm::normalize(glm::cross(n, Vec3(1, 0, 0)));
+        Vec3 v = glm::cross(n, u);
+
+        ImVec2 prev_s;
+        bool has_prev = false;
+        const float step = 6.2831853f / static_cast<float>(segments);
+        for (int i = 0; i <= segments; ++i) {
+            float angle = static_cast<float>(i) * step;
+            Vec3 p = center + (u * std::cos(angle) + v * std::sin(angle)) * radius;
+            ImVec2 cur_s;
+            bool vis = project(p, cur_s);
+            if (vis) {
+                if (has_prev) {
+                    dl->AddLine(prev_s, cur_s, col, thickness);
+                }
+                prev_s = cur_s;
+                has_prev = true;
+            } else {
+                has_prev = false;
+            }
+        }
+    };
+
+    auto draw_3d_sphere_rings = [&](const Vec3& center, float radius, ImU32 col, float thickness = 1.0f) {
+        draw_3d_circle(center, Vec3(0, 1, 0), radius, col, 24, thickness); // XZ (horizontal)
+        draw_3d_circle(center, Vec3(1, 0, 0), radius, col, 24, thickness); // YZ (vertical)
+        draw_3d_circle(center, Vec3(0, 0, 1), radius, col, 24, thickness); // XY (vertical)
+    };
+
+    // 1. Light Source 3D Icons, Rays and Influence Bounds
+    if (ui.show_light_visualizers) {
+        for (auto [entity, ls] : registry.View<LightSource>().each()) {
+            Mat4 wm = LocalToWorldMatrix(registry, entity);
+            Vec3 light_pos = Vec3(wm * Vec4(0, 0, 0, 1));
+            const bool is_sel = ui.IsSelected(entity);
+
+            const int cr = std::clamp(static_cast<int>(ls.color.r * 255.0f), 0, 255);
+            const int cg = std::clamp(static_cast<int>(ls.color.g * 255.0f), 0, 255);
+            const int cb = std::clamp(static_cast<int>(ls.color.b * 255.0f), 0, 255);
+            const ImU32 light_col = IM_COL32(cr, cg, cb, 255);
+            const ImU32 wire_col  = is_sel ? IM_COL32(255, 230, 80, 240) : IM_COL32(cr, cg, cb, 140);
+
+            ImVec2 screen_pos;
+            const bool on_screen = project(light_pos, screen_pos);
+
+            // Draw glowing 3D billboard bulb glyph icon at light position
+            if (on_screen) {
+                // Outer glow aura
+                dl->AddCircleFilled(screen_pos, is_sel ? 9.0f : 7.0f, IM_COL32(cr, cg, cb, is_sel ? 90 : 50));
+                // Core bulb disk
+                dl->AddCircleFilled(screen_pos, is_sel ? 5.5f : 4.5f, light_col);
+                // Center bright highlight
+                dl->AddCircleFilled(screen_pos, 2.0f, IM_COL32(255, 255, 255, 255));
+
+                // 8 Starburst sun rays sticking out of the light glyph
+                for (int k = 0; k < 8; ++k) {
+                    float ang = static_cast<float>(k) * 3.14159265f * 0.25f;
+                    float r0 = is_sel ? 6.5f : 5.5f;
+                    float r1 = is_sel ? 11.5f : 9.5f;
+                    dl->AddLine(
+                        ImVec2(screen_pos.x + std::cos(ang) * r0, screen_pos.y + std::sin(ang) * r0),
+                        ImVec2(screen_pos.x + std::cos(ang) * r1, screen_pos.y + std::sin(ang) * r1),
+                        is_sel ? IM_COL32(255, 240, 120, 255) : light_col,
+                        is_sel ? 1.8f : 1.2f
+                    );
+                }
+
+                // If selected: draw selection ring
+                if (is_sel) {
+                    dl->AddCircle(screen_pos, 14.0f, IM_COL32(80, 227, 194, 255), 0, 1.5f);
+                }
+            }
+
+            // 3D Geometry representation per light type
+            if (ls.type == LightType::Point) {
+                if (is_sel) {
+                    const float r = std::clamp(ls.radius, 0.5f, 50.0f);
+                    draw_3d_sphere_rings(light_pos, r, wire_col, is_sel ? 1.5f : 1.0f);
+                }
+            } else if (ls.type == LightType::Directional) {
+                Vec3 dir = ls.direction;
+                if (glm::length(dir) < 0.001f) dir = Vec3(0, -1, 0);
+                dir = glm::normalize(Vec3(wm * Vec4(dir, 0.0f)));
+
+                Vec3 u = std::abs(dir.y) < 0.99f ? glm::normalize(glm::cross(dir, Vec3(0, 1, 0))) : glm::normalize(glm::cross(dir, Vec3(1, 0, 0)));
+                Vec3 v = glm::cross(dir, u);
+
+                // Draw 4 directional parallel arrows
+                const float ray_len = 2.4f;
+                const float ring_r = 0.7f;
+                for (int k = 0; k < 4; ++k) {
+                    float ang = static_cast<float>(k) * 3.14159265f * 0.5f;
+                    Vec3 r_start = light_pos + (u * std::cos(ang) + v * std::sin(ang)) * ring_r;
+                    Vec3 r_end   = r_start + dir * ray_len;
+                    draw_3d_line(r_start, r_end, wire_col, is_sel ? 1.8f : 1.2f);
+
+                    // Arrowhead
+                    Vec3 side = (u * std::cos(ang) + v * std::sin(ang)) * 0.18f - dir * 0.28f;
+                    draw_3d_line(r_end, r_end + side, wire_col, 1.2f);
+                }
+                draw_3d_circle(light_pos, dir, ring_r, wire_col, 16, 1.0f);
+            } else if (ls.type == LightType::Spot) {
+                Vec3 dir = ls.direction;
+                if (glm::length(dir) < 0.001f) dir = Vec3(0, -1, 0);
+                dir = glm::normalize(Vec3(wm * Vec4(dir, 0.0f)));
+
+                Vec3 u = std::abs(dir.y) < 0.99f ? glm::normalize(glm::cross(dir, Vec3(0, 1, 0))) : glm::normalize(glm::cross(dir, Vec3(1, 0, 0)));
+                Vec3 v = glm::cross(dir, u);
+
+                const float dist = std::clamp(ls.radius, 1.5f, 15.0f);
+                const float rad_outer = glm::radians(std::clamp(ls.outer_angle * 0.5f, 1.0f, 89.0f));
+                const float rad_inner = glm::radians(std::clamp(ls.inner_angle * 0.5f, 1.0f, 89.0f));
+                const float r_outer = dist * std::tan(rad_outer);
+                const float r_inner = dist * std::tan(rad_inner);
+
+                Vec3 base_pos = light_pos + dir * dist;
+
+                // Base circle outer & inner
+                draw_3d_circle(base_pos, dir, r_outer, wire_col, 24, is_sel ? 1.5f : 1.0f);
+                if (ls.inner_angle > 0.1f && ls.inner_angle < ls.outer_angle) {
+                    draw_3d_circle(base_pos, dir, r_inner, IM_COL32(cr, cg, cb, 80), 24, 1.0f);
+                }
+
+                // 4 Cone generator lines
+                draw_3d_line(light_pos, base_pos + u * r_outer, wire_col, 1.0f);
+                draw_3d_line(light_pos, base_pos - u * r_outer, wire_col, 1.0f);
+                draw_3d_line(light_pos, base_pos + v * r_outer, wire_col, 1.0f);
+                draw_3d_line(light_pos, base_pos - v * r_outer, wire_col, 1.0f);
+            }
+        }
+    }
+
+    // 2. In-Scene Game Cameras 3D Frustums & Up-Guides
+    if (ui.show_camera_frustums) {
+        for (auto [entity, cam_comp] : registry.View<CameraComponent>().each()) {
+            Mat4 wm = LocalToWorldMatrix(registry, entity);
+            Vec3 cam_pos = Vec3(wm * Vec4(0, 0, 0, 1));
+            const bool is_sel = ui.IsSelected(entity);
+
+            Vec3 fwd = -glm::normalize(Vec3(wm[2]));
+            Vec3 up  =  glm::normalize(Vec3(wm[1]));
+            Vec3 rgt =  glm::normalize(Vec3(wm[0]));
+
+            const ImU32 cam_col = is_sel ? IM_COL32(199, 146, 234, 255) : IM_COL32(160, 120, 200, 180);
+
+            // Screen glyph icon
+            ImVec2 screen_pos;
+            if (project(cam_pos, screen_pos)) {
+                dl->AddCircleFilled(screen_pos, is_sel ? 7.0f : 5.0f, cam_col);
+                dl->AddCircleFilled(screen_pos, 2.5f, IM_COL32(255, 255, 255, 255));
+                if (is_sel) {
+                    dl->AddCircle(screen_pos, 12.0f, IM_COL32(80, 227, 194, 255), 0, 1.5f);
+                }
+            }
+
+            // Draw Camera Frustum
+            const float d_near = std::max(cam_comp.near_clip, 0.3f);
+            const float d_far  = std::clamp(cam_comp.far_clip, 1.5f, 5.0f);
+            const float half_fov = glm::radians(std::clamp(cam_comp.fov * 0.5f, 5.0f, 85.0f));
+
+            const float hn = d_near * std::tan(half_fov);
+            const float wn = hn * aspect;
+            const float hf = d_far * std::tan(half_fov);
+            const float wf = hf * aspect;
+
+            Vec3 n0 = cam_pos + fwd * d_near - rgt * wn + up * hn;
+            Vec3 n1 = cam_pos + fwd * d_near + rgt * wn + up * hn;
+            Vec3 n2 = cam_pos + fwd * d_near + rgt * wn - up * hn;
+            Vec3 n3 = cam_pos + fwd * d_near - rgt * wn - up * hn;
+
+            Vec3 f0 = cam_pos + fwd * d_far - rgt * wf + up * hf;
+            Vec3 f1 = cam_pos + fwd * d_far + rgt * wf + up * hf;
+            Vec3 f2 = cam_pos + fwd * d_far + rgt * wf - up * hf;
+            Vec3 f3 = cam_pos + fwd * d_far - rgt * wf - up * hf;
+
+            // Pyramid edges
+            draw_3d_line(cam_pos, f0, cam_col, 1.0f);
+            draw_3d_line(cam_pos, f1, cam_col, 1.0f);
+            draw_3d_line(cam_pos, f2, cam_col, 1.0f);
+            draw_3d_line(cam_pos, f3, cam_col, 1.0f);
+
+            // Far rectangle
+            draw_3d_line(f0, f1, cam_col, is_sel ? 1.6f : 1.0f);
+            draw_3d_line(f1, f2, cam_col, is_sel ? 1.6f : 1.0f);
+            draw_3d_line(f2, f3, cam_col, is_sel ? 1.6f : 1.0f);
+            draw_3d_line(f3, f0, cam_col, is_sel ? 1.6f : 1.0f);
+
+            // Near rectangle
+            draw_3d_line(n0, n1, cam_col, 1.0f);
+            draw_3d_line(n1, n2, cam_col, 1.0f);
+            draw_3d_line(n2, n3, cam_col, 1.0f);
+            draw_3d_line(n3, n0, cam_col, 1.0f);
+
+            // Top orientation tick (showing camera "Up")
+            Vec3 top_mid = (f0 + f1) * 0.5f;
+            Vec3 top_peak = top_mid + up * (hf * 0.35f);
+            draw_3d_line(top_mid - rgt * (wf * 0.2f), top_peak, cam_col, 1.2f);
+            draw_3d_line(top_peak, top_mid + rgt * (wf * 0.2f), cam_col, 1.2f);
+        }
+    }
+
+    // 3. Selection Corner Brackets (Logical & Clean, No Obtrusive Wireframe Cage)
+    if (ui.show_selection_bounds) {
+        std::vector<Entity> targets = ui.selections;
+        if (targets.empty() && ui.selection != kNullEntity) {
+            targets.push_back(ui.selection);
+        }
+
+        for (Entity sel_entity : targets) {
+            if (!registry.Valid(sel_entity)) continue;
+
+            // Skip drawing bounding box for Lights, Cameras, and Groups (they have their own 3D glyphs)
+            if (registry.Get<LightSource>(sel_entity) || registry.Get<CameraComponent>(sel_entity) || registry.Get<GroupComponent>(sel_entity)) {
+                continue;
+            }
+
+            LocalBounds bounds{};
+            bool has_bounds = false;
+            if (const LocalBounds* lb = registry.Get<LocalBounds>(sel_entity)) {
+                bounds = *lb;
+                has_bounds = true;
+            } else if (const PrimitiveShape* ps = registry.Get<PrimitiveShape>(sel_entity)) {
+                Vec3 he = ps->HalfExtents();
+                bounds.min = -he;
+                bounds.max = he;
+                has_bounds = true;
+            } else if (const EditableMeshComponent* emc = registry.Get<EditableMeshComponent>(sel_entity)) {
+                if (!emc->mesh.vertices.empty()) {
+                    bounds.min = emc->mesh.vertices[0].position;
+                    bounds.max = emc->mesh.vertices[0].position;
+                    for (const auto& v : emc->mesh.vertices) {
+                        bounds.min = glm::min(bounds.min, v.position);
+                        bounds.max = glm::max(bounds.max, v.position);
+                    }
+                    has_bounds = true;
+                }
+            }
+
+            if (!has_bounds) continue;
+
+            const bool is_primary = (sel_entity == ui.selection);
+            const ImU32 bracket_col = is_primary ? IM_COL32(80, 227, 194, 240) : IM_COL32(120, 200, 255, 190);
+            const float line_thick  = is_primary ? 1.8f : 1.2f;
+
+            Mat4 wm = LocalToWorldMatrix(registry, sel_entity);
+
+            const Vec3 bmin = bounds.min;
+            const Vec3 bmax = bounds.max;
+            const float lx = bmax.x - bmin.x;
+            const float ly = bmax.y - bmin.y;
+            const float lz = bmax.z - bmin.z;
+
+            // Corner bracket length: 25% of edge dimension
+            const float bx = lx * 0.25f;
+            const float by = ly * 0.25f;
+            const float bz = lz * 0.25f;
+
+            auto draw_corner = [&](const Vec3& origin, const Vec3& dx, const Vec3& dy, const Vec3& dz) {
+                Vec3 w_origin = Vec3(wm * Vec4(origin, 1.0f));
+                Vec3 w_px     = Vec3(wm * Vec4(origin + dx, 1.0f));
+                Vec3 w_py     = Vec3(wm * Vec4(origin + dy, 1.0f));
+                Vec3 w_pz     = Vec3(wm * Vec4(origin + dz, 1.0f));
+
+                draw_3d_line(w_origin, w_px, bracket_col, line_thick);
+                draw_3d_line(w_origin, w_py, bracket_col, line_thick);
+                draw_3d_line(w_origin, w_pz, bracket_col, line_thick);
             };
 
-            ImVec2 sc[8];
-            bool visible[8];
-            for (int i = 0; i < 8; ++i) visible[i] = project(corners[i], sc[i]);
+            // 8 Clean Corner Brackets
+            draw_corner(Vec3(bmin.x, bmin.y, bmin.z), Vec3( bx, 0, 0), Vec3(0,  by, 0), Vec3(0, 0,  bz));
+            draw_corner(Vec3(bmax.x, bmin.y, bmin.z), Vec3(-bx, 0, 0), Vec3(0,  by, 0), Vec3(0, 0,  bz));
+            draw_corner(Vec3(bmax.x, bmax.y, bmin.z), Vec3(-bx, 0, 0), Vec3(0, -by, 0), Vec3(0, 0,  bz));
+            draw_corner(Vec3(bmin.x, bmax.y, bmin.z), Vec3( bx, 0, 0), Vec3(0, -by, 0), Vec3(0, 0,  bz));
 
-            auto draw_edge = [&](int i, int j) {
-                if (visible[i] && visible[j])
-                    dl->AddLine(sc[i], sc[j], IM_COL32(255, 175, 40, 220), 1.5f);
-            };
-
-            draw_edge(0,1); draw_edge(1,2); draw_edge(2,3); draw_edge(3,0);
-            draw_edge(4,5); draw_edge(5,6); draw_edge(6,7); draw_edge(7,4);
-            draw_edge(0,4); draw_edge(1,5); draw_edge(2,6); draw_edge(3,7);
+            draw_corner(Vec3(bmin.x, bmin.y, bmax.z), Vec3( bx, 0, 0), Vec3(0,  by, 0), Vec3(0, 0, -bz));
+            draw_corner(Vec3(bmax.x, bmin.y, bmax.z), Vec3(-bx, 0, 0), Vec3(0,  by, 0), Vec3(0, 0, -bz));
+            draw_corner(Vec3(bmax.x, bmax.y, bmax.z), Vec3(-bx, 0, 0), Vec3(0, -by, 0), Vec3(0, 0, -bz));
+            draw_corner(Vec3(bmin.x, bmax.y, bmax.z), Vec3( bx, 0, 0), Vec3(0, -by, 0), Vec3(0, 0, -bz));
         }
     }
 }

@@ -18,6 +18,7 @@ struct ImVec2;
 
 #include <string>
 #include <vector>
+#include <unordered_set>
 
 namespace lucida {
 
@@ -139,6 +140,18 @@ struct UiState {
         selection = kNullEntity;
     }
 
+    // Collapsed hierarchy nodes
+    std::unordered_set<Entity> collapsed_nodes;
+    bool IsCollapsed(Entity e) const { return collapsed_nodes.find(e) != collapsed_nodes.end(); }
+    void SetCollapsed(Entity e, bool collapsed) {
+        if (collapsed) collapsed_nodes.insert(e);
+        else collapsed_nodes.erase(e);
+    }
+    void ToggleCollapsed(Entity e) {
+        if (IsCollapsed(e)) collapsed_nodes.erase(e);
+        else collapsed_nodes.insert(e);
+    }
+
     // Selection Tools (Point, Box, Lasso)
     enum class SelectTool : u8 { Point = 0, Box, Lasso };
     SelectTool select_tool = SelectTool::Point;
@@ -172,6 +185,10 @@ struct UiState {
 
     // Viewport 3D line gizmo & frustum visualizers (cameras, lights, bounds)
     bool show_visualizers = true;
+    bool show_light_visualizers = true;
+    bool show_camera_frustums = true;
+    bool show_selection_bounds = true;
+    bool show_collider_wireframes = true;
 
     // Play Mode (M22) state
     enum class PlayState : u8 {
@@ -218,6 +235,7 @@ public:
                       const RenderStats& stats, const RenderSettings& settings, const FrameTime& time);
     void DrawHierarchy(World& world, UiState& ui, SceneAssets& assets);
     void DrawSceneGraph(World& world, UiState& ui, Entity root_or_null);
+    void DrawSceneGraphInternal(World& world, UiState& ui, Entity current_parent, int depth, std::vector<bool>& is_last_stack);
     void DrawInspector(World& world, UiState& ui, SceneAssets& assets, CameraController& camera,
                        IRenderBackend* renderer = nullptr);
     void DrawMeshModeling(World& world, UiState& ui, SceneAssets& assets, IRenderBackend* renderer = nullptr);

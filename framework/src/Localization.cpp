@@ -134,6 +134,30 @@ static const std::unordered_map<std::pair<std::string, Language>, const char*, T
     { {"action_delete", Language::Ukrainian}, "Видалити (Del)" },
     { {"action_delete", Language::Russian}, "Удалить (Del)" },
 
+    { {"action_add", Language::English}, "Add..." },
+    { {"action_add", Language::Ukrainian}, "Додати..." },
+    { {"action_add", Language::Russian}, "Добавить..." },
+
+    { {"action_copy", Language::English}, "Copy" },
+    { {"action_copy", Language::Ukrainian}, "Копіювати" },
+    { {"action_copy", Language::Russian}, "Копировать" },
+
+    { {"action_boolean", Language::English}, "Boolean..." },
+    { {"action_boolean", Language::Ukrainian}, "Boolean..." },
+    { {"action_boolean", Language::Russian}, "Boolean..." },
+
+    { {"action_link", Language::English}, "Link" },
+    { {"action_link", Language::Ukrainian}, "Зв'язати" },
+    { {"action_link", Language::Russian}, "Создать" },
+
+    { {"action_unlink", Language::English}, "Unlink" },
+    { {"action_unlink", Language::Ukrainian}, "Зняти" },
+    { {"action_unlink", Language::Russian}, "Снять" },
+
+    { {"tree_frame", Language::English}, "Frame / Scene" },
+    { {"tree_frame", Language::Ukrainian}, "Кадр / Сцена" },
+    { {"tree_frame", Language::Russian}, "Кадр / Сцена" },
+
     // Selection Tools
     { {"tool_select_point", Language::English}, "Point Select" },
     { {"tool_select_point", Language::Ukrainian}, "Виділення точкою" },
