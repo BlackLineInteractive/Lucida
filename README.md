@@ -24,9 +24,11 @@
 
 ## Overview
 
+**Lucida - The new era of game engine**
+
 **Lucida** is a next-generation real-time ray tracing game engine engineered from first principles for deterministic Whitted ray tracing, Radiance Cascades Global Illumination, and Data-Oriented Design (DOD).
 
-Built to deliver breathtaking visual fidelity, real-time procedural materials, active physical ragdolls, and hardware-accelerated temporal upscaling without relying on expensive dedicated RT cores.
+Built to deliver high visual fidelity, real-time procedural materials, active physical ragdolls, and hardware-accelerated temporal upscaling without relying on expensive dedicated RT cores.
 
 ---
 
@@ -108,6 +110,12 @@ cmake --build build --config RelWithDebInfo
 | RMB + Scroll | Dynamically adjust camera fly speed |
 | F | Frame and focus camera on selection |
 | 1 / 2 / 3 (or T / R / S) | Switch Gizmo mode (Translate / Rotate / Scale) |
+| A | Select all entities in scene |
+| Alt + A | Deselect all entities |
+| Shift + Click | Multi-selection toggle |
+| Cmd+G (Ctrl+G) | Group selected entities |
+| Cmd+Alt+G (Ctrl+Alt+G) | Ungroup selected group |
+| Cmd+J (Ctrl+J) | Join selected meshes into single entity |
 | Tab | Toggle Object Mode / Mesh Edit Mode |
 | Cmd+Z (Ctrl+Z) | Global Undo (Transforms, Materials, Hierarchy, Mesh edits) |
 | Cmd+Shift+Z / Cmd+Y | Global Redo |
@@ -115,6 +123,23 @@ cmake --build build --config RelWithDebInfo
 | Delete / Backspace | Delete selection (undoable) |
 | Cmd+P (Ctrl+P) | Play / Stop simulation with state restoration |
 | F11 | Toggle Fullscreen |
+
+---
+
+## Multi-Language UI (Localization)
+
+Lucida includes a built-in localization subsystem with on-the-fly language switching from the top menu bar (`Language` menu):
+
+| Language | Code | Status |
+| --- | --- | --- |
+| English | `en` | Default |
+| Ukrainian (Українська) | `uk` | Complete |
+| German (Deutsch) | `de` | Complete |
+| French (Français) | `fr` | Complete |
+| Spanish (Español) | `es` | Complete |
+| Russian (Русский) | `ru` | Complete |
+
+All editor panels, toolbars, tooltips, dialogs, and hierarchy controls update instantly at runtime without restarting the engine.
 
 ---
 
@@ -126,6 +151,9 @@ cmake --build build --config RelWithDebInfo
 - **Jolt Physics Integration**: Rigid bodies (Dynamic, Static, Kinematic), character virtual controllers, raycast queries, and collision shapes.
 - **Play Mode State Snapshots**: Non-destructive ECS snapshots restoring transform trees and velocities on simulation exit.
 - **Modular Editor UI**: Split architecture (`EditorViewport`, `EditorInspector`, `EditorHierarchy`, `EditorConsole`, `EditorTextureBrowser`, `EditorMeshModeling`) under 600 lines per module.
+- **Vector-Based UI & Animations**: Resolution-independent vector iconography via `ImDrawList` and tween-interpolated buttons powered by `ImAnim`.
+- **Scene Hierarchy & Graph Operations**: Multi-selection, parent-child transform propagation, grouping/ungrouping, mesh joining, and CSG Boolean modifiers (Union, Difference, Intersection).
+- **3D Viewport Visualizers**: Omni light influence spheres, sun directional arrows, spot cones, camera frustum pyramids, and 8-point corner bounds.
 - **PBR Material System**: Albedo, Roughness, Metallic, Normal Maps, Emission, and Index of Refraction presets with GPU cache management.
 
 ---
