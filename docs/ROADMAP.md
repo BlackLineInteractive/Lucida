@@ -1,421 +1,137 @@
 # Lucida - Roadmap
 
-## What this engine is for
+## Engine Overview
 
-Lucida is a **narrow, opinionated engine**: procedural materials plus selective ray
-tracing. The goal is not another UE, it is to make ray-traced graphics affordable on
-ordinary hardware - spend a ray only where a ray is visible (glass, mirrors, water,
-caustics, contact shadows), and compute everything else from procedural material code
-that costs no memory and ships no gigabytes of textures.
+Lucida is an opinionated real-time ray tracing engine combining procedural materials, selective ray tracing, and Data-Oriented Design (DOD).
 
-Every decision below follows from that:
+Core design principles:
+- Memory efficiency: procedural textures and compact data formats minimize VRAM footprints.
+- Selective tracing: materials declare required ray effects (reflections, refractions, caustics, soft shadows, AO); non-critical effects use fast approximations.
+- Unified rendering: identical shader architecture across hardware tiers without relying on dedicated RT cores.
+- Deterministic quality: no stochastic noise, accumulation ghosting, or temporal blur.
 
-* **Memory beats features.** A procedural texture is 40 lines of shader instead of
-  60 MB of BC7. That is the optimisation the engine sells.
-* **Rays are scarce.** A material declares which effects are worth a ray. Everything
-  else is approximated cheaply.
-* **One image across hardware tiers.** One shader, several quality tiers - not
-  separate renderers for weak and strong machines.
-* **No noise, no ghosting, ever.** Cheaper tiers drop effects; they never buy frame
-  time with temporal accumulation artefacts or denoiser mush.
+---
 
-### Where we start from
+## Hardware Baseline
 
-Reference machine: MacBook Pro 16", i9-9880H, **AMD Radeon Pro 5500M 8 GB** - a
-mid-range mobile GPU with no ray tracing hardware, everything in compute.
+Reference machine: MacBook Pro 16" (Intel i9-9880H, AMD Radeon Pro 5500M 8 GB - compute-only):
 
-| Scene | Resolution | Path | Frame rate |
+| Scene | Resolution | Pipeline | Frame rate |
 | --- | --- | --- | --- |
-| Sponza 4K (~5.7 M tris) | 1080×720 | full RT, unoptimised | **15-30 fps** |
-| Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 57.8 fps |
-
-Sponza at 15-30 fps is the number the roadmap exists to move. It is also already
-clean: no noise, no ghosting, no denoiser softness, because the path is deterministic
-rather than stochastic. The optimisation work below has to raise the frame rate
-**without** spending that property.
+| Sponza (~5.7 M triangles) | 1080x720 | Full RT | 15-30 fps |
+| Demo Scene (primitives, water, fog) | 1920x1080 | Full RT | 60-110 fps |
 
 ---
 
-## Dependency decisions
+## Dependency Decisions
 
-Same rule as [ARCHITECTURE.md](ARCHITECTURE.md) §2: take what exists, hide it behind a
-facade. Below is the choice and the reason, not a catalogue of what is available.
+External libraries are wrapped behind clean interfaces:
+- ECS: EnTT (sparse sets, cache coherent SoA layout).
+- Physics: Jolt Physics (rigid bodies, character virtuals, constraints, broadphase queries).
+- Editor GUI: Dear ImGui (docking branch), ImGuizmo (transform manipulation).
+- UI Motion: ImAnim (tweening, easing curves, color space blending).
+- Assets & Models: Assimp, stb_image, stb_image_write.
+- Windowing: SDL2 (HID actions, display backend, surface creation).
+- Math: GLM (vectors, quaternions, matrix operations).
+- BVH: bvh v2 (SIMD binned SAH tree construction).
 
-| Area | Choice | Why this one |
+All dependencies are fetched automatically via CMake (`cmake/Dependencies.cmake`).
+
+---
+
+## Engine Track
+
+| Milestone | Area | Status |
 | --- | --- | --- |
-| ECS | **EnTT** | header-only, sparse sets that match our SoA layout, no runtime of its own. Flecs gives hierarchies and queries out of the box but brings its own world model - more than this profile needs |
-| Job system | **enkiTS** | ~2k lines, task-parallel, exactly the shape of "update N systems". Taskflow's dependency graph is heavier; revisit if a real graph appears |
-| Shaders | **slang** (primary) + **SPIRV-Cross** | one source  SPIR-V, MSL, HLSL, and slang understands ray tracing constructs the GLSLSPIR-V path does not expose. `glslang`/`shaderc` stay as the fallback for GLSL sources |
-| Vulkan memory | **VMA** | hand-rolling `VkDeviceMemory` is two weeks and a pile of bugs VMA already fixed |
-| RHI | **our own, thin** | neither bgfx nor sokol_gfx exposes `VK_KHR_ray_query` or Metal intersection functions. A wrapper that hides exactly the feature this engine is built on is pointless. `IRenderBackend` already exists; it needs finishing, not replacing |
-| Textures | **stb_image** + **KTX-Software / Basis** | stb for import, KTX2+Basis to transcode into BCn/ASTC/ETC for the actual GPU |
-| Fonts | **msdf-atlas-gen** + **FreeType** | SDF atlas: crisp text at any scale from one texture. `stb_truetype` is the lighter fallback if FreeType's build ever becomes a burden, but it cannot produce multi-channel SDFs, which is the point |
-| Audio | **miniaudio** | single file, mixer, spatial audio, decoders |
-| Scripting | **Lua 5.4** + **sol2** | sol2 removes the manual Lua stack; bindings read as ordinary C++ |
-| Profiler | **Tracy** | per-frame zones, memory, threads, GPU, live |
-| Logging | **our front end + fmt** | the channelled log already works; only the output backend becomes `fmt`. spdlog as a whole is not needed |
-| Config / saves | **nlohmann/json** | ergonomics beat throughput for a file read once per launch. `yyjson` if the profiler ever disagrees |
-| File dialogs | **nativefiledialog-extended** | a native picker instead of an ImGui imitation |
-| Editor | **ImGui** + **ImGuizmo** + **ImPlot** + **ImNodes** | transform gizmos, frame-time plots, node graph for materials |
-| UI motion | **ImAnim** (Soufiane KHIAT, MIT) | easing presets, colour-space-aware blending and tween caching already solved; controls answer the pointer instead of snapping |
-
-The editor theme is carried over from Climax Game Engine Toolkit: cool neutral chrome,
-one warm accent (C++ blue) that marks state - checkmarks, slider grabs, the active tab,
-selection. `framework/Theme.h` owns it, and no panel hardcodes a colour.
-
-Everything is fetched by `cmake/Dependencies.cmake`. Nothing lands in the repository.
-
-### Already fetched and in use
-
-`glm`, `bvh v2`, `Jolt`, `Dear ImGui` (docking branch), `ImAnim`, `ImGuiFileDialog`,
-`stb_image` / `stb_image_write`, `SDL2`, `Assimp`, `EnTT`, `nlohmann/json`.
-
-The rest of the table is scheduled against the milestone that needs it, so nothing is
-pulled in before there is code to use it. A dependency added early is a dependency
-whose version you have to maintain for months before it earns anything.
+| M7 | Scene extraction from shaders | Done |
+| M7b | JSON scene serialization | Done |
+| M10 | ECS on EnTT | Done |
+| M20 | Project structure and relative asset resolution | Done |
+| M21 | Modular Editor Shell (Inspector, Hierarchy, Viewport, Console, Textures) | Done |
+| M22 | Play Mode (ECS World snapshot and restore, Jolt physics active simulation) | Done |
+| M26 | Blender-Style Navigation and Mesh Editing (Vertex, Edge, Face, Extrude, Inset) | Done |
+| M17 | Lua 5.4 Scripting & Gameplay Systems | In progress |
+| M27 | Repeaters & Parametric Modifiers (Array, Curves, Radial, Mirror) | Scheduled |
+| M28 | 2D UI/UX In-Game Visual Editor (Canvas, Anchors, Flexbox, Widgets, Theming) | Scheduled |
+| M23 | Standalone Build and Export Pipeline | Next |
+| M13 | Vulkan Render Backend | Next |
+| M24 | Procedural Animation & Active Ragdoll System (LPAS) | Scheduled |
 
 ---
 
-## Priority: become an engine first
-
-The bar is not feature parity with Godot - that is fifteen years and hundreds of
-contributors. The bar is the line that separates an engine from a renderer:
-
-> **Someone who is not the author can open Lucida, build a level, press Play, and ship
-> it - without touching C++.**
-
-Everything is ordered against that sentence. The graphics work that makes Lucida worth
-choosing (M8, M9) is real and stays on the list, but a renderer nobody can author
-content for is a demo however fast it runs.
-
-### The engine track, in dependency order
-
-| # | Milestone | Why it is where it is |
-|---|---|---|
-| E1 | **M10 - ECS (EnTT)** | No scene tree, no inspector and no selection without entities. Blocks everything below |
-| E2 | **M20 - Project structure** | A game is a folder, not a `config.txt`: scenes, assets, settings, recent projects |
-| E3 | **M21 - Editor shell** | Docked viewport, scene tree, inspector, gizmo. What makes it feel like an engine |
-| E4 | **M22 - Play mode** | Edit and Play with state restore. Iteration stops needing a rebuild |
-| E5 | **M17 - Lua scripting** | Behaviour without a compiler. After this, C++ is optional for a game |
-| E6 | **M23 - Build and ship** | Export a runnable game. Until this exists nothing made in the editor can leave it |
-
-Only then does the graphics track (M8 selective tracing, M9 procedural materials)
-resume - and it resumes on top of an editor that can show it off.
-
-### What catching up honestly means
-
-Godot's real advantages, in the order they matter, and what the equivalent costs here:
-
-* **You can ship a game with it.** E6. Non-negotiable and usually underestimated.
-* **The editor is the product.** E3 and E4. Most of a mature engine's code is editor.
-* **Scripting with hot reload.** E5.
-* **An asset pipeline that accepts what artists export.** Partly done - Assimp handles
-  glTF/FBX/OBJ today; the gap is import settings and a reimport step (M14).
-* **Docs and examples.** Cheap to start, expensive to postpone.
-
-Lucida is not going to beat Godot at breadth. It can beat it at one thing: ray traced
-graphics on hardware Godot would have to fake them on. That is the whole strategy -
-match the workflow, win on the image.
-
----
-
-## Milestones
-
-### M7 - Get the scene out of the shader
-
-The demo scenes were baked into `MetalBackend::SetupScene`. While that held, a second
-backend, an editor and procedural materials were all blocked.
-
-Two assumptions fell out of the change, both invisible until a scene could contradict
-them: the tracer traced analytic primitives *or* mesh instances but never both, and
-`AddMesh` zeroed the sphere, cube and light counts. A mesh is one more thing in a
-scene, not the scene.
-
-* **Done:** `engine/render/Scene.h` holds `RenderScene`; `framework/SceneLibrary` builds
-  the three built-in scenes; `IRenderBackend::SubmitScene` replaced `SetDemoScene`; the
-  backend keeps no scene of its own and `--scene basic|water|lab` picks one at launch
-
-### M7b - Scene as an asset
-
-A scene that exists only as C++ in `apps/sandbox` is a demo. An engine loads a scene
-it did not compile.
-
-* **Done:** `engine/resource/SceneSerializer` reads and writes `RenderScene` as JSON.
-  Enums are names (`"glass"`, not `2`), materials are referenced by name so inserting
-  one at the top of a file does not repaint everything below it, vectors stay on one
-  line, and floats print as the shortest decimal that reads back identically.
-* `--export-scene out.json` writes a built-in out as a starting point;
-  `--scene out.json` loads it. No rebuild to change the world.
-* Still to come with M10: entities and mesh references in the file. Today it carries
-  analytic geometry, materials, lights, environment and the spawn point.
-
-### M8 - Selective ray tracing: quality tiers
-
-*Deferred until the engine track lands. See the priority section above.*
-
-The point of the engine. A material declares which effects deserve a ray.
-
-```
-EffectMask: REFLECT | REFRACT | SHADOW | AO | CAUSTIC | GI
-RayBudget:  rays per pixel this frame is allowed to spend
-```
-
-* `RenderTier`: `Baseline` (zero rays - procedural shading plus screen-space
-  approximations), `Selective` (rays only for flagged materials), `Full` (today's path)
-* One tracing kernel; a tier disables branches instead of swapping shaders
-* The ray budget adapts inside the frame: when the frame misses its target, drop
-  effects by priority rather than resolution
-* **Done when:** Sponza 4K at 1080×720 holds 60 fps on `Selective` against the
-  15-30 fps the full path gives today, tiers switch without a reload, and no tier
-  introduces noise, ghosting or denoiser softness
-
-### M9 - Procedural material library (the differentiator)
-
-* Grow the existing ten patterns (`PROC_MARBLE`…`PROC_CONCRETE`) into a library:
-  Perlin/Simplex/Worley/FBM noise, domain warping, triplanar projection
-* A material is data, not a `switch` in the shader: a node graph compiled to code
-* Node editor on **ImNodes** with live preview
-* Procedural is the default, not a replacement: conventional texture maps stay
-  first-class and mix with procedural layers in the same material
-* **Done when:** a Sponza-scale scene can be dressed with no raster textures at all and
-  stays under 200 MB of VRAM
-
-### M10 - ECS on EnTT (done)
-
-* `engine/core/ecs/Registry.h`: facade over EnTT. `lucida::Entity`, `lucida::Registry`,
-  and the components every world has - `Name`, `LocalTransform`, `WorldTransform`,
-  `Parent`, `Visibility`. Application code includes this, never `<entt/entt.hpp>`
-* Hierarchy is a component, not a node pointer. World transforms are derived once per
-  frame in `World::BeginFrame` rather than stored twice and drifting
-* `PhysicsSystem` writes vehicle poses onto entities; `RenderSyncSystem` pushes world
-  transforms to the backend. The application no longer steps physics by hand
-* `World` owns the registry and no list of its own
-
-Still open, deliberately: the camera stays in `CameraController` until M21 needs to
-select it in the viewport, and scene files do not yet carry entities - that arrives
-with the editor, which is what will create them.
-
-### M20 - Project structure (done, E2)
-
-A game is a folder, not a config file next to the binary.
-
-```
-MyGame/
- project.json      name, version, startup scene, render defaults
- scenes/           .json scenes (M7b format)
- assets/           models, textures - imported, cached beside the source
- scripts/          Lua (E5)
-```
-
-* `Project` in `engine/resource`: create, open, save, path resolution. `RecentProjects`
-  keeps the list per user, not per project - it is state about the person
-* Paths are stored project-relative; anything outside the project stays absolute
-  rather than becoming `../../../Users/...` and breaking on the first move
-* `--new-project <dir>` scaffolds the folders, a starter scene and `project.json`;
-  `--project <dir>` opens it and supplies window, render defaults and startup scene
-* With a project open it *is* the settings file. `config.txt` remains only for the
-  no-project case and no longer shadows it
-* **Verified:** created, zipped, unzipped somewhere else, opened there. No absolute
-  path survives in any project file
-
-### M21 - Editor shell [in progress, E3]
-
-Landed so far: ImGui on the docking branch, a pass-through dock space over the traced
-image, a menu bar, and four panels - Hierarchy (entities, with per-entity visibility),
-Inspector (name, transform, world position, mesh and vehicle components), Renderer
-(quality and camera), Statistics (frame, GPU, profiler slots). Opening a project starts
-in editor mode with the cursor free; without one the sandbox still starts as a game.
-
-Also landed: **tracing at the viewport panel's resolution** rather than the window's -
-2.2x fewer rays on the default layout, and the reason the presentation was restructured
-in the first place.
-
-Also landed: the **standard editor layout** - viewport in the centre, hierarchy left,
-inspector and renderer right, statistics along the bottom, built once with DockBuilder
-and restored from `imgui.ini` afterwards, with View > Reset layout to get it back.
-
-Also landed: the **viewport panel**. Everything now presents into a persistent texture
-which either goes to the window (game mode) or is handed to ImGui as a texture id and
-drawn inside a dockable panel (editor mode). The same change made screenshots capture
-what the screen shows rather than an offscreen intermediate.
-
-* Still to do: **trace at the panel's resolution** rather than the window's - today a
-  small viewport costs the same as a full-screen one, which is exactly backwards
-Also landed: **selection by clicking in the viewport**, and **undo/redo as a command
-stack**. Picking is CPU-side and above the backend - it is a question about entities,
-not about pixels, so it needs no pick buffer, no readback and no GPU pass, and it works
-the same on any backend. It tests bounding boxes rather than triangles, which is the
-right answer for selecting an object and costs a slab test per entity.
-
-* Still to do: the asset browser and the console
-* Still to do: **gizmos as they work in a real engine** - ImGuizmo with translate,
-  rotate and scale on W/E/R, local and world space, grid and angle snapping held on a
-  modifier, a visible pivot, multi-axis planes. The part people get wrong: a gizmo drag
-  must produce **one** undo entry on release, not one per frame, which means it goes
-  through the command stack rather than writing the transform directly
-* Still to do: **undo/redo as a command stack** (GPP: Command). Every edit goes through
-  it or it does not exist
-* Selection: clicking in the viewport picks an entity through a ray query - the tracer
-  already answers exactly that question
-* **ImGuizmo** for translate/rotate/scale, with snapping and local/world space
-* Undo/redo as a command stack (GPP: Command). Every edit goes through it or it does
-  not exist
-* **Done when:** an object can be selected, moved with a gizmo, edited in the
-  inspector, and the change survives a save and reload
-
-### M25 - The editor's look, and whether ImGui stays
-
-ImGui is the right tool for standing an editor up and the wrong tool for making one look
-like a product. Worth being precise about why, because "replace ImGui" is a trap that
-has eaten whole projects.
-
-**Most of what reads as cheap is not ImGui, it is default ImGui.** Before replacing
-anything, do the work every good-looking ImGui editor has already done:
-
-* A real typeface at a real size - Inter, JetBrains Mono for numbers - instead of the
-  built-in bitmap font, which is most of the programmer-art impression on its own
-* An icon set (Lucide or Font Awesome) merged into the atlas, so panels carry icons
-  where a word would be noise
-* Custom-drawn widgets through `ImDrawList` where the default is ugly: sliders, the
-  transform row, the hierarchy row and its visibility toggle
-* Motion through **ImAnim**, already fetched - hover, selection, panel transitions
-* Spacing and grouping discipline; the theme already carries the palette
-
-That is about a week and it gets ninety per cent of the way. Only then is the
-replacement question worth asking, and the honest answer is that everyone who wanted a
-distinctive editor wrote their own retained UI: Unreal has Slate, Godot has Control
-nodes. Neither adopted a third-party toolkit.
-
-Candidates, if it comes to that:
-
-| Option | Why it might | Why it might not |
-|---|---|---|
-| **Restyled ImGui** | No migration, keeps every panel, immediate mode suits editors | A ceiling on how polished it can get |
-| **RmlUi** | HTML/CSS-like styling, genuinely prettier | Retained model fights an editor's live data; a second layout system to learn |
-| **Slint** | Modern, declarative, beautiful; its GPL-3 option matches our licence | Built around its own renderer and event loop; pairing it with a ray traced viewport is real work |
-| **Qt** | The professional-editor answer, and LGPL/GPL fits | Enormous dependency, different application model, reshapes the whole app |
-| **Our own retained UI** | What Unreal and Godot both concluded | Months, competing directly with shipping the engine |
-
-**Decision for now: restyle, do not replace.** Revisit once the editor's shape stops
-changing - migrating a UI toolkit during layout churn is the worst possible timing.
-
-### M22 - Play mode (E4)
-
-* Edit and Play toggle. Entering Play snapshots the world; leaving restores it exactly
-* Physics, scripts and gameplay systems run only in Play
-* Pause, step one frame, and a camera that can detach from the game camera
-* **Done when:** pressing Play twice in a row leaves the scene byte-identical
-
-### M23 - Build and ship (E6)
-
-* Export a project to a standalone runnable: binary, packed assets, no editor
-* Asset packing into one archive with the scene graph and scripts
-* Platform targets follow the CMake matrix that already exists
-* **Done when:** a built game runs on a machine with no Lucida checkout
-
-### M11 - Job system on enkiTS
-
-* `engine/core/jobs`: `JobScheduler`, `ParallelFor`, task dependencies
-* Parallelise BVH construction (already partly), texture packing, system updates,
-  frame setup
-* **Done when:** model loading and world update scale across cores, and Tracy shows
-  every worker busy rather than idling
-
-### M12 - Shader pipeline
-
-* Move the kernels to **slang**, compiled to SPIR-V and MSL offline, with hot reload
-  in debug builds
-* **SPIRV-Cross** for backends that need transpilation
-* On-disk cache of compiled variants - today every launch compiles `.metal` from source
-* **Done when:** one shader source runs on Metal and Vulkan, and startup does not wait
-  on a compiler
-
-### M13 - Vulkan backend
-
-* `backends/render_vulkan` against the current `IRenderBackend`
-* **VMA** for all device memory
-* `VK_KHR_ray_query` where present, compute fallback where not
-* **Done when:** the same scene renders on Linux with no change to application code
-
-### M14 - Resources and compression
-
-* Asynchronous loading through the job system
-* **KTX-Software + Basis Universal**: transcode to BCn/ASTC/ETC per GPU
-* Cache of prepared assets next to the source
-* **Done when:** a second launch with a large model starts from cache in under a second
-
-### M15 - SDF text and in-world UI
-
-The editor chrome moved to M21; what is left here is text that is not ImGui's.
-
-* **msdf-atlas-gen** + FreeType  SDF atlas: crisp glyphs at any scale from one texture
-* In-world labels, HUD and game UI - what a shipped game needs and ImGui should not do
-* **ImPlot** for frame-time plots, **nativefiledialog-extended** replacing ImGuiFileDialog
-* **Done when:** a game built from Lucida can draw its own text without linking ImGui
-
-### M16 - Audio
-
-* `engine/audio` plus `backends/audio_miniaudio`, shaped like the physics split
-* Spatial audio, mixer, music streaming
-* **Done when:** a sound source is an ECS component with a world position
-
-### M17 - Scripting
-
-* **Lua 5.4 + sol2** in `engine/script`
-* Hot reload, game logic and scene setup from script
-* Sandboxed: a script sees only the API explicitly registered for it
-* **Done when:** the demo scene is described by a script and edits apply without a rebuild
-
-### M18 - Tooling
-
-* **Tracy**: zones around frame phases, GPU timings, allocators
-* **fmt** as the backend of the existing log front end
-* **nlohmann/json** for config and saves, replacing `key=value`
-* **Done when:** a frame-time spike is attributable to a system in Tracy
-
-### M19 - Bullet as a second physics backend
-
-Not for Bullet's sake, but to prove the physics abstraction is one. Finish
-`CreateBody` in the Jolt backend along the way.
-
-### M24 - Lucida Procedural Animation System (LPAS) - "Euphoria-Grade Active Ragdolls & Bio-Mechanics"
-
-A real-time procedural animation and dynamic motor control system inspired by NaturalMotion Euphoria (GTA IV / Red Dead Redemption):
-* **Bio-Mechanical Skeleton & Actuators**: Articulated multi-body ragdoll with joint angle limits, muscle stiffness, and PD/PID joint torque motors driven by Jolt Physics constraints.
-* **Dynamic Balance & Center of Mass (CoM)**: Inverted pendulum / Zero-Moment Point (ZMP) controllers for real-time dynamic balance, stumbling recovery, procedural stepping, and slope adaptation.
-* **Physical Reflexes & Self-Preservation**:
-  - Procedural flinching, head/torso protection against incoming kinematic/dynamic impacts.
-  - Dynamic reaching and grabbing onto ledges, vehicles, and environmental obstacles upon losing balance.
-  - Natural fall bracing and dynamic roll recovery.
-* **Hybrid Kinematic-to-Physical Blending**: Seamless bi-directional transition between keyframed animation clips and fully driven physical active ragdoll states.
-* **Terrain & Foot IK**: Raycast/shape-cast ground alignment with procedural gait modulation over irregular geometry.
-* **Done when:** pushing a humanoid character down stairs or hitting them with a moving vehicle produces non-repetitive, physically plausible stumble, brace, and recovery motions entirely without canned death/impact animations.
-
----
-
-## Order and dependencies
-
-```
-M7 done  M7b done  M10 (ECS)  M20 (project)  M21 (editor)  M22 (play)  M23 (ship)
-
-                                                       M17 (scripting)
-                           M19 (Bullet)                M24 (LPAS / Euphoria)
-
-Graphics track, resumes once the editor can show it:
-  M8 (quality tiers)  M9 (procedural materials)
-  M12 (shader pipeline)  M13 (Vulkan + VMA)
-
-Supporting, any time:
-  M11 (jobs)  M14 (resources)  M16 (audio)  M15 (SDF text)
-  M18 (tooling)
-```
-
-Two different goals run through this list, and they are worth keeping apart:
-
-* **What makes it an engine** - M7, M7b, M10, M15, M17, M24. Someone other than the author
-  can build a world in it without touching C++, with living characters and interactive physics.
-* **What makes it worth choosing** - M8, M9. Ray-traced graphics on hardware that has
-  no ray tracing units.
-
-The engine half comes first. A renderer nobody can author content for is a demo,
-however fast it runs.
+## Milestone Breakdown
+
+### M7 - Decouple Scenes from Shaders (Done)
+- `RenderScene` decoupled from concrete shader sources.
+- Built-in scene generation in `SceneLibrary`.
+- Unified `IRenderBackend::SubmitScene`.
+
+### M7b - JSON Scene Asset Pipeline (Done)
+- Human-readable JSON scene serialization via `SceneSerializer`.
+- Project-relative asset referencing.
+- Scene export and import via `--export-scene` and `--scene`.
+
+### M10 - Entity Component System (Done)
+- EnTT integration wrapped in `lucida::Registry` and `lucida::Entity`.
+- Core transform components: `LocalTransform`, `WorldTransform`, `Parent`, `Visibility`.
+- Hierarchical transform updates via `UpdateWorldTransforms`.
+
+### M20 - Project System (Done)
+- Portable directory-based projects (`project.json`, `scenes/`, `assets/`, `scripts/`).
+- Relative asset resolving and recent project tracking.
+
+### M21 - Modular Editor Architecture (Done)
+- Dockable ImGui layout with responsive viewport rendering.
+- Decomposed modules: `EditorViewport`, `EditorInspector`, `EditorHierarchy`, `EditorConsole`, `EditorTextureBrowser`, `EditorMeshModeling`.
+- ImGuizmo integration with local/world coordinate spaces and grid snapping.
+- Command-based Undo / Redo architecture (`CommandStack`, `EntitySnapshot`).
+- Real-time performance profiling and statistics HUD.
+
+### M22 - Play Mode & Simulation Isolation (Done)
+- Non-destructive ECS state snapshots on Play.
+- Full state restoration on Stop (transforms, velocities, hierarchies).
+- Jolt physics step controls: Play, Pause, Single-frame step, Time-scale adjustment.
+
+### M26 - Mesh Modeling, Multi-Selection & Navigation (Done)
+- Blender-style 3D Orientation Gizmo with orbit and axis snapping.
+- Viewport navigation: Shift+MMB pan, MMB orbit, RMB fly with cursor capture.
+- Multi-selection: Select All (`A`), Deselect All (`Alt+A`), Shift-click multi-selection.
+- Viewport 2D Selection Tools: Point Picking, Marquee Box Selection, Freehand Lasso Polygon Selection.
+- Object Grouping (`Ctrl+G`) / Ungrouping (`Ctrl+Alt+G`) and Mesh Joining (`Ctrl+J`).
+- Interactive mesh editor: Vertex, Edge, and Face selection with Extrude, Inset, Subdivide, and Normal recalculation.
+- Localization architecture (Eng, UA, Rus, De, Fr, Es).
+
+### M27 - Repeaters & Parametric Modifiers (Scheduled)
+- Parametric object replication and procedural geometric distribution:
+  - Linear & 3D Grid Array (Масив / Array): uniform offset, count, per-instance scale/rotation jitter.
+  - Curve & Spline Distribution (Криві / Curves): follow Bezier/Catmull-Rom paths with tangent alignment.
+  - Radial / Polar Ring Array (Радіально / Radial): circular repetition around custom pivot with angular step.
+  - Mirror & Symmetry (Віддзеркалення / Mirror): reflection across X/Y/Z planes with optional vertex welding.
+
+### M28 - 2D In-Game UI/UX Visual Editor (Scheduled)
+- Visual 2D Canvas Editor for in-game HUDs, Menus, Dialogs, and Inventories:
+  - WYSIWYG 2D canvas editing with drag-and-drop hierarchy.
+  - Responsive layout engine: 9-point anchoring, stretch margins, aspect ratio fitter, Flexbox and Grid auto-layout.
+  - Core UI widgets: Canvas, Panel, Image (9-slice / Sprite), Text/Label (SDF fonts), Button, Slider, InputField, ScrollView, ProgressBar, Toggle.
+  - Interactive UI state machine: Normal, Hovered, Pressed, Selected, Disabled visual state transitions.
+  - UI animation timeline: keyframe and tween-driven interface transitions and screen fades.
+
+### M17 - Scripting Layer (In Progress)
+- Lua 5.4 binding with `sol2`.
+- Component reflection and gameplay lifecycle callbacks (`OnStart`, `OnUpdate`, `OnCollide`).
+- Sandboxed execution environment.
+
+### M23 - Standalone Export Pipeline
+- Headless / standalone player build target.
+- Asset bundle packing into single-file container.
+- Platform distribution packages.
+
+### M13 - Vulkan Compute Backend
+- `backends/render_vulkan` implementation of `IRenderBackend`.
+- VMA device memory allocation.
+- `VK_KHR_ray_query` compute pipeline for Linux and Windows.
+
+### M24 - Procedural Animation & Active Ragdoll System (LPAS)
+- Articulated multi-body physical ragdolls driven by Jolt constraints.
+- Dynamic balance control and center-of-mass stabilization.
+- Procedural stumble, fall bracing, and step adjustments.

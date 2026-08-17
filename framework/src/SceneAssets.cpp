@@ -138,9 +138,46 @@ u64 SceneFingerprint(Registry& registry, const SceneAssets& assets) {
     }
 
     MixVec3(seed, assets.environment.ambient);
+    MixVec3(seed, assets.environment.sky_zenith);
+    MixVec3(seed, assets.environment.sky_horizon);
+    MixVec3(seed, assets.environment.sky_ground);
     MixFloat(seed, assets.environment.fog_density);
     Mix(seed, u64(assets.environment.fog_enabled));
     Mix(seed, u64(assets.environment.fog_steps));
+
+    // Sun & Celestial
+    Mix(seed, u64(assets.environment.sun_enabled));
+    MixVec3(seed, assets.environment.sun_color);
+    MixVec3(seed, assets.environment.sun_direction);
+    MixFloat(seed, assets.environment.sun_intensity);
+
+    // Grid properties
+    Mix(seed, u64(assets.environment.grid_enabled));
+    MixVec3(seed, assets.environment.grid_color);
+    MixVec3(seed, assets.environment.grid_axis_x);
+    MixVec3(seed, assets.environment.grid_axis_z);
+    MixFloat(seed, assets.environment.grid_opacity);
+    MixFloat(seed, assets.environment.grid_fade);
+    Mix(seed, u64(assets.environment.grid_auto_scale));
+    MixFloat(seed, assets.environment.grid_spacing);
+
+    // Post-processing & Tonemapping
+    MixFloat(seed, assets.environment.exposure);
+    Mix(seed, u64(assets.environment.tonemap_mode));
+    MixFloat(seed, assets.environment.gamma);
+    MixFloat(seed, assets.environment.dither_strength);
+
+    // Ambient Occlusion
+    MixFloat(seed, assets.environment.ao_radius);
+    MixFloat(seed, assets.environment.ao_intensity);
+    Mix(seed, u64(assets.environment.ao_samples));
+
+    // Water simulation
+    MixFloat(seed, assets.environment.water_height);
+    MixFloat(seed, assets.environment.water_speed);
+    MixFloat(seed, assets.environment.water_frequency);
+    MixFloat(seed, assets.environment.water_foam);
+
     Mix(seed, u64(assets.model));
 
     for (auto [entity, shape, material, world, visibility] :

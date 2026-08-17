@@ -29,33 +29,52 @@ void EditorUI::DrawSceneGraph(World& world, UiState& ui, Entity current_parent) 
         }
 
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
-        if (ui.selection == entity) flags |= ImGuiTreeNodeFlags_Selected;
+        if (ui.IsSelected(entity)) flags |= ImGuiTreeNodeFlags_Selected;
         if (!has_children) flags |= ImGuiTreeNodeFlags_Leaf;
         flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
-        bool opened = ImGui::TreeNodeEx(name.value.c_str(), flags);
+        const bool is_group = entities.Get<GroupComponent>(entity) != nullptr;
+        std::string display_name = is_group ? ("[Group] " + name.value) : name.value;
+
+        bool opened = ImGui::TreeNodeEx(display_name.c_str(), flags);
         if (ImGui::IsItemClicked()) {
-            ui.selection = entity;
+            const bool multi = ImGui::GetIO().KeyShift || ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper;
+            ui.SetSelected(entity, !ui.IsSelected(entity) || !multi, multi);
         }
 
         if (ImGui::BeginPopupContextItem("EntityContextMenu")) {
-            ui.selection = entity;
+            if (!ui.IsSelected(entity)) {
+                ui.SetSelected(entity, true, false);
+            }
+            if (ImGui::MenuItem(TR("action_group", "Group (Ctrl+G)"), "Ctrl+G", false, ui.selections.size() > 1 || ui.selection != kNullEntity)) {
+                m_commands.Execute(std::make_unique<GroupEntitiesCommand>(entities, ui.selections.empty() ? std::vector<Entity>{ui.selection} : ui.selections));
+            }
+            if (is_group && ImGui::MenuItem(TR("action_ungroup", "Ungroup (Ctrl+Alt+G)"), "Ctrl+Alt+G")) {
+                m_commands.Execute(std::make_unique<UngroupEntitiesCommand>(entities, entity));
+            }
+            if (ui.selections.size() >= 2 && ImGui::MenuItem(TR("action_join", "Join Meshes (Ctrl+J)"), "Ctrl+J")) {
+                m_commands.Execute(std::make_unique<JoinMeshesCommand>(entities, ui.selections));
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Unparent", nullptr, false, its_parent != kNullEntity)) {
                 entities.Remove<Parent>(entity);
             }
-            if (ImGui::MenuItem("Duplicate", "Cmd+D")) {
+            if (ImGui::MenuItem(TR("action_duplicate", "Duplicate"), "Cmd+D")) {
                 EntitySnapshot snap = EntitySnapshot::Capture(entities, entity);
                 snap.name += "_copy";
                 snap.transform.position += Vec3(0.5f, 0.0f, 0.5f);
                 Entity dup = snap.Restore(entities);
-                ui.selection = dup;
+                ui.SetSelected(dup, true, false);
                 m_commands.Push(std::make_unique<CreateEntityCommand>(entities, dup, snap, "Duplicate Entity"));
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Delete", "Del")) {
-                Entity to_del = entity;
-                if (ui.selection == to_del) ui.selection = kNullEntity;
-                m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
+            if (ImGui::MenuItem(TR("action_delete", "Delete"), "Del")) {
+                for (Entity to_del : ui.selections) {
+                    if (entities.Valid(to_del)) {
+                        m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
+                    }
+                }
+                ui.DeselectAll();
             }
             ImGui::EndPopup();
         }

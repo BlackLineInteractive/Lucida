@@ -14,18 +14,15 @@ namespace {
 inline Entity MakeBaseEntity(World& world, const Vec3& pos, const std::string& name, const std::string& tag, u32 layer = 0) {
     Registry& entities = world.Entities();
     Entity e = entities.Create(name.c_str());
-    LocalTransform lt{};
-    lt.position = pos;
-    entities.Add<LocalTransform>(e, lt);
-    entities.Add<WorldTransform>(e);
+    if (LocalTransform* lt = entities.Get<LocalTransform>(e)) {
+        lt->position = pos;
+    }
     entities.Add<TagComponent>(e, TagComponent{tag, layer});
     return e;
 }
 } // namespace
 
-// =========================================================================
 // 1. Core & Spatial Hierarchy (4)
-// =========================================================================
 
 Entity Prefab::CreateSpatialNode(World& world, const Vec3& pos, const std::string& name) {
     return MakeBaseEntity(world, pos, name, "Spatial", 0);
@@ -47,9 +44,7 @@ Entity Prefab::CreateRootNode(World& world, const std::string& scene_name, const
     return e;
 }
 
-// =========================================================================
 // 2. Geometry & Meshes (9)
-// =========================================================================
 
 Entity Prefab::CreateStaticMeshNode(World& world, MeshHandle mesh, const Vec3& pos, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "StaticMesh", 0);
@@ -128,9 +123,7 @@ Entity Prefab::CreateText3DNode(World& world, const std::string& text, const Vec
     return e;
 }
 
-// =========================================================================
 // 3. Lighting, Atmosphere & Post-Processing (10)
-// =========================================================================
 
 Entity Prefab::CreateDirectionalLightNode(World& world, const Vec3& dir, const Vec3& col, f32 intensity, const std::string& name) {
     Entity e = MakeBaseEntity(world, Vec3(0.0f, 10.0f, 0.0f), name, "Light", 0);
@@ -228,9 +221,7 @@ Entity Prefab::CreateLightProbeNode(World& world, const Vec3& pos, const std::st
     return e;
 }
 
-// =========================================================================
 // 4. Cameras & Cinematics (4)
-// =========================================================================
 
 Entity Prefab::CreateCameraNode(World& world, const Vec3& pos, f32 fov, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "Camera", 0);
@@ -271,9 +262,7 @@ Entity Prefab::CreateDollyTrackNode(World& world, const std::vector<Vec3>& waypo
     return e;
 }
 
-// =========================================================================
 // 5. World, Terrain & Water (6)
-// =========================================================================
 
 Entity Prefab::CreateTerrainNode(World& world, const TerrainComponent& config, i32 material_index, const std::string& name) {
     Entity e = MakeBaseEntity(world, Vec3(0.0f), name, "Terrain", 0);
@@ -346,9 +335,7 @@ Entity Prefab::CreateWindSourceNode(World& world, const Vec3& dir, f32 speed, co
     return e;
 }
 
-// =========================================================================
 // 6. Rigid Bodies, Collisions & Queries (8)
-// =========================================================================
 
 Entity Prefab::CreatePhysicsActorNode(World& world, PrimitiveType shape, BodyType body_type,
                                       const Vec3& pos, i32 material_index, const std::string& name) {
@@ -429,9 +416,7 @@ Entity Prefab::CreatePhysicalMaterialNode(World& world, f32 friction, f32 restit
     return e;
 }
 
-// =========================================================================
 // 7. Constraints, Soft Bodies & Destruction (6)
-// =========================================================================
 
 Entity Prefab::CreatePhysicsJointNode(World& world, JointType type, const Vec3& anchor, const std::string& name) {
     Entity e = MakeBaseEntity(world, anchor, name, "PhysicsJoint", 0);
@@ -476,9 +461,7 @@ Entity Prefab::CreateDestructibleMeshNode(World& world, const Vec3& pos, const s
     return e;
 }
 
-// =========================================================================
 // 8. Vehicles (6)
-// =========================================================================
 
 Entity Prefab::CreateVehicleNode(World& world, const Vec3& pos, i32 material_index, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "Vehicle", 2);
@@ -532,9 +515,7 @@ Entity Prefab::CreateWatercraftNode(World& world, const Vec3& pos, const std::st
     return e;
 }
 
-// =========================================================================
 // 9. Pawns & Controllers (7)
-// =========================================================================
 
 Entity Prefab::CreatePawnNode(World& world, const Vec3& pos, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "Player", 1);
@@ -624,9 +605,7 @@ Entity Prefab::CreateRagdollNode(World& world, const Vec3& pos, const std::strin
     return e;
 }
 
-// =========================================================================
 // 10. Animation & Skeletal Hierarchy (7)
-// =========================================================================
 
 Entity Prefab::CreateSkeletonNode(World& world, const std::string& name) {
     Entity e = MakeBaseEntity(world, Vec3(0.0f), name, "Skeleton", 0);
@@ -677,9 +656,7 @@ Entity Prefab::CreateMorphTargetNode(World& world, const std::string& name) {
     return e;
 }
 
-// =========================================================================
 // 11. AI & Navigation (9)
-// =========================================================================
 
 Entity Prefab::CreateNavMeshBoundsNode(World& world, const Vec3& pos, const Vec3& size, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "NavMeshBounds", 0);
@@ -750,9 +727,7 @@ Entity Prefab::CreatePatrolPathNode(World& world, const std::vector<Vec3>& point
     return e;
 }
 
-// =========================================================================
 // 12. Visual Effects (VFX) (4)
-// =========================================================================
 
 Entity Prefab::CreateParticleEmitterNode(World& world, const Vec3& pos, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "ParticleEmitter", 0);
@@ -782,9 +757,7 @@ Entity Prefab::CreateBeamEmitterNode(World& world, const Vec3& start, const Vec3
     return e;
 }
 
-// =========================================================================
 // 13. Spatial Audio (5)
-// =========================================================================
 
 Entity Prefab::CreateAudioSourceNode(World& world, const std::string& sound_path, const Vec3& pos, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "AudioSource", 0);
@@ -821,9 +794,7 @@ Entity Prefab::CreateMusicTrackNode(World& world, const std::string& track_path,
     return e;
 }
 
-// =========================================================================
 // 14. Gameplay Systems & Stats (11)
-// =========================================================================
 
 Entity Prefab::CreateHealthNode(World& world, f32 max_hp, const std::string& name) {
     Entity e = MakeBaseEntity(world, Vec3(0.0f), name, "Health", 0);
@@ -908,9 +879,7 @@ Entity Prefab::CreateItemSpawnerNode(World& world, const Vec3& pos, const std::s
     return e;
 }
 
-// =========================================================================
 // 15. Networking & Replication (5)
-// =========================================================================
 
 Entity Prefab::CreateNetworkIdentityNode(World& world, u32 net_id, const std::string& name) {
     Entity e = MakeBaseEntity(world, Vec3(0.0f), name, "NetIdentity", 0);
@@ -946,9 +915,7 @@ Entity Prefab::CreateRPCNode(World& world, const std::string& name) {
     return e;
 }
 
-// =========================================================================
 // 16. User Interface (UI & HUD) (8)
-// =========================================================================
 
 Entity Prefab::CreateCanvasLayerNode(World& world, i32 sort_order, const std::string& name) {
     Entity e = MakeBaseEntity(world, Vec3(0.0f), name, "CanvasLayer", 0);
@@ -1010,9 +977,7 @@ Entity Prefab::CreateMiniMapNode(World& world, const std::string& name) {
     return e;
 }
 
-// =========================================================================
 // 17. Scene Management & Optimization (7)
-// =========================================================================
 
 Entity Prefab::CreateLODGroupNode(World& world, const Vec3& pos, const std::string& name) {
     Entity e = MakeBaseEntity(world, pos, name, "LODGroup", 0);

@@ -266,6 +266,10 @@ struct EntitySnapshot {
     bool has_mesh_instance = false;
     MeshInstance mesh_instance{};
     bool has_scene_graph_node = false;
+    bool has_group = false;
+    GroupComponent group{};
+    bool has_editable_mesh = false;
+    EditableMeshComponent editable_mesh{};
 
     static EntitySnapshot Capture(Registry& reg, Entity e) {
         EntitySnapshot s;
@@ -282,6 +286,8 @@ struct EntitySnapshot {
         if (const CameraComponent* c = reg.Get<CameraComponent>(e)) { s.has_camera = true; s.camera = *c; }
         if (const TerrainComponent* tr = reg.Get<TerrainComponent>(e)) { s.has_terrain = true; s.terrain = *tr; }
         if (const MeshInstance* mi = reg.Get<MeshInstance>(e)) { s.has_mesh_instance = true; s.mesh_instance = *mi; }
+        if (const GroupComponent* gc = reg.Get<GroupComponent>(e)) { s.has_group = true; s.group = *gc; }
+        if (const EditableMeshComponent* emc = reg.Get<EditableMeshComponent>(e)) { s.has_editable_mesh = true; s.editable_mesh = *emc; }
         if (reg.Has<SceneGraphNode>(e)) { s.has_scene_graph_node = true; }
         return s;
     }
@@ -302,6 +308,8 @@ struct EntitySnapshot {
         if (has_camera) reg.Add<CameraComponent>(e, camera);
         if (has_terrain) reg.Add<TerrainComponent>(e, terrain);
         if (has_mesh_instance) reg.Add<MeshInstance>(e, mesh_instance);
+        if (has_group) reg.Add<GroupComponent>(e, group);
+        if (has_editable_mesh) reg.Add<EditableMeshComponent>(e, editable_mesh);
         if (has_scene_graph_node) reg.Add<SceneGraphNode>(e);
         if (restore_parent && has_parent && parent_entity != kNullEntity && reg.Valid(parent_entity))
             reg.Add<Parent>(e, Parent{parent_entity});
@@ -410,6 +418,247 @@ private:
     Entity         m_entity;
     EntitySnapshot m_snapshot;
     std::string    m_name;
+};
+
+// Group Selected Entities under a new Group parent node (Ctrl+G)
+class GroupEntitiesCommand final : public ICommand {
+public:
+    GroupEntitiesCommand(Registry& registry, const std::vector<Entity>& entities,
+                         std::string group_name = "Group")
+        : m_registry(registry), m_group_name(std::move(group_name)), m_group_entity(kNullEntity) {
+        for (Entity e : entities) {
+            if (m_registry.Valid(e)) {
+                m_children.push_back(e);
+                m_child_snapshots.push_back(EntitySnapshot::Capture(m_registry, e));
+            }
+        }
+    }
+
+    void Apply() override {
+        if (m_children.empty()) return;
+
+        Vec3 center(0.0f);
+        int valid_count = 0;
+        for (Entity e : m_children) {
+            if (m_registry.Valid(e)) {
+                if (const LocalTransform* lt = m_registry.Get<LocalTransform>(e)) {
+                    center += lt->position;
+                    valid_count++;
+                }
+            }
+        }
+        if (valid_count > 0) center /= static_cast<f32>(valid_count);
+
+        m_group_entity = m_registry.Create(m_group_name);
+        m_registry.Add<GroupComponent>(m_group_entity, GroupComponent{m_group_name, false});
+        if (LocalTransform* lt = m_registry.Get<LocalTransform>(m_group_entity)) {
+            lt->position = center;
+        }
+
+        for (Entity e : m_children) {
+            if (m_registry.Valid(e)) {
+                if (Parent* p = m_registry.Get<Parent>(e)) {
+                    p->entity = m_group_entity;
+                } else {
+                    m_registry.Add<Parent>(e, Parent{m_group_entity});
+                }
+                if (LocalTransform* lt = m_registry.Get<LocalTransform>(e)) {
+                    lt->position -= center;
+                }
+            }
+        }
+        UpdateWorldTransforms(m_registry);
+    }
+
+    void Revert() override {
+        for (Entity e : m_children) {
+            if (m_registry.Valid(e)) {
+                if (const Parent* p = m_registry.Get<Parent>(e)) {
+                    if (p->entity != kNullEntity && m_registry.Valid(p->entity)) {
+                        if (m_registry.Get<GroupComponent>(p->entity)) {
+                            m_registry.Destroy(p->entity);
+                        }
+                    }
+                }
+            }
+        }
+        for (usize i = 0; i < m_children.size(); ++i) {
+            Entity e = m_children[i];
+            if (m_registry.Valid(e)) {
+                m_child_snapshots[i].Restore(m_registry, e);
+            }
+        }
+        if (m_registry.Valid(m_group_entity)) {
+            m_registry.Destroy(m_group_entity);
+            m_group_entity = kNullEntity;
+        }
+        UpdateWorldTransforms(m_registry);
+    }
+
+    Entity GetGroupEntity() const { return m_group_entity; }
+    const char* Name() const override { return "Group Entities"; }
+
+private:
+    Registry&                   m_registry;
+    std::string                 m_group_name;
+    Entity                      m_group_entity;
+    std::vector<Entity>         m_children;
+    std::vector<EntitySnapshot> m_child_snapshots;
+};
+
+// Ungroup Command: unparents children and removes Group entity (Ctrl+Alt+G)
+class UngroupEntitiesCommand final : public ICommand {
+public:
+    UngroupEntitiesCommand(Registry& registry, Entity group_entity)
+        : m_registry(registry), m_group_entity(group_entity) {
+        if (m_registry.Valid(group_entity)) {
+            m_group_snapshot = EntitySnapshot::Capture(m_registry, group_entity);
+            for (auto [e, parent] : m_registry.View<Parent>().each()) {
+                if (parent.entity == group_entity) {
+                    m_children.push_back(e);
+                    m_child_snapshots.push_back(EntitySnapshot::Capture(m_registry, e));
+                }
+            }
+        }
+    }
+
+    void Apply() override {
+        if (!m_registry.Valid(m_group_entity)) return;
+
+        Vec3 group_pos = Vec3(0.0f);
+        if (const LocalTransform* glt = m_registry.Get<LocalTransform>(m_group_entity)) {
+            group_pos = glt->position;
+        }
+
+        for (Entity e : m_children) {
+            if (m_registry.Valid(e)) {
+                if (Parent* p = m_registry.Get<Parent>(e)) {
+                    p->entity = kNullEntity;
+                }
+                if (LocalTransform* lt = m_registry.Get<LocalTransform>(e)) {
+                    lt->position += group_pos;
+                }
+            }
+        }
+        m_registry.Destroy(m_group_entity);
+        UpdateWorldTransforms(m_registry);
+    }
+
+    void Revert() override {
+        m_group_entity = m_group_snapshot.Restore(m_registry);
+        for (usize i = 0; i < m_children.size(); ++i) {
+            Entity e = m_children[i];
+            if (m_registry.Valid(e)) {
+                m_child_snapshots[i].Restore(m_registry, e);
+                if (Parent* p = m_registry.Get<Parent>(e)) {
+                    p->entity = m_group_entity;
+                } else {
+                    m_registry.Add<Parent>(e, Parent{m_group_entity});
+                }
+            }
+        }
+        UpdateWorldTransforms(m_registry);
+    }
+
+    const char* Name() const override { return "Ungroup Entities"; }
+
+private:
+    Registry&                   m_registry;
+    Entity                      m_group_entity;
+    EntitySnapshot              m_group_snapshot;
+    std::vector<Entity>         m_children;
+    std::vector<EntitySnapshot> m_child_snapshots;
+};
+
+// Join Meshes Command (Ctrl+J in Blender style)
+class JoinMeshesCommand final : public ICommand {
+public:
+    JoinMeshesCommand(Registry& registry, const std::vector<Entity>& entities)
+        : m_registry(registry) {
+        for (Entity e : entities) {
+            if (m_registry.Valid(e)) {
+                m_entities.push_back(e);
+                m_snapshots.push_back(EntitySnapshot::Capture(m_registry, e));
+            }
+        }
+    }
+
+    void Apply() override {
+        if (m_entities.size() < 2) return;
+        Entity target = m_entities[0];
+        if (!m_registry.Valid(target)) return;
+
+        EditableMesh merged;
+        if (EditableMeshComponent* emc = m_registry.Get<EditableMeshComponent>(target)) {
+            merged = emc->mesh;
+        } else if (PrimitiveShape* ps = m_registry.Get<PrimitiveShape>(target)) {
+            if (ps->type == PrimitiveType::Box) merged = MeshBuilder::CreateCube(ps->size);
+            else if (ps->type == PrimitiveType::Sphere) merged = MeshBuilder::CreateSphere(ps->size.x);
+            else if (ps->type == PrimitiveType::Cylinder) merged = MeshBuilder::CreateCylinder(ps->size.x, ps->cylinder_height);
+            else merged = MeshBuilder::CreateCube(Vec3(0.5f));
+        }
+
+        Mat4 target_inv = glm::inverse(m_registry.Get<LocalTransform>(target)->ToMatrix());
+
+        for (usize i = 1; i < m_entities.size(); ++i) {
+            Entity src = m_entities[i];
+            if (!m_registry.Valid(src)) continue;
+
+            EditableMesh other;
+            if (EditableMeshComponent* emc = m_registry.Get<EditableMeshComponent>(src)) {
+                other = emc->mesh;
+            } else if (PrimitiveShape* ps = m_registry.Get<PrimitiveShape>(src)) {
+                if (ps->type == PrimitiveType::Box) other = MeshBuilder::CreateCube(ps->size);
+                else if (ps->type == PrimitiveType::Sphere) other = MeshBuilder::CreateSphere(ps->size.x);
+                else if (ps->type == PrimitiveType::Cylinder) other = MeshBuilder::CreateCylinder(ps->size.x, ps->cylinder_height);
+                else other = MeshBuilder::CreateCube(Vec3(0.5f));
+            }
+
+            Mat4 src_to_target = target_inv * m_registry.Get<LocalTransform>(src)->ToMatrix();
+            uint32_t offset = static_cast<uint32_t>(merged.vertices.size());
+            for (const auto& v : other.vertices) {
+                Vertex tv = v;
+                tv.position = Vec3(src_to_target * Vec4(v.position, 1.0f));
+                tv.normal   = glm::normalize(Vec3(src_to_target * Vec4(v.normal, 0.0f)));
+                merged.vertices.push_back(tv);
+            }
+            for (const auto& f : other.faces) {
+                TriangleFace tf = f;
+                tf.i0 += offset;
+                tf.i1 += offset;
+                tf.i2 += offset;
+                merged.faces.push_back(tf);
+            }
+            m_registry.Destroy(src);
+        }
+
+        if (EditableMeshComponent* emc = m_registry.Get<EditableMeshComponent>(target)) {
+            emc->mesh = merged;
+            emc->dirty = true;
+        } else {
+            m_registry.Add<EditableMeshComponent>(target, EditableMeshComponent{merged, true});
+        }
+        UpdateWorldTransforms(m_registry);
+    }
+
+    void Revert() override {
+        for (usize i = 0; i < m_entities.size(); ++i) {
+            Entity e = m_entities[i];
+            if (m_registry.Valid(e)) {
+                m_snapshots[i].Restore(m_registry, e);
+            } else {
+                m_entities[i] = m_snapshots[i].Restore(m_registry);
+            }
+        }
+        UpdateWorldTransforms(m_registry);
+    }
+
+    const char* Name() const override { return "Join Meshes"; }
+
+private:
+    Registry&                   m_registry;
+    std::vector<Entity>         m_entities;
+    std::vector<EntitySnapshot> m_snapshots;
 };
 
 } // namespace lucida

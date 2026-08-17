@@ -18,6 +18,7 @@ add_library(lucida_framework STATIC
     src/EditorTextureBrowser.cpp
     src/EditorConsole.cpp
     src/EditorMeshModeling.cpp
+    src/Localization.cpp
     src/DebugUI.cpp
     ${LUCIDA_IFD_DIR}/ImGuiFileDialog.cpp
 )

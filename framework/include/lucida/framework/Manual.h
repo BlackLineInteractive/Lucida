@@ -20,71 +20,85 @@ struct HotkeyEntry {
 
 // ---------------------------------------------------------------- Navigation -
 inline constexpr Entry kNavigationEntries[] = {
-    { "RMB (Hold) + Mouse",     "Look around / Rotate camera (First-Person Mouselook)." },
+    { "RMB + Mouse",            "Look around in viewport with captured cursor." },
     { "RMB + W / A / S / D",     "Fly forward, left, backward, right in 3D world space." },
-    { "RMB + Q / E",             "Fly straight Down (Q) or Up (E)." },
-    { "RMB + Shift",             "Sprint mode: multiplies fly speed by sprint multiplier." },
-    { "RMB + Mouse Wheel",       "Instantly accelerate / decelerate camera fly speed." },
-    { "LMB Click",               "Select entity under cursor (raycast picking). Click empty space to deselect." },
-    { "F (Hotkey)",              "Focus / Frame camera on the currently selected entity." },
-    { "View Preset Dropdown",    "Snap camera to Top, Bottom, Front, Back, Left, Right, or Isometric presets." },
-    { "F11",                     "Toggle fullscreen window mode." },
+    { "RMB + Q / E",             "Fly down (Q) or up (E)." },
+    { "Shift + MMB",             "Pan camera in viewport plane (Blender standard)." },
+    { "MMB Drag",                "Orbit camera around selected entity or scene origin." },
+    { "3D Gizmo Drag",           "Drag orientation sphere in top-right to rotate view." },
+    { "RMB + Shift",             "Sprint fly: 3.0x speed boost." },
+    { "RMB + Mouse Wheel",       "Adjust fly speed dynamically." },
+    { "LMB Click",               "Select entity under cursor (raycast picking)." },
+    { "F",                       "Focus and frame camera on selected entity." },
+    { "View Preset Menu",        "Snap camera to Top, Bottom, Front, Back, Left, Right, Isometric." },
+    { "F11",                     "Toggle fullscreen window." },
 };
 
 // --------------------------------------------------------------------- Gizmo -
 inline constexpr Entry kGizmoEntries[] = {
-    { "T or 1",                  "Translate Gizmo (Move object along X, Y, Z axes)." },
-    { "R or 2",                  "Rotate Gizmo (Rotate object around Euler axes)." },
-    { "S or 3",                  "Scale Gizmo (Scale object uniformly or per-axis)." },
-    { "Local / World",           "Switch Gizmo coordinate space between entity local orientation and world axes." },
-    { "Snap Toggle",             "Enable / disable grid snapping for translation, rotation, and scaling." },
-    { "Cmd+Z / Ctrl+Z",          "Undo last modification (transform, material, create, delete)." },
+    { "T or 1",                  "Translate Gizmo (move along X, Y, Z)." },
+    { "R or 2",                  "Rotate Gizmo (rotate around Euler axes)." },
+    { "S or 3",                  "Scale Gizmo (scale uniformly or per-axis)." },
+    { "Local / World",           "Switch Gizmo coordinate space between Local and World." },
+    { "Snap Toggle",             "Toggle grid and angle snapping." },
+    { "Cmd+Z / Ctrl+Z",          "Undo last change (transforms, materials, mesh edits, hierarchy)." },
     { "Cmd+Shift+Z / Cmd+Y",     "Redo last undone change." },
     { "Cmd+D / Ctrl+D",          "Duplicate selected entity." },
-    { "Del / Backspace",         "Delete selected entity (fully undoable)." },
-    { "Hierarchy Drag & Drop",   "Drag an entity onto another in the Hierarchy panel to set parent-child relationships." },
+    { "Del / Backspace",         "Delete selected entity (undoable)." },
+    { "Hierarchy Drag & Drop",   "Drag entity onto another to configure parent-child transform chain." },
+};
+
+// ------------------------------------------------------------- Mesh Modeling -
+inline constexpr Entry kMeshModelingEntries[] = {
+    { "Tab",                     "Toggle between Object Mode and Mesh Edit Mode." },
+    { "1 / 2 / 3",               "Switch selection mode: Vertex (1), Edge (2), Face (3)." },
+    { "E",                       "Extrude selected face along its normal." },
+    { "I",                       "Inset selected face." },
+    { "Subdivide",               "Subdivide face or mesh to increase geometric detail." },
+    { "Recalculate Normals",     "Recompute smooth face and vertex normals." },
+    { "Generate UVs",            "Box / Triplanar UV coordinate projection." },
 };
 
 // ----------------------------------------------------------------- Play Mode -
 inline constexpr Entry kPlayModeEntries[] = {
-    { "Play / Stop (Cmd+P)",     "Toggle Play Mode. Snapshots world state and activates real-time physics." },
-    { "Pause (Cmd+Shift+P)",     "Freeze physics simulation and gameplay ticks." },
-    { "Step Frame (Cmd+.)",      "Advance physics simulation by exactly 1 tick (1/60s)." },
-    { "RigidBody: Dynamic",      "Object falls under gravity (-9.81 m/s²), collides with other bodies and ground." },
-    { "RigidBody: Static",       "Immovable collider (ground, walls, obstacles) that blocks dynamic bodies." },
-    { "RigidBody: Kinematic",    "Moved purely by scripts / animations without responding to external physical forces." },
-    { "Mass, Friction, Bounce",  "Adjust mass (kg), surface friction, and bounciness (restitution) in the Inspector." },
+    { "Play / Stop (Cmd+P)",     "Toggle Play Mode with non-destructive state snapshot and restore." },
+    { "Pause (Cmd+Shift+P)",     "Freeze physics and gameplay ticks." },
+    { "Step (Cmd+.)",            "Advance simulation by exactly 1 tick (1/60s)." },
+    { "Dynamic Body",            "Responds to gravity (-9.81 m/s²), forces, and surface collisions." },
+    { "Static Body",             "Immovable collider (ground, architecture, terrain)." },
+    { "Kinematic Body",          "Driven by animations and scripts, pushes dynamic bodies." },
 };
 
 // --------------------------------------------------- Materials & Rendering ---
 inline constexpr const char* kRenderingBullets[] = {
-    "Whitted Ray Tracer: Hardware-accelerated Metal RT with deterministic reflections and refractions.",
-    "Radiance Cascades: 3D Global Illumination with directional radiance intervals.",
-    "PBR Parameters: Albedo (base color), Roughness (microfacet gloss), Metallic (dielectric vs metal), Emission (glow), IOR (refractive index).",
-    "Light Sources: Analytic Point Lights, Directional Sun with soft shadows, Spot Lights, Area Lights.",
-    "Atmosphere & Water: Procedural ocean waves with Gerstner wave spectrum, volumetric height fog, and sky dome.",
+    "Whitted Ray Tracer: Deterministic Metal compute ray tracer with analytic soft shadows and reflections.",
+    "Radiance Cascades: 3D Global Illumination with hierarchical interval radiance transport.",
+    "PBR Pipeline: Albedo, Roughness, Metallic, Normal Maps, Emission, and Index of Refraction.",
+    "Atmosphere & Sun: Directional sun lighting, sky dome irradiance, volumetric height fog, ocean wave simulation.",
 };
 
 // ------------------------------------------------------- Hotkeys Reference ---
 inline constexpr HotkeyEntry kHotkeys[] = {
     { "General",   "F1",                    "Open Controls & Manual window" },
     { "General",   "F11",                   "Toggle Fullscreen" },
-    { "Edit",      "Cmd+Z / Ctrl+Z",        "Undo last modification" },
-    { "Edit",      "Cmd+Shift+Z / Cmd+Y",   "Redo last modification" },
+    { "Edit",      "Cmd+Z / Ctrl+Z",        "Undo last action" },
+    { "Edit",      "Cmd+Shift+Z / Cmd+Y",   "Redo last action" },
     { "Edit",      "Cmd+D / Ctrl+D",        "Duplicate selected entity" },
     { "Edit",      "Del / Backspace",       "Delete selected entity" },
-    { "Edit",      "Cmd+, / Ctrl+,",        "Open Preferences & Settings" },
+    { "Edit",      "Cmd+, / Ctrl+,",        "Open Preferences window" },
     { "Gizmo",     "T or 1",                "Translate Mode" },
     { "Gizmo",     "R or 2",                "Rotate Mode" },
     { "Gizmo",     "S or 3",                "Scale Mode" },
-    { "Viewport",  "F",                     "Focus camera on selected entity" },
-    { "Viewport",  "RMB + WASD",            "Fly Camera Movement" },
-    { "Viewport",  "RMB + Q / E",           "Fly Camera Down / Up" },
-    { "Viewport",  "RMB + Shift",           "Camera Fly Sprint Mode" },
-    { "Viewport",  "RMB + Scroll",          "Adjust Fly Speed dynamically" },
-    { "Play Mode", "Cmd+P / Ctrl+P",        "Play / Stop Simulation" },
-    { "Play Mode", "Cmd+Shift+P",           "Pause / Resume Simulation" },
-    { "Play Mode", "Cmd+. / Ctrl+.",        "Step Single Frame" },
+    { "Viewport",  "F",                     "Focus camera on selection" },
+    { "Viewport",  "RMB + WASD",            "Fly camera movement" },
+    { "Viewport",  "RMB + Q / E",           "Fly down / up" },
+    { "Viewport",  "RMB + Shift",           "Sprint fly mode" },
+    { "Viewport",  "Shift + MMB",           "Pan camera in viewport" },
+    { "Viewport",  "MMB",                   "Orbit camera around focus" },
+    { "Modeling",  "Tab",                   "Toggle Edit / Object Mode" },
+    { "Play Mode", "Cmd+P / Ctrl+P",        "Play / Stop simulation" },
+    { "Play Mode", "Cmd+Shift+P",           "Pause / Resume simulation" },
+    { "Play Mode", "Cmd+. / Ctrl+.",        "Step single frame" },
 };
 
 } // namespace lucida::manual

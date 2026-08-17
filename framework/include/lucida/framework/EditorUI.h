@@ -95,8 +95,57 @@ struct UiState {
     f32  snap_rotation = 15.0f;
     f32  snap_scale = 0.25f;
 
-    // What the inspector is looking at
-    Entity selection = kNullEntity;
+    // Multi-Selection state
+    Entity              selection = kNullEntity;
+    std::vector<Entity> selections;
+
+    bool IsSelected(Entity e) const {
+        if (e == kNullEntity) return false;
+        if (e == selection) return true;
+        return std::find(selections.begin(), selections.end(), e) != selections.end();
+    }
+    void SetSelected(Entity e, bool selected, bool multi_select = false) {
+        if (!multi_select) {
+            selections.clear();
+            if (selected && e != kNullEntity) {
+                selection = e;
+                selections.push_back(e);
+            } else {
+                selection = kNullEntity;
+            }
+        } else {
+            if (selected && e != kNullEntity) {
+                if (std::find(selections.begin(), selections.end(), e) == selections.end()) {
+                    selections.push_back(e);
+                }
+                selection = e;
+            } else {
+                selections.erase(std::remove(selections.begin(), selections.end(), e), selections.end());
+                if (selection == e) {
+                    selection = selections.empty() ? kNullEntity : selections.back();
+                }
+            }
+        }
+    }
+    void SelectAll(Registry& registry) {
+        selections.clear();
+        for (auto [e, name] : registry.View<Name>().each()) {
+            selections.push_back(e);
+        }
+        selection = selections.empty() ? kNullEntity : selections.front();
+    }
+    void DeselectAll() {
+        selections.clear();
+        selection = kNullEntity;
+    }
+
+    // Selection Tools (Point, Box, Lasso)
+    enum class SelectTool : u8 { Point = 0, Box, Lasso };
+    SelectTool select_tool = SelectTool::Point;
+    bool       is_box_selecting = false;
+    bool       is_lasso_selecting = false;
+    Vec2       selection_drag_start{0.0f, 0.0f};
+    std::vector<Vec2> lasso_points;
 
     // Size of the viewport panel in framebuffer pixels
     i32 viewport_width  = 0;

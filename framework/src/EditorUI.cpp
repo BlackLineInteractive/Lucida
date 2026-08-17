@@ -71,6 +71,39 @@ void EditorUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSetti
             ui.show_preferences_window = !ui.show_preferences_window;
         }
 
+        // Select All (A) and Deselect All (Alt+A) in Blender style
+        if (!modifier && ImGui::IsKeyPressed(ImGuiKey_A, false)) {
+            if (io.KeyAlt) {
+                ui.DeselectAll();
+            } else {
+                if (ui.selections.empty()) {
+                    ui.SelectAll(world.Entities());
+                } else {
+                    ui.DeselectAll();
+                }
+            }
+        }
+
+        // Group (Ctrl+G) and Ungroup (Ctrl+Alt+G)
+        if (modifier && ImGui::IsKeyPressed(ImGuiKey_G, false)) {
+            if (io.KeyAlt) {
+                if (ui.selection != kNullEntity && world.Entities().Valid(ui.selection)) {
+                    m_commands.Execute(std::make_unique<UngroupEntitiesCommand>(world.Entities(), ui.selection));
+                }
+            } else {
+                if (ui.selections.size() > 1 || (ui.selection != kNullEntity && world.Entities().Valid(ui.selection))) {
+                    m_commands.Execute(std::make_unique<GroupEntitiesCommand>(world.Entities(), ui.selections.empty() ? std::vector<Entity>{ui.selection} : ui.selections));
+                }
+            }
+        }
+
+        // Join Meshes (Ctrl+J in Blender style)
+        if (modifier && ImGui::IsKeyPressed(ImGuiKey_J, false)) {
+            if (ui.selections.size() >= 2) {
+                m_commands.Execute(std::make_unique<JoinMeshesCommand>(world.Entities(), ui.selections));
+            }
+        }
+
         if (modifier && ImGui::IsKeyPressed(ImGuiKey_P, false)) {
             if (io.KeyShift) {
                 if (ui.play_state == UiState::PlayState::Playing) ui.request_pause = true;
@@ -85,11 +118,16 @@ void EditorUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSetti
         }
 
         if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
+            for (Entity to_del : ui.selections) {
+                if (world.Entities().Valid(to_del)) {
+                    m_commands.Execute(std::make_unique<DestroyEntityCommand>(world.Entities(), to_del, "Delete Entity"));
+                }
+            }
             if (ui.selection != kNullEntity && world.Entities().Valid(ui.selection)) {
                 Entity to_del = ui.selection;
-                ui.selection = kNullEntity;
                 m_commands.Execute(std::make_unique<DestroyEntityCommand>(world.Entities(), to_del, "Delete Entity"));
             }
+            ui.DeselectAll();
         }
         if (modifier && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
             if (ui.selection != kNullEntity && world.Entities().Valid(ui.selection)) {
@@ -97,7 +135,7 @@ void EditorUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSetti
                 snap.name += "_copy";
                 snap.transform.position += Vec3(0.5f, 0.0f, 0.5f);
                 Entity dup = snap.Restore(world.Entities());
-                ui.selection = dup;
+                ui.SetSelected(dup, true, false);
                 m_commands.Push(std::make_unique<CreateEntityCommand>(world.Entities(), dup, snap, "Duplicate Entity"));
             }
         }
@@ -130,31 +168,30 @@ void EditorUI::Build(World& world, SceneAssets& assets, UiState& ui, RenderSetti
     ImGui::Render();
 }
 
-void EditorUI::BuildDefaultLayout(unsigned dockspace_id) {
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-
+void EditorUI::BuildDefaultLayout(ImGuiID dockspace_id) {
     ImGui::DockBuilderRemoveNode(dockspace_id);
-    ImGui::DockBuilderAddNode(dockspace_id,
-                              ImGuiDockNodeFlags_DockSpace | ImGuiDockNodeFlags_PassthruCentralNode);
-    ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
+    ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
 
-    ImGuiID centre = dockspace_id;
-    const ImGuiID left   = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Left,  0.20f, nullptr, &centre);
-    const ImGuiID right  = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Right, 0.24f, nullptr, &centre);
-    ImGuiID bottom       = ImGui::DockBuilderSplitNode(centre, ImGuiDir_Down,  0.26f, nullptr, &centre);
-    const ImGuiID bottom_right = ImGui::DockBuilderSplitNode(bottom, ImGuiDir_Right, 0.45f, nullptr, &bottom);
+    ImGuiID dock_main = dockspace_id;
+    ImGuiID dock_left  = ImGui::DockBuilderSplitNode(dock_main,  ImGuiDir_Left,  0.19f, nullptr, &dock_main);
+    ImGuiID dock_right = ImGui::DockBuilderSplitNode(dock_main,  ImGuiDir_Right, 0.28f, nullptr, &dock_main);
+    ImGuiID dock_down  = ImGui::DockBuilderSplitNode(dock_main,  ImGuiDir_Down,  0.22f, nullptr, &dock_main);
 
-    ImGui::DockBuilderDockWindow("Hierarchy", left);
-    ImGui::DockBuilderDockWindow("Mesh Editor", left);
-    ImGui::DockBuilderDockWindow("Inspector", right);
-    ImGui::DockBuilderDockWindow("Gameplay Debugger", right);
-    ImGui::DockBuilderDockWindow("Engine Diagnostics", right);
-    ImGui::DockBuilderDockWindow("Graphics Settings", right);
-    ImGui::DockBuilderDockWindow("Content Browser", bottom);
-    ImGui::DockBuilderDockWindow("Texture Maps", bottom);
-    ImGui::DockBuilderDockWindow("Console", bottom_right);
-    ImGui::DockBuilderDockWindow("Statistics", bottom_right);
-    ImGui::DockBuilderDockWindow("Viewport", centre);
+    ImGuiID dock_left_bottom = ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.45f, nullptr, &dock_left);
+    ImGuiID dock_right_bottom = ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Down, 0.40f, nullptr, &dock_right);
+
+    ImGui::DockBuilderDockWindow("Viewport", dock_main);
+    ImGui::DockBuilderDockWindow("Hierarchy", dock_left);
+    ImGui::DockBuilderDockWindow("Content Browser", dock_left_bottom);
+    ImGui::DockBuilderDockWindow("Inspector", dock_right);
+    ImGui::DockBuilderDockWindow("Mesh Editor", dock_right);
+    ImGui::DockBuilderDockWindow("Texture Maps", dock_right_bottom);
+    ImGui::DockBuilderDockWindow("Graphics Settings", dock_right_bottom);
+    ImGui::DockBuilderDockWindow("Gameplay Debugger", dock_right_bottom);
+    ImGui::DockBuilderDockWindow("Statistics", dock_down);
+    ImGui::DockBuilderDockWindow("Engine Diagnostics", dock_down);
+    ImGui::DockBuilderDockWindow("Console", dock_down);
 
     ImGui::DockBuilderFinish(dockspace_id);
 }
@@ -162,7 +199,7 @@ void EditorUI::BuildDefaultLayout(unsigned dockspace_id) {
 void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
     if (!ImGui::BeginMainMenuBar()) return;
 
-    if (ImGui::BeginMenu("File")) {
+    if (ImGui::BeginMenu(TR("menu_file", "File"))) {
         if (ImGui::MenuItem("Load model...")) {
             IGFD::FileDialogConfig config;
             config.path = ".";
@@ -174,7 +211,7 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("Edit")) {
+    if (ImGui::BeginMenu(TR("menu_edit", "Edit"))) {
         char undo_label[64];
         if (m_commands.CanUndo())
             std::snprintf(undo_label, sizeof(undo_label), "Undo %s", m_commands.UndoName());
@@ -194,24 +231,51 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
             m_commands.Redo();
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Clear Undo History", nullptr, false, m_commands.CanUndo() || m_commands.CanRedo())) {
-            m_commands.Clear();
+        if (ImGui::MenuItem(TR("action_select_all", "Select All (A)"), "A")) {
+            ui.SelectAll(world.Entities());
+        }
+        if (ImGui::MenuItem(TR("action_deselect_all", "Deselect All (Alt+A)"), "Alt+A")) {
+            ui.DeselectAll();
         }
         ImGui::Separator();
         Registry& entities = world.Entities();
-        const bool has_selection = (ui.selection != kNullEntity && entities.Valid(ui.selection));
-        if (ImGui::MenuItem("Duplicate Selection", "Cmd+D", false, has_selection)) {
-            EntitySnapshot snap = EntitySnapshot::Capture(entities, ui.selection);
-            snap.name += "_copy";
-            snap.transform.position += Vec3(0.5f, 0.0f, 0.5f);
-            Entity dup = snap.Restore(entities);
-            ui.selection = dup;
-            m_commands.Push(std::make_unique<CreateEntityCommand>(entities, dup, snap, "Duplicate Entity"));
+        const bool has_selection = (ui.selection != kNullEntity && entities.Valid(ui.selection)) || !ui.selections.empty();
+        if (ImGui::MenuItem(TR("action_group", "Group (Ctrl+G)"), "Ctrl+G", false, has_selection)) {
+            m_commands.Execute(std::make_unique<GroupEntitiesCommand>(entities, ui.selections.empty() ? std::vector<Entity>{ui.selection} : ui.selections));
         }
-        if (ImGui::MenuItem("Delete Selection", "Del", false, has_selection)) {
-            Entity to_del = ui.selection;
-            ui.selection = kNullEntity;
-            m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
+        const bool is_group = ui.selection != kNullEntity && entities.Get<GroupComponent>(ui.selection) != nullptr;
+        if (ImGui::MenuItem(TR("action_ungroup", "Ungroup (Ctrl+Alt+G)"), "Ctrl+Alt+G", false, is_group)) {
+            m_commands.Execute(std::make_unique<UngroupEntitiesCommand>(entities, ui.selection));
+        }
+        if (ImGui::MenuItem(TR("action_join", "Join Meshes (Ctrl+J)"), "Ctrl+J", false, ui.selections.size() >= 2)) {
+            m_commands.Execute(std::make_unique<JoinMeshesCommand>(entities, ui.selections));
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(TR("action_duplicate", "Duplicate Selection"), "Cmd+D", false, has_selection)) {
+            if (ui.selection != kNullEntity && entities.Valid(ui.selection)) {
+                EntitySnapshot snap = EntitySnapshot::Capture(entities, ui.selection);
+                snap.name += "_copy";
+                snap.transform.position += Vec3(0.5f, 0.0f, 0.5f);
+                Entity dup = snap.Restore(entities);
+                ui.SetSelected(dup, true, false);
+                m_commands.Push(std::make_unique<CreateEntityCommand>(entities, dup, snap, "Duplicate Entity"));
+            }
+        }
+        if (ImGui::MenuItem(TR("action_delete", "Delete Selection"), "Del", false, has_selection)) {
+            for (Entity to_del : ui.selections) {
+                if (entities.Valid(to_del)) {
+                    m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
+                }
+            }
+            if (ui.selection != kNullEntity && entities.Valid(ui.selection)) {
+                Entity to_del = ui.selection;
+                m_commands.Execute(std::make_unique<DestroyEntityCommand>(entities, to_del, "Delete Entity"));
+            }
+            ui.DeselectAll();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Clear Undo History", nullptr, false, m_commands.CanUndo() || m_commands.CanRedo())) {
+            m_commands.Clear();
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Preferences...", "Cmd+, / Ctrl+,")) {
@@ -220,7 +284,7 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("View")) {
+    if (ImGui::BeginMenu(TR("menu_view", "View"))) {
         ImGui::MenuItem("Viewport", nullptr, &ui.show_viewport);
         ImGui::MenuItem("Hierarchy", nullptr, &ui.show_hierarchy);
         ImGui::MenuItem("Inspector", nullptr, &ui.show_inspector);
@@ -250,7 +314,7 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("Scene")) {
+    if (ImGui::BeginMenu(TR("menu_scene", "Scene"))) {
         for (u8 i = 0; i < u8(scenes::BuiltIn::Count); ++i) {
             const auto which = scenes::BuiltIn(i);
             if (ImGui::MenuItem(scenes::Name(which), nullptr, ui.scene == which)) {
@@ -261,7 +325,7 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("Play")) {
+    if (ImGui::BeginMenu(TR("menu_play", "Play"))) {
         if (ui.play_state == UiState::PlayState::Edit) {
             if (ImGui::MenuItem("Play", "Cmd+P")) ui.request_play = true;
         } else {
@@ -276,7 +340,30 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("Help")) {
+    if (ImGui::BeginMenu(TR("menu_language", "Language"))) {
+        if (ImGui::MenuItem("English", nullptr, Localization::GetLanguage() == Language::English)) {
+            Localization::SetLanguage(Language::English);
+        }
+        if (ImGui::MenuItem("Українська", nullptr, Localization::GetLanguage() == Language::Ukrainian)) {
+            Localization::SetLanguage(Language::Ukrainian);
+        }
+        if (ImGui::MenuItem("Русский", nullptr, Localization::GetLanguage() == Language::Russian)) {
+            Localization::SetLanguage(Language::Russian);
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Deutsch (German)", nullptr, Localization::GetLanguage() == Language::German)) {
+            Localization::SetLanguage(Language::German);
+        }
+        if (ImGui::MenuItem("Français (French)", nullptr, Localization::GetLanguage() == Language::French)) {
+            Localization::SetLanguage(Language::French);
+        }
+        if (ImGui::MenuItem("Español (Spanish)", nullptr, Localization::GetLanguage() == Language::Spanish)) {
+            Localization::SetLanguage(Language::Spanish);
+        }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu(TR("menu_help", "Help"))) {
         if (ImGui::MenuItem("Controls & Manual", "F1")) {
             ui.show_manual_modal = true;
         }

@@ -258,18 +258,129 @@ void EditorUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect
             const_cast<CameraController&>(camera).AdjustSpeed(ImGui::GetIO().MouseWheel * 1.0f);
         }
 
-        // LMB click to select entity
-        if (image_hovered && !ImGuizmo::IsOver() && !ImGuizmo::IsUsing() &&
-            ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
-            ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x == 0.0f &&
-            ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y == 0.0f) {
-            const ImVec2 mouse = ImGui::GetMousePos();
-            const Vec2 ndc((mouse.x - image_min.x) / size.x * 2.0f - 1.0f,
-                           1.0f - (mouse.y - image_min.y) / size.y * 2.0f);
+        // Multi-Selection Box & Lasso interactive logic
+        const bool shift_held = ImGui::GetIO().KeyShift;
+        const bool ctrl_held = ImGui::GetIO().KeyCtrl || ImGui::GetIO().KeySuper;
+        const bool is_multi = shift_held || ctrl_held;
 
-            const Ray ray = RayThroughViewport(camera.Camera(), aspect, ndc);
-            const PickResult hit = PickEntity(world.Entities(), ray);
-            ui.selection = hit.entity;
+        if (image_hovered && !ImGuizmo::IsOver() && !ImGuizmo::IsUsing()) {
+            const ImVec2 mouse = ImGui::GetMousePos();
+
+            if (ui.select_tool == UiState::SelectTool::Point) {
+                if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+                    ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x == 0.0f &&
+                    ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y == 0.0f) {
+                    const Vec2 ndc((mouse.x - image_min.x) / size.x * 2.0f - 1.0f,
+                                   1.0f - (mouse.y - image_min.y) / size.y * 2.0f);
+                    const Ray ray = RayThroughViewport(camera.Camera(), aspect, ndc);
+                    const PickResult hit = PickEntity(world.Entities(), ray);
+                    if (hit.entity != kNullEntity) {
+                        ui.SetSelected(hit.entity, !ui.IsSelected(hit.entity) || !is_multi, is_multi);
+                    } else if (!is_multi) {
+                        ui.DeselectAll();
+                    }
+                }
+            } else if (ui.select_tool == UiState::SelectTool::Box) {
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    ui.is_box_selecting = true;
+                    ui.selection_drag_start = Vec2(mouse.x, mouse.y);
+                }
+                if (ui.is_box_selecting) {
+                    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                        ImVec2 bmin(std::min(ui.selection_drag_start.x, mouse.x), std::min(ui.selection_drag_start.y, mouse.y));
+                        ImVec2 bmax(std::max(ui.selection_drag_start.x, mouse.x), std::max(ui.selection_drag_start.y, mouse.y));
+                        ImGui::GetWindowDrawList()->AddRectFilled(bmin, bmax, IM_COL32(0, 150, 255, 45));
+                        ImGui::GetWindowDrawList()->AddRect(bmin, bmax, IM_COL32(50, 180, 255, 230), 0.0f, 0, 1.5f);
+                    } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                        ui.is_box_selecting = false;
+                        ImVec2 bmin(std::min(ui.selection_drag_start.x, mouse.x), std::min(ui.selection_drag_start.y, mouse.y));
+                        ImVec2 bmax(std::max(ui.selection_drag_start.x, mouse.x), std::max(ui.selection_drag_start.y, mouse.y));
+
+                        if (!is_multi) ui.DeselectAll();
+
+                        const CameraState& c = camera.Camera();
+                        Mat4 view = glm::lookAt(c.position, c.position + c.Forward(), c.Up());
+                        Mat4 proj = glm::perspective(c.fov_y, aspect, 0.1f, 1000.0f);
+                        Mat4 vp = proj * view;
+
+                        for (auto [e, name] : world.Entities().View<Name>().each()) {
+                            Mat4 wm = LocalToWorldMatrix(world.Entities(), e);
+                            Vec3 p_world(wm[3]);
+                            Vec4 clip = vp * Vec4(p_world, 1.0f);
+                            if (clip.w <= 0.01f) continue;
+                            Vec3 ndc = Vec3(clip) / clip.w;
+                            if (ndc.z < -1.0f || ndc.z > 1.0f) continue;
+                            float sx = image_min.x + (ndc.x * 0.5f + 0.5f) * size.x;
+                            float sy = image_min.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * size.y;
+                            if (sx >= bmin.x && sx <= bmax.x && sy >= bmin.y && sy <= bmax.y) {
+                                ui.SetSelected(e, true, true);
+                            }
+                        }
+                    }
+                }
+            } else if (ui.select_tool == UiState::SelectTool::Lasso) {
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    ui.is_lasso_selecting = true;
+                    ui.lasso_points.clear();
+                    ui.lasso_points.push_back(Vec2(mouse.x, mouse.y));
+                }
+                if (ui.is_lasso_selecting) {
+                    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                        if (ui.lasso_points.empty() || 
+                            (std::abs(mouse.x - ui.lasso_points.back().x) > 3.0f || std::abs(mouse.y - ui.lasso_points.back().y) > 3.0f)) {
+                            ui.lasso_points.push_back(Vec2(mouse.x, mouse.y));
+                        }
+                        if (ui.lasso_points.size() >= 2) {
+                            std::vector<ImVec2> draw_pts;
+                            draw_pts.reserve(ui.lasso_points.size());
+                            for (const auto& pt : ui.lasso_points) draw_pts.emplace_back(pt.x, pt.y);
+
+                            ImGui::GetWindowDrawList()->AddPolyline(draw_pts.data(), static_cast<int>(draw_pts.size()),
+                                                                    IM_COL32(255, 170, 0, 230), ImDrawFlags_None, 2.0f);
+                            if (draw_pts.size() >= 3) {
+                                ImGui::GetWindowDrawList()->AddConvexPolyFilled(draw_pts.data(), static_cast<int>(draw_pts.size()),
+                                                                               IM_COL32(255, 170, 0, 35));
+                            }
+                        }
+                    } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                        ui.is_lasso_selecting = false;
+                        if (ui.lasso_points.size() >= 3) {
+                            if (!is_multi) ui.DeselectAll();
+
+                            const CameraState& c = camera.Camera();
+                            Mat4 view = glm::lookAt(c.position, c.position + c.Forward(), c.Up());
+                            Mat4 proj = glm::perspective(c.fov_y, aspect, 0.1f, 1000.0f);
+                            Mat4 vp = proj * view;
+
+                            auto pointInPoly = [](const Vec2& pt, const std::vector<Vec2>& poly) -> bool {
+                                bool inside = false;
+                                for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
+                                    if (((poly[i].y > pt.y) != (poly[j].y > pt.y)) &&
+                                        (pt.x < (poly[j].x - poly[i].x) * (pt.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)) {
+                                        inside = !inside;
+                                    }
+                                }
+                                return inside;
+                            };
+
+                            for (auto [e, name] : world.Entities().View<Name>().each()) {
+                                Mat4 wm = LocalToWorldMatrix(world.Entities(), e);
+                                Vec3 p_world(wm[3]);
+                                Vec4 clip = vp * Vec4(p_world, 1.0f);
+                                if (clip.w <= 0.01f) continue;
+                                Vec3 ndc = Vec3(clip) / clip.w;
+                                if (ndc.z < -1.0f || ndc.z > 1.0f) continue;
+                                float sx = image_min.x + (ndc.x * 0.5f + 0.5f) * size.x;
+                                float sy = image_min.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * size.y;
+                                if (pointInPoly(Vec2(sx, sy), ui.lasso_points)) {
+                                    ui.SetSelected(e, true, true);
+                                }
+                            }
+                        }
+                        ui.lasso_points.clear();
+                    }
+                }
+            }
         }
 
         // ---- Viewport Toolbar (Collapsible dark glass pill) ---------------
@@ -305,10 +416,21 @@ void EditorUI::DrawViewport(World& world, UiState& ui, void* texture, f32 aspect
 
                 ImGui::SameLine(0, 4.0f);
 
+                // Selection Tool (Point, Box, Lasso)
+                const char* sel_tools[] = { "Point", "Box", "Lasso" };
+                int cur_sel = static_cast<int>(ui.select_tool);
+                ImGui::SetNextItemWidth(70.0f);
+                if (ImGui::Combo("##SelectTool", &cur_sel, sel_tools, 3)) {
+                    ui.select_tool = static_cast<UiState::SelectTool>(cur_sel);
+                }
+                DrawTooltip("Selection Tool: Point (Single/Shift Pick), Box (Marquee Drag), or Lasso (Freehand Polygon).");
+
+                ImGui::SameLine(0, 4.0f);
+
                 // Camera Source Selector
                 const char* cam_sources[] = { "Fly Cam", "Game Cam" };
                 int cur_cam = static_cast<int>(ui.camera_source);
-                ImGui::SetNextItemWidth(90.0f);
+                ImGui::SetNextItemWidth(85.0f);
                 if (ImGui::Combo("##CamSource", &cur_cam, cam_sources, 2)) {
                     ui.camera_source = static_cast<UiState::CameraSource>(cur_cam);
                 }

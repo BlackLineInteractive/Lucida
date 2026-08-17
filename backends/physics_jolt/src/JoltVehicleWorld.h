@@ -4,7 +4,6 @@
 #pragma once
 // Internal to the Jolt backend: the wheeled-vehicle world carried over from
 // RayTracer_Unified. Nothing outside this directory includes it.
-// ============================================================ PhysicsWorld.h
 // Thin C++ wrapper around Jolt Physics that drives the 1969 Ford Mustang
 // Boss 302 as a wheeled-vehicle simulation.
 //

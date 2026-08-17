@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <em>lucida</em> — the brightest star in a constellation.
+  <em>lucida</em> - the brightest star in a constellation.
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 
 ---
 
-## The New Era of Game Engines
+## Overview
 
 **Lucida** is a next-generation real-time ray tracing game engine engineered from first principles for deterministic Whitted ray tracing, Radiance Cascades Global Illumination, and Data-Oriented Design (DOD).
 
@@ -33,7 +33,7 @@ Built to deliver breathtaking visual fidelity, real-time procedural materials, a
 ## Showcase
 
 <p align="center">
-  <img src="media/0.4.png" alt="Lucida Engine 0.4 New Viewport" width="100%">
+  <img src="media/0.4.png" alt="Lucida Engine 0.4 Viewport" width="100%">
 </p>
 
 <p align="center">
@@ -44,41 +44,24 @@ Built to deliver breathtaking visual fidelity, real-time procedural materials, a
   <img src="media/0.3(2).png" alt="Lucida Engine 0.3 Editor" width="100%">
 </p>
 
-<p align="center">
-  <img src="media/0.2.png" alt="Lucida Engine 0.2 Viewport" width="100%">
-</p>
+---
 
-<p align="center">
-  <img src="media/0.2(2).png" alt="Lucida Engine 0.2 Editor" width="100%">
-</p>
+## Performance
 
-## Where it stands
+Tested on MacBook Pro 16" 2019 (Intel i9-9880H, AMD Radeon Pro 5500M 8 GB - compute-only, no RT hardware):
 
-On a MacBook Pro 16" (i9-9880H, **AMD Radeon Pro 5500M 8 GB** - a mid-range mobile GPU
-with no ray tracing hardware, everything in compute):
-
-| Scene | Resolution | Path | Frame rate |
+| Scene | Resolution | Pipeline | Frame rate |
 | --- | --- | --- | --- |
-| Sponza 4K (~5.7 M triangles) | 1080×720 | full RT, unoptimised | **15-30 fps** |
-| Demo 0.3 (primitives, water, fog) | 1971×1065 | full RT | 60-110 fps |
+| Sponza (~5.7 M triangles) | 1080x720 | Full RT | 15-30 fps |
+| Demo Scene (primitives, water, fog) | 1920x1080 | Full RT | 60-110 fps |
 
-This method **cannot** produce noise or ghosting - not "does not yet". Tracing is
-deterministic Whitted-style with analytic soft shadows and AO rather than stochastic
-sampling, so there is no variance to denoise and no history to accumulate. The image is
-final at frame one, and every optimisation on the roadmap has to keep it that way.
-
-(The torn ghosting that used to show on moving objects was never the tracer: the MetalFX
-upscaler was given motion vectors that described camera movement only. Motion is now
-computed per instance - see
-[ARCHITECTURE.md](docs/ARCHITECTURE.md#fixed-in-m7-torn-ghosting-on-moving-objects).)
+Tracing is deterministic Whitted-style with analytic soft shadows and AO. No stochastic noise, no accumulation ghosting, and no temporal blur.
 
 ---
 
 ## Build
 
-Dependencies are **not vendored**. CMake fetches them at configure time (glm, bvh v2,
-Dear ImGui, ImGuiFileDialog, stb, Jolt); SDL2 and assimp are used from the system when
-found, and built from source otherwise.
+Dependencies are fetched by CMake at configure time (`glm`, `bvh v2`, `Dear ImGui`, `ImGuiFileDialog`, `stb`, `Jolt`, `EnTT`). System `SDL2` and `assimp` are used when present.
 
 ```bash
 cmake -B build
@@ -89,177 +72,93 @@ cmake --build build -j
 ### Platforms
 
 | Platform | Architecture | Renderer | Status |
-| ---------- | ------------- | ---------- | -------- |
-| macOS 13+ | x86\_64 (Intel) | Metal + MetalFX | Complete tracing path |
-| macOS 13+ | arm64 (Apple Silicon) | Metal + MetalFX | Complete tracing path |
-| macOS 13+ | Universal (x86\_64 + arm64) | Metal + MetalFX | `LUCIDA_MACOS_UNIVERSAL=ON` |
-| Linux (Debian / Ubuntu) | x86\_64 | OpenGL 4.3 compute | Backend not yet ported to `IRenderBackend` |
-| Linux (Debian / Ubuntu) | arm64 (RPi 5, Jetson) | OpenGL ES 3.1 compute | Same — stub only |
-| Windows 10+ | x86\_64 | OpenGL 4.3 / Vulkan | Stub only (M13) |
-| Windows 10+ | arm64 (Snapdragon X) | Vulkan | Stub only (M13) |
-
-Core, runtime, resource, physics, input and framework build on all targets. Exactly one
-render backend is production-ready today — Metal. The GL and Vulkan sources sit in
-`backends/render_gl` and `backends/render_vulkan` in the form inherited from
-RayTracer_Unified and are not yet wired to the current interface (see roadmap M12–M13).
-
-**Debian / Ubuntu (x86\_64 or arm64)**
+| --- | --- | --- | --- |
+| macOS 13+ | x86_64 / arm64 | Metal + MetalFX | Complete |
+| macOS 13+ | Universal | Metal + MetalFX | `LUCIDA_MACOS_UNIVERSAL=ON` |
+| Linux (Ubuntu/Debian) | x86_64 / arm64 | OpenGL 4.3 Compute | In progress |
+| Windows 10+ | x86_64 / arm64 | Vulkan Compute | In progress |
 
 ```bash
+# Ubuntu / Debian
 sudo apt install build-essential cmake ninja-build libsdl2-dev libassimp-dev
-cmake -B build -G Ninja
-cmake --build build -j
-```
+cmake -B build -G Ninja && cmake --build build -j
 
-**Windows (MSVC x86\_64)**
-
-```bash
+# Windows (MSVC x64)
 cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config RelWithDebInfo
 ```
 
-**Windows (MSVC arm64 / Snapdragon X)**
-
-```bash
-cmake -B build -G "Visual Studio 17 2022" -A ARM64
-cmake --build build --config RelWithDebInfo
-```
-
-**macOS (x86\_64 or arm64 — native arch)**
-
-```bash
-cmake -B build
-cmake --build build -j
-```
-
-**macOS Universal (x86\_64 + arm64)**
-
-```bash
-cmake -B build -DLUCIDA_MACOS_UNIVERSAL=ON
-cmake --build build -j
-```
-
-### CMake options
-
-| Option | Default | Effect |
-| --- | --- | --- |
-| `LUCIDA_RENDER_METAL` | ON on Apple | Metal backend |
-| `LUCIDA_RENDER_GL` | ON off Apple | OpenGL 4.3 compute |
-| `LUCIDA_RENDER_VULKAN` | OFF | Vulkan (stub) |
-| `LUCIDA_PHYSICS_JOLT` | ON | Jolt |
-| `LUCIDA_PHYSICS_BULLET` | OFF | Bullet (mutually exclusive with Jolt) |
-| `LUCIDA_PREFER_SYSTEM_DEPS` | ON | Use system SDL2/assimp when present |
-| `LUCIDA_MACOS_UNIVERSAL` | OFF | Universal macOS binary |
-
 ---
 
-## Running
-
-### Projects
-
-A game is a folder, not a config file. Create one, then open it:
-
-```bash
-./build/lucida_sandbox --new-project MyGame    # scaffolds the layout below
-./build/lucida_sandbox --project MyGame        # opens it
-```
-
-```
-MyGame/
-├── project.json      name, startup scene, window and render defaults
-├── scenes/           .json scenes
-├── assets/           models and textures
-└── scripts/          Lua, once scripting lands
-```
-
-Everything inside is stored project-relative, so the folder can be zipped, moved to
-another machine and opened there.
-
-### Direct launch
-
-```bash
-./build/lucida_sandbox --scene lab             # basic | water | lab
-./build/lucida_sandbox --scene world.json      # or a scene file
-./build/lucida_sandbox --scene lab --export-scene world.json  # write one out to edit
-./build/lucida_sandbox --mesh model.glb        # load a model at startup
-./build/lucida_sandbox --bench 90              # 90 frames, print timings
-./build/lucida_sandbox --bench 90 --shot f.png # same, plus a frame capture
-./build/lucida_sandbox --verbose               # debug-level logging
-```
-
-`--bench` needs nobody watching: it is how you check the renderer is alive without
-looking at a window.
-
-### Controls & Shortcuts
+## Controls & Shortcuts
 
 | Keys / Mouse | Action |
 | --- | --- |
-| RMB + Mouse | Look around in Viewport / Game mode |
-| RMB + W A S D | Fly camera movement |
-| RMB + Q / E | Fly down / up |
-| RMB + Shift | Sprint speed boost |
-| RMB + Scroll | Adjust camera fly speed interactively |
-| F | Focus camera on selected object |
+| RMB + Mouse | Fly camera look-around (cursor captured) |
+| RMB + W A S D | Fly camera movement in 3D space |
+| RMB + Q / E | Fly camera down / up |
+| Shift + MMB | Pan camera in viewport (Blender style) |
+| MMB Drag | Orbit camera around selected entity |
+| 3D Orientation Gizmo | Drag top-right sphere to orbit or click axes for orthographic views |
+| RMB + Shift | Camera sprint fly mode (3.0x speed) |
+| RMB + Scroll | Dynamically adjust camera fly speed |
+| F | Frame and focus camera on selection |
 | 1 / 2 / 3 (or T / R / S) | Switch Gizmo mode (Translate / Rotate / Scale) |
-| Cmd+Z (Ctrl+Z) | Global Undo (Transforms, Materials, Hierarchy, Primitives, Deletion) |
+| Tab | Toggle Object Mode / Mesh Edit Mode |
+| Cmd+Z (Ctrl+Z) | Global Undo (Transforms, Materials, Hierarchy, Mesh edits) |
 | Cmd+Shift+Z / Cmd+Y | Global Redo |
-| Cmd+D (Ctrl+D) | Duplicate selected entity with full state |
-| Delete / Backspace | Delete selected entity (restorable via Undo) |
-| Tab / Esc | Toggle UI overlay and cursor capture |
+| Cmd+D (Ctrl+D) | Duplicate selection |
+| Delete / Backspace | Delete selection (undoable) |
+| Cmd+P (Ctrl+P) | Play / Stop simulation with state restoration |
 | F11 | Toggle Fullscreen |
-
-### Key Engine Features
-
-* **Unified Metal Compute Ray Tracer**: Deterministic Whitted RT with analytic soft shadows, directional sun casting, golden-angle hemisphere AO, multi-frequency trochoidal water waves, and volumetric fog.
-* **Hardware Upscaling**: Sub-pixel Halton jittering with per-instance Motion Vectors and Apple MetalFX Temporal Upscaling.
-* **Live PBR & Material Inspector**: 1-click automotive and metallic presets, live Albedo/Metallic/Roughness/Emission/IOR editing, and normal map support.
-* **Complete Scene Hierarchy**: Multi-part 3D model node tree extraction, drag-and-drop parenting, and 3D non-uniform scaling with uniform lock toggle.
-* **Global Undo / Redo Architecture**: Command pattern with `EntitySnapshot` component serialization covering all viewport and inspector interactions.
-* **Real-Time Lighting & Post-Processing**: Live sun positioning, sky irradiance, ACES/Reinhard/Filmic tonemapping, gamma correction, and Bayer dithering.
 
 ---
 
-## Layout
+## Core Engine Architecture
+
+- **Deterministic Compute Ray Tracer**: Metal compute pipeline with analytic soft shadows, directional sun, screen-space / ray-traced AO, trochoidal water simulation, and volumetric fog.
+- **Hardware Upscaling**: Sub-pixel Halton jittering with per-instance Motion Vectors and Apple MetalFX Temporal AA.
+- **Blender-Style Mesh Editor**: Vertex, Edge, and Face level modeling with Extrude, Inset, Subdivide, Normal recalculation, and UV projection.
+- **Jolt Physics Integration**: Rigid bodies (Dynamic, Static, Kinematic), character virtual controllers, raycast queries, and collision shapes.
+- **Play Mode State Snapshots**: Non-destructive ECS snapshots restoring transform trees and velocities on simulation exit.
+- **Modular Editor UI**: Split architecture (`EditorViewport`, `EditorInspector`, `EditorHierarchy`, `EditorConsole`, `EditorTextureBrowser`, `EditorMeshModeling`) under 600 lines per module.
+- **PBR Material System**: Albedo, Roughness, Metallic, Normal Maps, Emission, and Index of Refraction presets with GPU cache management.
+
+---
+
+## Directory Layout
 
 ```
 Lucida/
- cmake/Dependencies.cmake   third-party fetching
- engine/
-    core/       memory, containers, maths, logging, events, services
-    runtime/    fixed-step game loop, world, systems
-    render/     camera, mesh data, IRenderBackend interface
-    resource/   model import, texture arrays, BLAS construction
-    physics/    IPhysicsBackend
-    input/      HID layer: actions, not scancodes
- backends/
-    render_metal/    Metal + MetalFX
-    platform_sdl2/   window, input, surface
-    physics_jolt/    Jolt
- framework/      UI/UX: ImGui shell, camera controller
- apps/sandbox/   the demo that binds concrete backends together
+├── cmake/             Dependency configuration
+├── engine/
+│   ├── core/          Math, ECS (EnTT), memory, events, logging
+│   ├── runtime/       Fixed-step loop, World, gameplay systems, particles
+│   ├── render/        Camera, mesh data, IRenderBackend interface
+│   ├── resource/      Model loader, mesh builder, textures, terrain, prefabs
+│   ├── physics/       IPhysicsBackend interface
+│   ├── audio/         Audio system and components
+│   ├── animation/     Skeletal animation and skinning
+│   └── input/         Action-based HID abstraction
+├── backends/
+│   ├── render_metal/  Metal compute ray tracer and MetalFX
+│   ├── platform_sdl2/ Window, input, surface host
+│   └── physics_jolt/  Jolt physics backend
+├── framework/         Editor UI modules, camera controller, gizmos, theme
+└── apps/sandbox/      Main engine sandbox and project loader
 ```
-
-The rule that holds it together: **a module sees only what its
-`target_link_libraries` lists.** No `engine/*` file includes SDL2, Metal, Jolt or
-ImGui - choosing backends is the application's job.
 
 ---
 
-## **Architecture** follows three primary reference books strictly
+## Reference Foundations
 
-| # | Book | Author(s) | Used for |
-| --- | ------ | ----------- | ---------- |
-| 1 | **Game Engine Architecture** (3rd ed., 2018) | Jason Gregory | Layering model, subsystem inventory, memory management, the full engine feature checklist |
-| 2 | **Game Programming Patterns** (2014) | Robert Nystrom | Patterns inside each layer — Command, Observer, Service Locator, Object Pool, Component, Event Queue |
-| 3 | **Data-Oriented Design** (2018) | Richard Fabian | SoA memory layout, cache-friendly ECS, eliminating dynamic allocation in the hot path |
-| 4 | **Real-Time Rendering** (4th ed., 2018) | Akenine-Möller, Haines, Hoffman | Radiance Cascades, TLAS/BLAS two-level acceleration, BRDF derivation, PBR pipeline |
-| 5 | **Physically Based Rendering** (4th ed., 2023, PBRT) | Pharr, Jakob, Humphreys | Spectral transport, path integrator math, participating media — used as RT correctness reference |
-| 6 | **Mathematics for 3D Game Programming and Computer Graphics** (3rd ed.) | Eric Lengyel | Quaternion interpolation, frustum plane extraction, numerical stability of transforms |
+Engine implementation follows core principles from primary literature:
 
-* Rules and layering: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-* Where it is going, and why each library was chosen: [docs/ROADMAP.md](docs/ROADMAP.md)
-* Frame and memory budgets, and where a small engine beats a large one: [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
-* **What is implemented vs. the reference books, what is next:** [docs/STATUS.md](docs/STATUS.md)
+- Gregory, *Game Engine Architecture* (3rd ed., 2018) - Layering model and subsystem design.
+- Nystrom, *Game Programming Patterns* (2014) - Command, Observer, Service Locator, Component patterns.
+- Fabian, *Data-Oriented Design* (2018) - Structure of Arrays and cache-coherent ECS.
+- Akenine-Moeller et al., *Real-Time Rendering* (4th ed., 2018) - Two-level BVH, Radiance Cascades, PBR derivation.
+- Pharr et al., *Physically Based Rendering* (4th ed., 2023) - Deterministic transport correctness.
 
 ---
 

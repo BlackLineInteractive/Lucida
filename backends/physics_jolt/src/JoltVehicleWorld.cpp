@@ -1,7 +1,6 @@
 // Lucida Engine
 // Copyright (C) 2026 BlackLine Interactive
 // SPDX-License-Identifier: GPL-3.0-or-later
-// =========================================================== PhysicsWorld.cpp
 // Jolt Physics vehicle simulation for the 1969 Ford Mustang Boss 302.
 //
 // Mustang Boss 302 real-world specs used for tuning:

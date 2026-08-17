@@ -10,6 +10,7 @@
 #include "lucida/framework/Picking.h"
 #include "lucida/framework/Theme.h"
 #include "lucida/framework/Manual.h"
+#include "lucida/framework/Localization.h"
 #include "lucida/framework/Script.h"
 #include "lucida/framework/Systems.h"
 #include "lucida/audio/Components.h"

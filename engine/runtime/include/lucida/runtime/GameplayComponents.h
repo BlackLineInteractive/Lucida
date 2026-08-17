@@ -13,9 +13,7 @@
 
 namespace lucida {
 
-// =========================================================================
 // 1. Core & Spatial Hierarchy
-// =========================================================================
 
 struct PivotComponent {
     Vec3 pivot_offset{0.0f};
@@ -27,9 +25,7 @@ struct RootComponent {
     bool is_prefab_root = false;
 };
 
-// =========================================================================
 // 2. Geometry, Meshes, Decals & 2D-in-3D
-// =========================================================================
 
 struct InstancedMeshComponent {
     std::string mesh_path;
@@ -80,9 +76,7 @@ struct Text3DComponent {
     bool        face_camera = false;
 };
 
-// =========================================================================
 // 3. Environment, Atmosphere & Volumetrics
-// =========================================================================
 
 struct SkyboxComponent {
     std::string cubemap_path = "assets/textures/skybox.hdr";
@@ -127,9 +121,7 @@ struct LightProbeComponent {
     i32  sh_bands = 3; // Spherical Harmonics 3 bands (9 coefficients)
 };
 
-// =========================================================================
 // 4. Cameras & Cinematics
-// =========================================================================
 
 struct CinematicCameraComponent {
     f32 focal_length_mm = 50.0f; // 35mm, 50mm, 85mm portrait
@@ -152,9 +144,7 @@ struct DollyTrackComponent {
     f32  current_progress = 0.0f;
 };
 
-// =========================================================================
 // 5. World, Nature & Water
-// =========================================================================
 
 struct WaterBodyComponent {
     Vec2 plane_size{100.0f, 100.0f};
@@ -193,9 +183,7 @@ struct VoxelTerrainComponent {
     bool enable_caves = true;
 };
 
-// =========================================================================
 // 6. Physics, Constraints & Sensors
-// =========================================================================
 
 struct PhysicalMaterialComponent {
     f32 dynamic_friction = 0.6f;
@@ -270,9 +258,7 @@ struct DestructibleMeshComponent {
     bool is_fractured = false;
 };
 
-// =========================================================================
 // 7. Vehicles
-// =========================================================================
 
 struct WheeledVehicleComponent {
     f32 engine_peak_torque = 500.0f; // Nm
@@ -308,9 +294,7 @@ struct WatercraftComponent {
     f32 hull_drag = 1.5f;
 };
 
-// =========================================================================
 // 8. Characters, Controllers & Pawns
-// =========================================================================
 
 struct CharacterBodyComponent {
     f32  capsule_radius     = 0.40f;
@@ -361,9 +345,7 @@ struct RagdollComponent {
     f32  total_mass = 75.0f;
 };
 
-// =========================================================================
 // 9. Animation Extensions
-// =========================================================================
 
 struct BoneNodeComponent {
     std::string bone_name = "Spine_01";
@@ -394,9 +376,7 @@ struct MorphTargetComponent {
     std::vector<f32>         weights;
 };
 
-// =========================================================================
 // 10. AI & Navigation
-// =========================================================================
 
 struct NavMeshBoundsComponent {
     Vec3 size{50.0f, 10.0f, 50.0f};
@@ -455,9 +435,7 @@ struct SplinePathComponent {
     f32  path_length = 0.0f;
 };
 
-// =========================================================================
 // 11. Visual Effects (VFX)
-// =========================================================================
 
 struct VFXGraphComponent {
     std::string graph_asset = "assets/vfx/fire_sparks.vfx";
@@ -480,9 +458,7 @@ struct BeamEmitterComponent {
     f32  noise_amplitude = 0.1f;
 };
 
-// =========================================================================
 // 12. Audio & Acoustics
-// =========================================================================
 
 struct AudioReverbZoneComponent {
     f32  radius = 20.0f;
@@ -498,9 +474,7 @@ struct MusicTrackComponent {
     f32 crossfade_duration_sec = 2.0f;
 };
 
-// =========================================================================
 // 13. Gameplay, Stats & RPG Systems
-// =========================================================================
 
 struct HealthComponent {
     f32 current_health = 100.0f;
@@ -588,9 +562,7 @@ struct SpawnerComponent {
     f32         timer = 0.0f;
 };
 
-// =========================================================================
 // 14. Networking & Replication
-// =========================================================================
 
 struct NetworkIdentityComponent {
     u32 net_id = 0;
@@ -618,9 +590,7 @@ struct RPCComponent {
     std::vector<std::string> pending_rpc_names;
 };
 
-// =========================================================================
 // 15. User Interface (UI & HUD)
-// =========================================================================
 
 struct CanvasComponent {
     i32 sorting_order = 0;
@@ -669,9 +639,7 @@ struct MiniMapComponent {
     bool        show_on_radar = true;
 };
 
-// =========================================================================
 // 16. Scene Management, Optimization & Diagnostics
-// =========================================================================
 
 struct LODGroupComponent {
     f32 lod1_distance = 15.0f;

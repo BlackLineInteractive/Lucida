@@ -124,4 +124,10 @@ struct TagComponent {
     u32         layer = 0;
 };
 
+// Group / Folder entity grouping multiple children in hierarchy (Ctrl+G)
+struct GroupComponent {
+    std::string name = "Group";
+    bool collapsed = false;
+};
+
 } // namespace lucida

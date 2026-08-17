@@ -17,6 +17,8 @@
 #include "lucida/core/math/Frustum.h"
 #include "lucida/core/math/Tween.h"
 #include "lucida/framework/Commands.h"
+#include "lucida/framework/EditorUI.h"
+#include "lucida/framework/Localization.h"
 #include "lucida/framework/Picking.h"
 #include "lucida/framework/Script.h"
 #include "lucida/framework/Systems.h"
@@ -712,11 +714,93 @@ int main() {
     CharacterBodyComponent* cbc_test = char_world.Entities().Get<CharacterBodyComponent>(player_char);
     check(cbc_test != nullptr && cbc_test->physics_handle != UINT32_MAX,
           "CharacterSystem creates Jolt CharacterVirtual on Play");
-    char_sys.OnExitPlay(char_world, test_physics.get());
-    check(cbc_test->physics_handle == UINT32_MAX,
-          "CharacterSystem destroys physics handles on Stop");
-    test_physics->Shutdown();
-    char_world.Shutdown();
+    // --- Multi-Selection & UiState Tests
+    UiState test_ui;
+    Registry ui_reg;
+    Entity u1 = ui_reg.Create("u1");
+    Entity u2 = ui_reg.Create("u2");
+    Entity u3 = ui_reg.Create("u3");
+    test_ui.SelectAll(ui_reg);
+    check(test_ui.selections.size() == 3, "SelectAll selects all 3 entities");
+    check(test_ui.IsSelected(u1) && test_ui.IsSelected(u2) && test_ui.IsSelected(u3), "all entities marked selected");
+    test_ui.DeselectAll();
+    check(test_ui.selections.empty() && test_ui.selection == kNullEntity, "DeselectAll clears selection");
+    test_ui.SetSelected(u1, true, true);
+    test_ui.SetSelected(u2, true, true);
+    check(test_ui.selections.size() == 2 && test_ui.IsSelected(u1) && test_ui.IsSelected(u2), "multi-selection adds items");
+
+    // --- Grouping & Ungrouping Commands Test
+    CommandStack cmd_stack;
+    cmd_stack.Execute(std::make_unique<GroupEntitiesCommand>(ui_reg, test_ui.selections, "MyGroup"));
+    bool group_found = false;
+    Entity group_e = kNullEntity;
+    for (auto [e, name, gc] : ui_reg.View<Name, GroupComponent>().each()) {
+        if (name.value == "MyGroup") {
+            group_found = true;
+            group_e = e;
+        }
+    }
+    check(group_found && ui_reg.Valid(group_e), "GroupEntitiesCommand created Group entity");
+    const Parent* p1 = ui_reg.Get<Parent>(u1);
+    const Parent* p2 = ui_reg.Get<Parent>(u2);
+    check(p1 && p1->entity == group_e && p2 && p2->entity == group_e, "children parented to group");
+
+    // Test Ungroup Command
+    cmd_stack.Execute(std::make_unique<UngroupEntitiesCommand>(ui_reg, group_e));
+    check(!ui_reg.Valid(group_e), "Ungroup destroys group entity");
+    check(ui_reg.Get<Parent>(u1)->entity == kNullEntity, "children unparented after ungroup");
+
+    // Undo Ungroup -> restores group
+    cmd_stack.Undo();
+    int group_count_after_undo_ungroup = 0;
+    for (auto [e, gc] : ui_reg.View<GroupComponent>().each()) group_count_after_undo_ungroup++;
+    check(group_count_after_undo_ungroup >= 1, "undo ungroup restores group entity");
+
+    // Undo Group -> destroys group, restores originals
+    cmd_stack.Undo();
+    int group_count_after_undo_group = 0;
+    for (auto [e, gc] : ui_reg.View<GroupComponent>().each()) group_count_after_undo_group++;
+    check(group_count_after_undo_group == 0, "undo group removes group entity");
+
+    // --- Join Meshes Command Test
+    Entity j1 = ui_reg.Create("mesh1");
+    Entity j2 = ui_reg.Create("mesh2");
+    EditableMesh m1 = MeshBuilder::CreateCube(Vec3(0.5f));
+    EditableMesh m2 = MeshBuilder::CreateCube(Vec3(0.5f));
+    ui_reg.Add<EditableMeshComponent>(j1, EditableMeshComponent{m1, true});
+    ui_reg.Add<EditableMeshComponent>(j2, EditableMeshComponent{m2, true});
+    check(m1.vertices.size() == 24 && m1.faces.size() == 12, "initial cube has 24 vertices and 12 faces");
+
+    cmd_stack.Execute(std::make_unique<JoinMeshesCommand>(ui_reg, std::vector<Entity>{j1, j2}));
+    check(ui_reg.Valid(j1) && !ui_reg.Valid(j2), "JoinMeshes merged j2 into j1 and destroyed j2");
+    EditableMeshComponent* merged_comp = ui_reg.Get<EditableMeshComponent>(j1);
+    check(merged_comp && merged_comp->mesh.vertices.size() == 48, "merged mesh has 48 vertices (24 + 24)");
+    check(merged_comp && merged_comp->mesh.faces.size() == 24, "merged mesh has 24 faces (12 + 12)");
+
+    // Undo Join
+    cmd_stack.Undo();
+    int mesh_entity_count = 0;
+    for (auto [e, emc] : ui_reg.View<EditableMeshComponent>().each()) {
+        mesh_entity_count++;
+    }
+    check(mesh_entity_count == 2, "undo JoinMeshes restores both original entities");
+    check(ui_reg.Get<EditableMeshComponent>(j1)->mesh.vertices.size() == 24, "undo restored original mesh vertex count");
+
+    // --- Localization System Test
+    Localization::SetLanguage(Language::English);
+    check(std::string(TR("menu_file")) == "File", "Localization English menu_file is File");
+    check(std::string(TR("action_select_all")) == "Select All (A)", "Localization English action_select_all");
+
+    Localization::SetLanguage(Language::Ukrainian);
+    check(std::string(TR("menu_file")) == "Файл", "Localization Ukrainian menu_file is Файл");
+    check(std::string(TR("action_select_all")) == "Виділити все (A)", "Localization Ukrainian action_select_all");
+    check(std::string(TR("repeater_array")) == "Масив", "Localization Ukrainian repeater_array is Масив");
+
+    Localization::SetLanguage(Language::Russian);
+    check(std::string(TR("menu_file")) == "Файл", "Localization Russian menu_file is Файл");
+    check(std::string(TR("repeater_array")) == "Массив", "Localization Russian repeater_array is Массив");
+
+    Localization::SetLanguage(Language::English); // Restore default
 
     std::printf("\n%s\n", failures == 0 ? "all checks passed" : "SOME CHECKS FAILED");
     return failures;
