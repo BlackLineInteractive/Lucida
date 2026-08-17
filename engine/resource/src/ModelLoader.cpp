@@ -67,31 +67,37 @@ static void ResizeBox(const uint8_t* src, int sw, int sh, uint8_t* dst, int dw, 
     }
 }
 
-static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat) {
+static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat, const std::string& semantic_name = "") {
     GPUMaterial m{};
     aiColor4D   col;
     float       fval;
     aiString    name;
 
-    std::string mat_name;
-    if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_NAME, name)) {
-        mat_name = name.C_Str();
-        std::transform(mat_name.begin(), mat_name.end(), mat_name.begin(), ::tolower);
+    std::string s = semantic_name;
+    if (s.empty()) {
+        if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_NAME, name)) {
+            s = name.C_Str();
+        }
     }
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
 
     // Base color / albedo
-    m.albedo[0] = 0.85f; m.albedo[1] = 0.85f; m.albedo[2] = 0.85f;
+    m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
     if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_BASE_COLOR, col)) {
         m.albedo[0] = col.r; m.albedo[1] = col.g; m.albedo[2] = col.b;
     } else if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col)) {
         m.albedo[0] = col.r; m.albedo[1] = col.g; m.albedo[2] = col.b;
     }
 
-    // Emissive
-    if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, col) &&
-        (col.r + col.g + col.b) > 0.01f) {
-        m.emission[0] = col.r; m.emission[1] = col.g; m.emission[2] = col.b;
-        m.type = 3; // EMISSIVE
+    // Emissive: only true light sources (bulbs, neon, lamps)
+    if (s.find("light") != std::string::npos || s.find("lamp") != std::string::npos ||
+        s.find("neon") != std::string::npos || s.find("bulb") != std::string::npos ||
+        s.find("emiss") != std::string::npos) {
+        if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, col) &&
+            (col.r + col.g + col.b) > 0.05f) {
+            m.emission[0] = col.r; m.emission[1] = col.g; m.emission[2] = col.b;
+            m.type = 3; // EMISSIVE
+        }
     }
 
     // Opacity / Transmission / Glass detection
@@ -99,7 +105,7 @@ static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat) {
     ai_mat->Get(AI_MATKEY_OPACITY, opacity);
     float transmission = 0.0f;
     ai_mat->Get(AI_MATKEY_TRANSMISSION_FACTOR, transmission);
-    float refracti = 1.5f;
+    float refracti = 1.52f;
     ai_mat->Get(AI_MATKEY_REFRACTI, refracti);
 
     // Metallic / roughness factors
@@ -111,49 +117,109 @@ static GPUMaterial ConvertMaterial(const aiMaterial* ai_mat) {
     // Intelligent physical classification based on semantic naming & PBR attributes
     if (m.type != 3) {
         if (opacity < 0.92f || transmission > 0.08f ||
-            mat_name.find("glass") != std::string::npos ||
-            mat_name.find("window") != std::string::npos ||
-            mat_name.find("windshield") != std::string::npos ||
-            mat_name.find("lens") != std::string::npos ||
-            mat_name.find("lightglass") != std::string::npos ||
-            mat_name.find("transparent") != std::string::npos) {
+            (s.find("glass") != std::string::npos && s.find("mirror") == std::string::npos) ||
+            s.find("window") != std::string::npos ||
+            s.find("windshield") != std::string::npos ||
+            s.find("lens") != std::string::npos ||
+            s.find("lightglass") != std::string::npos ||
+            s.find("light_glass") != std::string::npos ||
+            s.find("transparent") != std::string::npos) {
             m.type = 2; // GLASS
             m.refractive_index = (refracti > 1.0f) ? refracti : 1.52f;
             m.roughness = 0.0f;
             m.metallic = 0.0f;
-            if (m.albedo[0] < 0.05f && m.albedo[1] < 0.05f && m.albedo[2] < 0.05f) {
-                m.albedo[0] = 0.95f; m.albedo[1] = 0.98f; m.albedo[2] = 1.0f;
+            if (s.find("red") != std::string::npos || s.find("tail") != std::string::npos) {
+                m.albedo[0] = 0.88f; m.albedo[1] = 0.04f; m.albedo[2] = 0.04f; // Red taillight glass
+            } else if (s.find("amber") != std::string::npos || s.find("turn") != std::string::npos || s.find("orange") != std::string::npos) {
+                m.albedo[0] = 0.95f; m.albedo[1] = 0.45f; m.albedo[2] = 0.02f; // Amber turn signal glass
+            } else {
+                m.albedo[0] = 0.95f; m.albedo[1] = 0.98f; m.albedo[2] = 1.0f; // Clear window glass
             }
-        } else if (mat_name.find("chrome") != std::string::npos ||
-                   mat_name.find("mirror") != std::string::npos ||
-                   mat_name.find("nickel") != std::string::npos ||
-                   mat_name.find("badge") != std::string::npos ||
-                   (m.metallic > 0.75f && m.roughness < 0.15f)) {
-            m.type = 1; // METAL (Mirror)
+        } else if (s.find("glassopaque_mirror") != std::string::npos) {
+            m.type = 1; // METAL (Pure Mirror reflection for side mirror glass)
             m.metallic = 1.0f;
-            m.roughness = std::max(m.roughness, 0.02f);
-            if (m.albedo[0] < 0.1f && m.albedo[1] < 0.1f && m.albedo[2] < 0.1f) {
-                m.albedo[0] = m.albedo[1] = m.albedo[2] = 0.95f;
-            }
-        } else if (mat_name.find("tire") != std::string::npos ||
-                   mat_name.find("rubber") != std::string::npos) {
-            m.type = 6; // PBR
-            m.albedo[0] = m.albedo[1] = m.albedo[2] = 0.08f;
+            m.roughness = 0.01f;
+            m.albedo[0] = 0.95f; m.albedo[1] = 0.95f; m.albedo[2] = 0.95f;
+        } else if (s.find("chromes") != std::string::npos || s.find("chrome") != std::string::npos) {
+            m.type = 6; // PBR Chrome & Trim (samples Nickel_baseColor palette for black trim + chrome bumper)
+            m.metallic = 0.95f;
+            m.roughness = 0.05f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("nickel") != std::string::npos) {
+            m.type = 6; // PBR Nickel / Trim
+            m.metallic = 0.40f;
+            m.roughness = 0.35f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("chassis") != std::string::npos && s.find("color_2") == std::string::npos) {
+            m.type = 6; // PBR Chassis / Underbody (Satin black)
+            m.metallic = 0.10f;
+            m.roughness = 0.60f;
+            m.albedo[0] = 0.04f; m.albedo[1] = 0.04f; m.albedo[2] = 0.04f;
+        } else if (s.find("color_2") != std::string::npos ||
+                   s.find("stripe") != std::string::npos ||
+                   s.find("hood") != std::string::npos ||
+                   s.find("spoiler") != std::string::npos ||
+                   s.find("louver") != std::string::npos) {
+            m.type = 6; // PBR Boss 302 Black Graphic / Hood / Spoiler / Louvers
+            m.albedo[0] = 0.02f; m.albedo[1] = 0.02f; m.albedo[2] = 0.02f;
+            m.roughness = 0.55f;
+            m.metallic = 0.0f;
+        } else if (s.find("plastic") != std::string::npos ||
+                   s.find("trim") != std::string::npos ||
+                   s.find("plasr") != std::string::npos ||
+                   s.find("plass") != std::string::npos ||
+                   s.find("plate") != std::string::npos ||
+                   s.find("license") != std::string::npos) {
+            m.type = 6; // PBR Plastic / Trim
+            m.albedo[0] = 0.025f; m.albedo[1] = 0.025f; m.albedo[2] = 0.025f;
+            m.roughness = (s.find("plass") != std::string::npos || s.find("smooth") != std::string::npos) ? 0.35f : 0.70f;
+            m.metallic = (s.find("plass") != std::string::npos) ? 0.05f : 0.0f;
+        } else if (s.find("interior") != std::string::npos) {
+            m.type = 6; // PBR Interior (Cabin / Dashboard / Seats)
+            m.roughness = 0.55f;
+            m.metallic = 0.0f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("engine") != std::string::npos) {
+            m.type = 6; // PBR Engine
+            m.roughness = 0.35f;
+            m.metallic = 0.65f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("tire") != std::string::npos ||
+                   s.find("rubber") != std::string::npos) {
+            m.type = 6; // PBR Tire
             m.roughness = 0.85f;
             m.metallic = 0.0f;
-        } else if (mat_name.find("plastic") != std::string::npos ||
-                   mat_name.find("trim") != std::string::npos) {
-            m.type = 6; // PBR
-            m.albedo[0] = m.albedo[1] = m.albedo[2] = 0.06f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("barrel") != std::string::npos ||
+                   s.find("wheel") != std::string::npos ||
+                   s.find("rim") != std::string::npos) {
+            m.type = 6; // PBR Wheel
+            m.roughness = 0.20f;
+            m.metallic = 0.85f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("brake") != std::string::npos ||
+                   s.find("caliper") != std::string::npos) {
+            m.type = 6; // PBR Brake
             m.roughness = 0.35f;
-            m.metallic = 0.05f;
-        } else if (mat_name.find("carpaint") != std::string::npos ||
-                   mat_name.find("paint") != std::string::npos ||
-                   mat_name.find("body") != std::string::npos ||
-                   mat_name.find("chassis") != std::string::npos) {
-            m.type = 6; // PBR Car Paint
+            m.metallic = 0.65f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("badge") != std::string::npos ||
+                   s.find("emblem") != std::string::npos ||
+                   s.find("logo") != std::string::npos) {
+            m.type = 6; // PBR Badge
+            m.roughness = 0.15f;
+            m.metallic = 0.85f;
+            m.albedo[0] = 1.0f; m.albedo[1] = 1.0f; m.albedo[2] = 1.0f;
+        } else if (s.find("carpaint") != std::string::npos ||
+                   s.find("paint") != std::string::npos ||
+                   s.find("body") != std::string::npos) {
+            m.type = 6; // PBR Car Paint (Grabber Blue Boss 302)
             m.roughness = 0.12f; // Glossy clearcoat
-            m.metallic  = (m.metallic > 0.1f) ? m.metallic : 0.05f;
+            m.metallic  = 0.08f;
+            // Iconic 1969 Mustang Grabber Blue
+            m.albedo[0] = 0.055f;
+            m.albedo[1] = 0.482f;
+            m.albedo[2] = 0.902f;
         } else {
             m.type = 6; // PBR
         }
@@ -450,6 +516,57 @@ MeshData LoadModel(const std::string& path, float target_size) {
 
     result.materials.resize(scene->mNumMaterials);
 
+    // Build semantic names for each material index from material names, mesh names, node names, and textures
+    std::vector<std::string> mat_semantic_names(scene->mNumMaterials);
+    for (unsigned int mi = 0; mi < scene->mNumMaterials; mi++) {
+        const aiMaterial* ai_mat = scene->mMaterials[mi];
+        aiString name;
+        if (AI_SUCCESS == ai_mat->Get(AI_MATKEY_NAME, name)) {
+            mat_semantic_names[mi] += name.C_Str();
+            mat_semantic_names[mi] += " ";
+        }
+        aiString tex_path;
+        if (GetBaseColorTexture(ai_mat, tex_path)) {
+            mat_semantic_names[mi] += tex_path.C_Str();
+            mat_semantic_names[mi] += " ";
+        }
+        aiString norm_path;
+        if (GetNormalTexture(ai_mat, norm_path)) {
+            mat_semantic_names[mi] += norm_path.C_Str();
+            mat_semantic_names[mi] += " ";
+        }
+    }
+
+    for (unsigned int i = 0; i < scene->mNumMeshes; i++) {
+        const aiMesh* mesh = scene->mMeshes[i];
+        unsigned int mat_idx = mesh->mMaterialIndex;
+        if (mat_idx < mat_semantic_names.size()) {
+            mat_semantic_names[mat_idx] += mesh->mName.C_Str();
+            mat_semantic_names[mat_idx] += " ";
+        }
+    }
+
+    std::function<void(const aiNode*)> collectNodeNames = [&](const aiNode* node) {
+        for (unsigned int i = 0; i < node->mNumMeshes; i++) {
+            unsigned int mesh_idx = node->mMeshes[i];
+            if (mesh_idx < scene->mNumMeshes) {
+                unsigned int mat_idx = scene->mMeshes[mesh_idx]->mMaterialIndex;
+                if (mat_idx < mat_semantic_names.size()) {
+                    mat_semantic_names[mat_idx] += node->mName.C_Str();
+                    mat_semantic_names[mat_idx] += " ";
+                }
+            }
+        }
+        for (unsigned int c = 0; c < node->mNumChildren; c++) {
+            collectNodeNames(node->mChildren[c]);
+        }
+    };
+    if (scene->mRootNode) collectNodeNames(scene->mRootNode);
+
+    for (auto& s : mat_semantic_names) {
+        std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    }
+
     // Decoding and resampling 4K source maps is the bulk of the load time for a
     // file like Sponza4k.glb, and every material is independent, so fan it out.
     unsigned hw = std::max(1u, std::thread::hardware_concurrency());
@@ -495,14 +612,30 @@ MeshData LoadModel(const std::string& path, float target_size) {
             if (mi >= scene->mNumMaterials) return;
 
             const aiMaterial* ai_mat = scene->mMaterials[mi];
-            GPUMaterial gm = ConvertMaterial(ai_mat);
+            const std::string& semantic_name = mat_semantic_names[mi];
+            GPUMaterial gm = ConvertMaterial(ai_mat, semantic_name);
 
             uint8_t* dst     = result.texture_array_data.data() + (size_t)mi * slice_texels * 4;
             uint8_t* orm_dst = result.orm_array_data.data()     + (size_t)mi * orm_texels * 4;
 
             // ---- base colour
             aiString tex_path;
-            if (GetBaseColorTexture(ai_mat, tex_path)) {
+            bool load_bc_tex = GetBaseColorTexture(ai_mat, tex_path);
+            if (load_bc_tex) {
+                std::string tp = tex_path.C_Str();
+                std::transform(tp.begin(), tp.end(), tp.begin(), ::tolower);
+                // Reject invalid texture assignments from GLTF exporter
+                if (gm.type == 1 || gm.type == 2 || semantic_name.find("glass") != std::string::npos || semantic_name.find("window") != std::string::npos) {
+                    load_bc_tex = false;
+                } else if (semantic_name.find("chassis") != std::string::npos && semantic_name.find("color_2") == std::string::npos) {
+                    load_bc_tex = false;
+                } else if ((semantic_name.find("plas") != std::string::npos || semantic_name.find("trim") != std::string::npos || semantic_name.find("plate") != std::string::npos) && (tp == "*2" || tp.find("nickel") != std::string::npos)) {
+                    load_bc_tex = false;
+                } else if ((semantic_name.find("carpaint") != std::string::npos || semantic_name.find("color_2") != std::string::npos) && (tp == "*2" || tp.find("nickel") != std::string::npos)) {
+                    load_bc_tex = false;
+                }
+            }
+            if (load_bc_tex) {
                 int tw = 0, th = 0;
                 uint8_t* pixels = decode_texture(tex_path, tw, th);
                 if (pixels) {
@@ -520,8 +653,9 @@ MeshData LoadModel(const std::string& path, float target_size) {
                 uint8_t r = (uint8_t)(std::clamp(gm.albedo[0], 0.0f, 1.0f) * 255.0f);
                 uint8_t g = (uint8_t)(std::clamp(gm.albedo[1], 0.0f, 1.0f) * 255.0f);
                 uint8_t b = (uint8_t)(std::clamp(gm.albedo[2], 0.0f, 1.0f) * 255.0f);
+                uint8_t a = (gm.type == 2) ? 0 : 255;
                 for (size_t i = 0; i < slice_texels; i++) {
-                    dst[i*4+0] = r; dst[i*4+1] = g; dst[i*4+2] = b; dst[i*4+3] = 255;
+                    dst[i*4+0] = r; dst[i*4+1] = g; dst[i*4+2] = b; dst[i*4+3] = a;
                 }
             }
 
@@ -569,19 +703,28 @@ MeshData LoadModel(const std::string& path, float target_size) {
             // If no normal map was found the default flat (128,128,255) is already in place.
 
             double br=0, bg=0, bb=0, ba=0, bopaque=0, wr=0, wg=0, wb=0, wsum=0;
+            double min_alpha = 1.0;
+            double num_transparent = 0;
             for (size_t i = 0; i < slice_texels; i++) {
                 br += dst[i*4+0]; bg += dst[i*4+1]; bb += dst[i*4+2]; ba += dst[i*4+3];
-                if (dst[i*4+3] < 128) bopaque += 1.0;
-                { double aw = dst[i*4+3] / 255.0;
+                uint8_t a = dst[i*4+3];
+                if (a < 250) {
+                    num_transparent += 1.0;
+                    if (a / 255.0 < min_alpha) min_alpha = a / 255.0;
+                }
+                { double aw = a / 255.0;
                   wr += dst[i*4+0] * aw; wg += dst[i*4+1] * aw; wb += dst[i*4+2] * aw; wsum += aw; }
             }
             br /= slice_texels*255.0; bg /= slice_texels*255.0; bb /= slice_texels*255.0;
-            ba /= slice_texels*255.0; bopaque /= (double)slice_texels;
+            ba /= slice_texels*255.0; bopaque = num_transparent / (double)slice_texels;
             if (wsum > 0) { wr /= wsum*255.0; wg /= wsum*255.0; wb /= wsum*255.0; }
 
             // Decide once, from the data, whether this material is see-through.
-            // Decals have substantial transparency (> 10%), ordinary stone/metal is ~0.
-            if (bopaque > 0.10) gm.flags |= MATFLAG_ALPHA_BLEND;
+            bool is_decal = semantic_name.find("badge") != std::string::npos ||
+                            semantic_name.find("emblem") != std::string::npos ||
+                            semantic_name.find("decal") != std::string::npos ||
+                            semantic_name.find("logo") != std::string::npos;
+            if (is_decal && bopaque > 0.001 && gm.type != 2) gm.flags |= MATFLAG_ALPHA_BLEND;
             result.materials[mi] = gm;
 
             double ar=0, ag=0, ab=0;
@@ -591,7 +734,7 @@ MeshData LoadModel(const std::string& path, float target_size) {
             ar /= orm_texels*255.0; ag /= orm_texels*255.0; ab /= orm_texels*255.0;
 
             std::lock_guard<std::mutex> lk(log_mutex);
-            std::cout << "[ModelLoader] Material " << mi
+            std::cout << "[ModelLoader] Material " << mi << " (" << semantic_name.substr(0, 35) << ")"
                       << ": basecolor=" << ((gm.flags & MATFLAG_HAS_BASECOLOR_TEX) ? "tex" : "flat")
                       << " orm=" << ((gm.flags & MATFLAG_HAS_ORM_TEX) ? orm_kind : "flat")
                       << " metallic=" << gm.metallic
@@ -639,6 +782,24 @@ MeshData LoadModel(const std::string& path, float target_size) {
             submesh.tri_start = (int)result.triangles.size();
             submesh.mat_index = mat_idx;
 
+            aiVector3D m_min(1e9f, 1e9f, 1e9f), m_max(-1e9f, -1e9f, -1e9f);
+            for (unsigned int v = 0; v < mesh->mNumVertices; v++) {
+                m_min.x = std::min(m_min.x, mesh->mVertices[v].x);
+                m_min.y = std::min(m_min.y, mesh->mVertices[v].y);
+                m_min.z = std::min(m_min.z, mesh->mVertices[v].z);
+                m_max.x = std::max(m_max.x, mesh->mVertices[v].x);
+                m_max.y = std::max(m_max.y, mesh->mVertices[v].y);
+                m_max.z = std::max(m_max.z, mesh->mVertices[v].z);
+            }
+            aiVector3D m_ext = m_max - m_min;
+            aiVector3D m_cnt = (m_min + m_max) * 0.5f;
+            std::string s_lower = sname;
+            std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
+            bool is_wheel_part = s_lower.find("tire") != std::string::npos ||
+                                 s_lower.find("wheel") != std::string::npos ||
+                                 s_lower.find("barrel") != std::string::npos ||
+                                 s_lower.find("brake") != std::string::npos;
+
             for (unsigned int f = 0; f < mesh->mNumFaces; f++) {
                 const aiFace& face = mesh->mFaces[f];
                 if (face.mNumIndices != 3) continue;
@@ -665,6 +826,26 @@ MeshData LoadModel(const std::string& path, float target_size) {
                     if (mesh->HasTextureCoords(0)) {
                         dst_uv[0] = mesh->mTextureCoords[0][idx].x;
                         dst_uv[1] = mesh->mTextureCoords[0][idx].y;
+                    } else if (is_wheel_part) {
+                        float vy = mesh->mVertices[idx].y - m_cnt.y;
+                        float vz = mesh->mVertices[idx].z - m_cnt.z;
+                        float theta = std::atan2(vz, vy);
+                        dst_uv[0] = (theta + (float)M_PI) / (2.0f * (float)M_PI);
+                        dst_uv[1] = (mesh->mVertices[idx].x - m_min.x) / std::max(m_ext.x, 1e-4f);
+                    } else {
+                        float nx = mesh->HasNormals() ? std::abs(mesh->mNormals[idx].x) : 0.0f;
+                        float ny = mesh->HasNormals() ? std::abs(mesh->mNormals[idx].y) : 1.0f;
+                        float nz = mesh->HasNormals() ? std::abs(mesh->mNormals[idx].z) : 0.0f;
+                        if (nz >= nx && nz >= ny) {
+                            dst_uv[0] = (mesh->mVertices[idx].x - m_min.x) / std::max(m_ext.x, 1e-4f);
+                            dst_uv[1] = (mesh->mVertices[idx].y - m_min.y) / std::max(m_ext.y, 1e-4f);
+                        } else if (ny >= nx) {
+                            dst_uv[0] = (mesh->mVertices[idx].x - m_min.x) / std::max(m_ext.x, 1e-4f);
+                            dst_uv[1] = (mesh->mVertices[idx].z - m_min.z) / std::max(m_ext.z, 1e-4f);
+                        } else {
+                            dst_uv[0] = (mesh->mVertices[idx].z - m_min.z) / std::max(m_ext.z, 1e-4f);
+                            dst_uv[1] = (mesh->mVertices[idx].y - m_min.y) / std::max(m_ext.y, 1e-4f);
+                        }
                     }
                 }
                 tri.mat_index = mat_idx;

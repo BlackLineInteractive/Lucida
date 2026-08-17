@@ -1224,8 +1224,9 @@ public:
   bool ReadbackFrame(std::vector<uint8_t> &rgba, int &w, int &h) override {
     if (!m_tex_present) return false;
 
-    w = m_render_w;
-    h = m_render_h;
+    w = (int)m_tex_present.width;
+    h = (int)m_tex_present.height;
+    if (w <= 0 || h <= 0) return false;
 
     // Blit into a shared buffer rather than reading the private texture
     // directly: on a discrete GPU the presented texture lives in VRAM.

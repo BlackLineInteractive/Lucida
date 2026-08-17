@@ -183,6 +183,7 @@ public:
             m_ui_state.requested_backend = UiState::RenderBackendType::MetalRayTracing;
         }
 
+        const std::string startup_model = m_config.model_path;
         LoadScene(world, m_ui_state.scene);
         m_renderer->ApplySettings(m_config.render);
         m_camera.SetMode(m_config.walk_mode ? CameraMode::Walk : CameraMode::Fly);
@@ -200,8 +201,8 @@ public:
         }
         m_render_sync_system = world.AddSystem<RenderSyncSystem>(*m_renderer);
 
-        if (!m_config.model_path.empty() && std::filesystem::exists(m_project.Resolve(m_config.model_path)))
-            LoadModelFile(world, m_project.Resolve(m_config.model_path));
+        if (!startup_model.empty() && std::filesystem::exists(m_project.Resolve(startup_model)))
+            LoadModelFile(world, m_project.Resolve(startup_model));
 
         // Always start in Editor mode: panels active, cursor free.
         m_ui_state.show_menu = true;
@@ -690,6 +691,18 @@ private:
 
         m_renderer->SetMeshOrigin(m_config.model_pos);
         m_config.model_path = m_project.MakeRelative(path);
+
+        // Frame camera on the imported model with a 3/4 beauty view
+        Vec3 bounds_center = (mesh.aabb_min + mesh.aabb_max) * 0.5f;
+        Vec3 bounds_extent = mesh.aabb_max - mesh.aabb_min;
+        float radius = glm::length(bounds_extent) * 0.5f;
+        if (radius < 0.1f) radius = 2.0f;
+        Vec3 eye_pos = bounds_center + Vec3(radius * 0.95f, radius * 0.40f, radius * 1.05f);
+        Vec3 dir = glm::normalize(bounds_center - eye_pos);
+        m_camera.Camera().position = eye_pos;
+        m_camera.Camera().yaw      = std::atan2(dir.z, dir.x);
+        m_camera.Camera().pitch    = std::asin(std::clamp(dir.y, -0.99f, 0.99f));
+
         LUCIDA_INFO(App, "world holds %zu entities (imported %zu submeshes)", entities.Count(), mesh.submeshes.size());
     }
 

@@ -137,6 +137,9 @@ struct HitInfo {
     // thousands for objects far from the origin, where fract() loses all
     // precision and the noise collapses to a constant.
     float3 obj_origin;
+    // Accurate geometric tangent and bitangent for tangent-space normal mapping
+    float3 tangent;
+    float3 bitangent;
 };
 
 // Origin for a secondary ray leaving a surface. The offset scales with hit
@@ -276,11 +279,30 @@ HitInfo resolve_tri_hit(Ray ray, TriHit th, device const TriPos* tris,
     float2 duv1 = at.uv1 - at.uv0;
     float2 duv2 = at.uv2 - at.uv0;
     float  uv_area    = abs(duv1.x * duv2.y - duv1.y * duv2.x);
-    float3 geo_cross  = cross(tri.e1, tri.e2);
+    float3 e1         = float3(tri.e1);
+    float3 e2         = float3(tri.e2);
+    float3 geo_cross  = cross(e1, e2);
     float  world_area = length(geo_cross);
     info.uv_density   = sqrt(uv_area / max(world_area, 1e-12f));
     info.geo_normal   = (world_area > 1e-20f) ? (geo_cross / world_area) : info.normal;
     info.obj_origin   = float3(0.0);
+
+    float det = duv1.x * duv2.y - duv1.y * duv2.x;
+    float3 geom_tangent;
+    float3 geom_bitangent;
+    if (abs(det) > 1e-7f) {
+        float inv_det = 1.0f / det;
+        geom_tangent   = normalize(inv_det * (duv2.y * e1 - duv1.y * e2));
+        geom_bitangent = normalize(inv_det * (-duv2.x * e1 + duv1.x * e2));
+    } else {
+        float3 up = abs(info.normal.z) < 0.999f ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
+        geom_tangent   = normalize(cross(up, info.normal));
+        geom_bitangent = normalize(cross(info.normal, geom_tangent));
+    }
+    geom_tangent   = normalize(geom_tangent - info.normal * dot(info.normal, geom_tangent));
+    geom_bitangent = normalize(cross(info.normal, geom_tangent));
+    info.tangent   = geom_tangent;
+    info.bitangent = geom_bitangent;
     return info;
 }
 
@@ -721,6 +743,8 @@ HitInfo find_closest(Ray ray,
             h.point      = xform_point(inst.l2w0, inst.l2w1, inst.l2w2, h.point);
             h.normal     = normalize(xform_dir(inst.l2w0, inst.l2w1, inst.l2w2, h.normal));
             h.geo_normal = normalize(xform_dir(inst.l2w0, inst.l2w1, inst.l2w2, h.geo_normal));
+            h.tangent    = normalize(xform_dir(inst.l2w0, inst.l2w1, inst.l2w2, h.tangent));
+            h.bitangent  = normalize(xform_dir(inst.l2w0, inst.l2w1, inst.l2w2, h.bitangent));
             h.obj_origin = xform_point(inst.l2w0, inst.l2w1, inst.l2w2, h.obj_origin);
             h.mat_index += inst.mat_base;
             closest = h;
@@ -1125,20 +1149,29 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 float4 tex_color = mesh_textures.sample(mesh_sampler, uv, hit.mat_index, level(tex_lod));
                 mat.albedo = (mat.flags & MATFLAG_HAS_BASECOLOR_TEX) ? (tex_color.xyz * mat.albedo) : tex_color.xyz;
 
-                // Alpha. Sponza's grime and banner decals are separate polygons
-                // laid over the walls, ~70% transparent, meant to blend.
+                // Alpha cutout and blending
                 if (mat.flags & MATFLAG_ALPHA_BLEND) {
                     float alpha = tex_color.w;
-                    float3 cont_o = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
-
-                    if (alpha < 0.995f) {
+                    // Cutout alpha (e.g. badge cutouts, grille mesh holes, engine decals)
+                    if (alpha < 0.35f) {
                         if (sp < MAX_STACK) {
+                            float3 cont_o = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
+                            stack_ray[sp]     = make_ray(cont_o, cur.direction);
+                            stack_contrib[sp] = contrib;
+                            stack_depth[sp]   = depth;
+                            sp++;
+                        }
+                        continue;
+                    }
+                    // Semi-transparent alpha blending
+                    if (alpha < 0.99f) {
+                        if (sp < MAX_STACK) {
+                            float3 cont_o = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
                             stack_ray[sp]     = make_ray(cont_o, cur.direction);
                             stack_contrib[sp] = contrib * (1.0f - alpha);
                             stack_depth[sp]   = depth;
                             sp++;
                         }
-                        if (alpha < 0.02f) continue;   // nothing visible here
                         contrib *= alpha;
                     }
                 }
@@ -1150,14 +1183,10 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                     mat.metallic  = orm.z;
                 }
 
-                // Tangent-space normal mapping
+                // Tangent-space normal mapping with accurate UV tangent frame
                 if (mat.flags & MATFLAG_HAS_NORMAL_TEX) {
                     float3 map_n = mesh_normals.sample(mesh_sampler, uv, hit.mat_index, level(tex_lod)).xyz * 2.0f - 1.0f;
-                    float3 Ngeom = hit.normal;
-                    float3 up_axis = abs(Ngeom.z) < 0.999f ? float3(0.0, 0.0, 1.0) : float3(1.0, 0.0, 0.0);
-                    float3 T = normalize(cross(up_axis, Ngeom));
-                    float3 B = cross(Ngeom, T);
-                    hit.normal = normalize(T * map_n.x + B * map_n.y + Ngeom * map_n.z);
+                    hit.normal = normalize(hit.tangent * map_n.x + hit.bitangent * map_n.y + hit.normal * map_n.z);
                 }
             }
         } else {
@@ -1384,47 +1413,58 @@ float3 trace_ray(Ray ray, device const Material* materials, device const Sphere*
                 }
             }
 
-            float n1 = 1.0, n2 = max(mat.refractive_index, 1.01f);
             float3 Nf = hit.normal;
-            float cos_i = -dot(cur.direction, Nf);
-            if (cos_i < 0.0) { 
-                float tmp = n1; n1 = n2; n2 = tmp; 
-                Nf = -Nf; 
-                cos_i = -cos_i; 
+            float3 glass_tint = (length(alb) > 0.01) ? alb : float3(1.0);
+
+            if (u.sun_enabled != 0) {
+                float3 sdir = get_sun_dir(u);
+                float3 scol = get_sun_color(u) * (u.sun_intensity * 0.4f);
+                float sun_ndl = max(0.0, dot(Nf, sdir));
+                if (sun_ndl > 0.0) {
+                    float vis = sun_shadow(hit.point, hit.geo_normal, hit.t, bvh_nodes, triangles, instances, u);
+                    float3 H = normalize(sdir + V);
+                    float NdotH = max(0.0, dot(Nf, H));
+                    float spec = pow(NdotH, 256.0) * (264.0 / 25.13274) * sun_ndl;
+                    spec_light += scol * spec * vis;
+                    if (glass_tint.x > 0.5f && (glass_tint.y < 0.2f || glass_tint.z < 0.2f)) {
+                        spec_light += scol * glass_tint * sun_ndl * vis * 0.6f;
+                    }
+                }
+            }
+            if (glass_tint.x > 0.5f && (glass_tint.y < 0.2f || glass_tint.z < 0.2f)) {
+                result += contrib * glass_tint * 0.40f;
             }
 
-            float eta = n1 / n2;
-            float k = 1.0 - eta * eta * (1.0 - cos_i * cos_i);
-            float fresnel_r = (k < 0.0) ? 1.0 : schlick(cos_i, n1, n2).x;
-            fresnel_r = clamp(fresnel_r, 0.04f, 1.0f);
+            float cos_i = abs(dot(cur.direction, Nf));
+            float n2 = max(mat.refractive_index, 1.52f);
+            float fresnel_r = clamp(schlick(cos_i, 1.0f, n2).x, 0.04f, 0.80f);
 
-            // Add surface specular highlight and sky reflection
+            // Add surface specular highlight from active scene lights and sun
+            result += contrib * spec_light;
+
             float3 R = reflect(cur.direction, Nf);
-            result += contrib * spec_light * fresnel_r;
-            result += contrib * sky_color(R, u) * fresnel_r * 0.35f;
-
-            float3 glass_tint = (length(alb) > 0.01) ? alb : float3(1.0);
 
             if (sp < MAX_STACK && depth > 1) {
                 // Reflected ray
                 if (fresnel_r > 0.04f) {
-                    stack_ray[sp] = make_ray(hit.point + Nf * 2e-3, R);
+                    stack_ray[sp] = make_ray(offset_ray(hit.point, Nf, R, hit.t), R);
                     stack_contrib[sp] = contrib * fresnel_r;
                     stack_depth[sp] = depth - 1;
                     sp++;
                 }
-                // Refracted ray
-                if (k >= 0.0 && (1.0 - fresnel_r) > 0.04f && sp < MAX_STACK) {
-                    float3 T = eta * cur.direction + (eta * cos_i - sqrt(k)) * Nf;
-                    stack_ray[sp] = make_ray(hit.point - Nf * 3e-3, T);
-                    stack_contrib[sp] = contrib * (1.0 - fresnel_r) * glass_tint;
+                // Transmitted ray
+                float trans_w = 1.0f - fresnel_r;
+                if (trans_w > 0.02f) {
+                    float3 trans_pt = hit.point + cur.direction * max(1e-3f, hit.t * 2e-3f);
+                    stack_ray[sp] = make_ray(trans_pt, cur.direction);
+                    stack_contrib[sp] = contrib * trans_w * glass_tint;
                     stack_depth[sp] = depth - 1;
                     sp++;
                 }
-            } else if (k >= 0.0) {
-                // Fallback on stack exhaustion: sample sky in refracted direction to avoid black pixels
-                float3 T = eta * cur.direction + (eta * cos_i - sqrt(k)) * Nf;
-                result += contrib * sky_color(T, u) * (1.0 - fresnel_r) * glass_tint;
+            } else {
+                // Fallback on stack exhaustion
+                result += contrib * sky_color(R, u) * fresnel_r;
+                result += contrib * sky_color(cur.direction, u) * (1.0f - fresnel_r) * glass_tint;
             }
             continue;
         }
