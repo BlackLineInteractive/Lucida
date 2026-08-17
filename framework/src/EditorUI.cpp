@@ -12,6 +12,7 @@ void EditorUI::Init() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.IniFilename = "imgui.ini";
 
     // Comprehensive Unicode Glyph Ranges (Latin, Cyrillic / Ukrainian, Greek, Arrows, Math, Geometric, Dingbats)
     static const ImWchar s_full_glyph_ranges[] = {
@@ -74,6 +75,7 @@ void EditorUI::Init() {
 }
 
 void EditorUI::Shutdown() {
+    ImGui::SaveIniSettingsToDisk("imgui.ini");
     UnregisterConsoleLogSink();
     ImGui::DestroyContext();
 }
@@ -230,40 +232,62 @@ void EditorUI::BuildDefaultLayout(ImGuiID dockspace_id) {
     ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
 
     ImGuiID dock_main = dockspace_id;
-    ImGuiID dock_left  = ImGui::DockBuilderSplitNode(dock_main,  ImGuiDir_Left,  0.19f, nullptr, &dock_main);
-    ImGuiID dock_right = ImGui::DockBuilderSplitNode(dock_main,  ImGuiDir_Right, 0.28f, nullptr, &dock_main);
-    ImGuiID dock_down  = ImGui::DockBuilderSplitNode(dock_main,  ImGuiDir_Down,  0.22f, nullptr, &dock_main);
+    ImGuiID dock_left  = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Left,  0.20f, nullptr, &dock_main);
+    ImGuiID dock_right = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Right, 0.22f, nullptr, &dock_main);
+    ImGuiID dock_down  = ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Down,  0.26f, nullptr, &dock_main);
 
-    ImGuiID dock_left_bottom = ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.45f, nullptr, &dock_left);
-    ImGuiID dock_right_bottom = ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Down, 0.40f, nullptr, &dock_right);
+    ImGuiID dock_left_bottom  = ImGui::DockBuilderSplitNode(dock_left,  ImGuiDir_Down, 0.38f, nullptr, &dock_left);
+    ImGuiID dock_right_bottom = ImGui::DockBuilderSplitNode(dock_right, ImGuiDir_Down, 0.42f, nullptr, &dock_right);
 
+    // 1. Center Viewport
     ImGui::DockBuilderDockWindow("Viewport", dock_main);
+
+    // 2. Left Column: Hierarchy (top) & Content Browser (bottom)
     ImGui::DockBuilderDockWindow("Hierarchy", dock_left);
     ImGui::DockBuilderDockWindow("Content Browser", dock_left_bottom);
+
+    // 3. Right Column: Inspector & Mesh Modeling (top)
+    ImGui::DockBuilderDockWindow("Mesh Modeling (Blender Mode)", dock_right);
     ImGui::DockBuilderDockWindow("Inspector", dock_right);
-    ImGui::DockBuilderDockWindow("Mesh Editor", dock_right);
-    ImGui::DockBuilderDockWindow("Texture Maps", dock_right_bottom);
+
+    // 4. Right Bottom Column: Graphics Settings & Texture Maps (bottom)
     ImGui::DockBuilderDockWindow("Graphics Settings", dock_right_bottom);
-    ImGui::DockBuilderDockWindow("Gameplay Debugger", dock_right_bottom);
+    ImGui::DockBuilderDockWindow("Texture Maps", dock_right_bottom);
+
+    // 5. Center Bottom: Console, Engine Diagnostics, Statistics, Gameplay Debugger
+    ImGui::DockBuilderDockWindow("Gameplay Debugger", dock_down);
     ImGui::DockBuilderDockWindow("Statistics", dock_down);
     ImGui::DockBuilderDockWindow("Engine Diagnostics", dock_down);
     ImGui::DockBuilderDockWindow("Console", dock_down);
 
     ImGui::DockBuilderFinish(dockspace_id);
+    ImGui::SaveIniSettingsToDisk("imgui.ini");
 }
 
 void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
     if (!ImGui::BeginMainMenuBar()) return;
 
     if (ImGui::BeginMenu(TR("menu_file", "File"))) {
-        if (ImGui::MenuItem("Load model...")) {
+        if (ImGui::MenuItem("New Blank Scene", "Cmd+N")) {
+            ui.scene = scenes::BuiltIn::Empty;
+            ui.request_scene_reload = true;
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Load 3D Model...")) {
             IGFD::FileDialogConfig config;
             config.path = ".";
             ImGuiFileDialog::Instance()->OpenDialog("LoadModel", "Choose a model",
                                                     ".glb,.gltf,.obj,.fbx", config);
         }
+        if (ImGui::MenuItem("Save Scene", "Cmd+S")) {
+            // Save current scene state
+        }
         ImGui::Separator();
-        if (ImGui::MenuItem("Quit")) ui.request_quit = true;
+        if (ImGui::MenuItem("Preferences...", "Cmd+,")) {
+            ui.show_preferences_window = true;
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Quit Lucida", "Cmd+Q")) ui.request_quit = true;
         ImGui::EndMenu();
     }
 
@@ -333,9 +357,45 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         if (ImGui::MenuItem("Clear Undo History", nullptr, false, m_commands.CanUndo() || m_commands.CanRedo())) {
             m_commands.Clear();
         }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu(TR("menu_demos", "Demos"))) {
+        if (ImGui::MenuItem("Radiance Cascades 3D (GI)", nullptr, ui.scene == scenes::BuiltIn::RadianceCascades3D)) {
+            ui.scene = scenes::BuiltIn::RadianceCascades3D;
+            ui.requested_backend = UiState::RenderBackendType::RadianceCascades3D;
+            ui.request_scene_reload = true;
+        }
+        if (ImGui::MenuItem("Whitted RT Studio", nullptr, ui.scene == scenes::BuiltIn::BasicPrimitives)) {
+            ui.scene = scenes::BuiltIn::BasicPrimitives;
+            ui.requested_backend = UiState::RenderBackendType::MetalRayTracing;
+            ui.request_scene_reload = true;
+        }
+        if (ImGui::MenuItem("Water & Volumetric Fog", nullptr, ui.scene == scenes::BuiltIn::WaterAndFog)) {
+            ui.scene = scenes::BuiltIn::WaterAndFog;
+            ui.request_scene_reload = true;
+        }
+        if (ImGui::MenuItem("Material Lab (PBR)", nullptr, ui.scene == scenes::BuiltIn::MaterialLab)) {
+            ui.scene = scenes::BuiltIn::MaterialLab;
+            ui.request_scene_reload = true;
+        }
+        if (ImGui::MenuItem("Physics Sandbox", nullptr, ui.scene == scenes::BuiltIn::PhysicsPlayground)) {
+            ui.scene = scenes::BuiltIn::PhysicsPlayground;
+            ui.request_scene_reload = true;
+        }
         ImGui::Separator();
-        if (ImGui::MenuItem("Preferences...", "Cmd+, / Ctrl+,")) {
-            ui.show_preferences_window = true;
+        if (ImGui::MenuItem("Reload Current Scene", "R")) {
+            ui.request_scene_reload = true;
+        }
+        ImGui::EndMenu();
+    }
+
+    if (ImGui::BeginMenu(TR("menu_renderer", "Renderer"))) {
+        if (ImGui::MenuItem("Apple Metal Compute Ray Tracer (Whitted RT)", nullptr, ui.current_backend == UiState::RenderBackendType::MetalRayTracing)) {
+            ui.requested_backend = UiState::RenderBackendType::MetalRayTracing;
+        }
+        if (ImGui::MenuItem("Radiance Cascades 3D Global Illumination (RC-3D)", nullptr, ui.current_backend == UiState::RenderBackendType::RadianceCascades3D)) {
+            ui.requested_backend = UiState::RenderBackendType::RadianceCascades3D;
         }
         ImGui::EndMenu();
     }
@@ -360,62 +420,48 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
         ImGui::EndMenu();
     }
 
-    if (ImGui::BeginMenu("Renderer")) {
-        if (ImGui::MenuItem("Metal Ray Tracer (Whitted RT)", nullptr, ui.current_backend == UiState::RenderBackendType::MetalRayTracing)) {
-            ui.requested_backend = UiState::RenderBackendType::MetalRayTracing;
+    if (ImGui::BeginMenu(TR("menu_settings", "Settings"))) {
+        if (ImGui::MenuItem("Engine Preferences...", "Cmd+,")) {
+            ui.show_preferences_window = true;
         }
-        if (ImGui::MenuItem("Radiance Cascades 3D (GI)", nullptr, ui.current_backend == UiState::RenderBackendType::RadianceCascades3D)) {
-            ui.requested_backend = UiState::RenderBackendType::RadianceCascades3D;
+        if (ImGui::MenuItem("Graphics & Render Settings...")) {
+            ui.show_graphics_settings = true;
         }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu(TR("menu_scene", "Scene"))) {
-        for (u8 i = 0; i < u8(scenes::BuiltIn::Count); ++i) {
-            const auto which = scenes::BuiltIn(i);
-            if (ImGui::MenuItem(scenes::Name(which), nullptr, ui.scene == which)) {
-                ui.scene = which;
-                ui.request_scene_reload = true;
-            }
-        }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu(TR("menu_play", "Play"))) {
-        if (ui.play_state == UiState::PlayState::Edit) {
-            if (ImGui::MenuItem("Play", "Cmd+P")) ui.request_play = true;
-        } else {
-            if (ImGui::MenuItem("Stop", "Cmd+P")) ui.request_stop = true;
-        }
-        if (ui.play_state == UiState::PlayState::Playing) {
-            if (ImGui::MenuItem("Pause", "Cmd+Shift+P")) ui.request_pause = true;
-        } else if (ui.play_state == UiState::PlayState::Paused) {
-            if (ImGui::MenuItem("Resume", "Cmd+Shift+P")) ui.request_play = true;
-            if (ImGui::MenuItem("Step Frame", "Cmd+.")) ui.request_step = true;
-        }
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu(TR("menu_language", "Language"))) {
-        if (ImGui::MenuItem("English", nullptr, Localization::GetLanguage() == Language::English)) {
-            Localization::SetLanguage(Language::English);
-        }
-        if (ImGui::MenuItem("Українська", nullptr, Localization::GetLanguage() == Language::Ukrainian)) {
-            Localization::SetLanguage(Language::Ukrainian);
-        }
-        if (ImGui::MenuItem("Русский", nullptr, Localization::GetLanguage() == Language::Russian)) {
-            Localization::SetLanguage(Language::Russian);
+        if (ImGui::MenuItem("Engine Diagnostics & Profiler...")) {
+            ui.show_engine_diagnostics = true;
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Deutsch (German)", nullptr, Localization::GetLanguage() == Language::German)) {
-            Localization::SetLanguage(Language::German);
+
+        if (ImGui::BeginMenu(TR("menu_language", "Language"))) {
+            if (ImGui::MenuItem("English", nullptr, Localization::GetLanguage() == Language::English)) {
+                Localization::SetLanguage(Language::English);
+            }
+            if (ImGui::MenuItem("Українська", nullptr, Localization::GetLanguage() == Language::Ukrainian)) {
+                Localization::SetLanguage(Language::Ukrainian);
+            }
+            if (ImGui::MenuItem("Русский", nullptr, Localization::GetLanguage() == Language::Russian)) {
+                Localization::SetLanguage(Language::Russian);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Deutsch (German)", nullptr, Localization::GetLanguage() == Language::German)) {
+                Localization::SetLanguage(Language::German);
+            }
+            if (ImGui::MenuItem("Français (French)", nullptr, Localization::GetLanguage() == Language::French)) {
+                Localization::SetLanguage(Language::French);
+            }
+            if (ImGui::MenuItem("Español (Spanish)", nullptr, Localization::GetLanguage() == Language::Spanish)) {
+                Localization::SetLanguage(Language::Spanish);
+            }
+            ImGui::EndMenu();
         }
-        if (ImGui::MenuItem("Français (French)", nullptr, Localization::GetLanguage() == Language::French)) {
-            Localization::SetLanguage(Language::French);
-        }
-        if (ImGui::MenuItem("Español (Spanish)", nullptr, Localization::GetLanguage() == Language::Spanish)) {
-            Localization::SetLanguage(Language::Spanish);
-        }
+
+        ImGui::Separator();
+        ImGui::MenuItem("Show Spatial Grid", nullptr, &ui.viewport_show_grid);
+        ImGui::MenuItem("Show 3D Light & Camera Icons", nullptr, &ui.viewport_show_lights);
+        ImGui::MenuItem("Show Selection Corner Bounds", nullptr, &ui.viewport_show_bounds);
+        ImGui::MenuItem("Show Statistics Overlay", nullptr, &ui.show_stats_overlay);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Reset Layout to Default")) m_reset_layout = true;
         ImGui::EndMenu();
     }
 
@@ -431,7 +477,7 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
             ui.show_preferences_window = true;
         }
         ImGui::Separator();
-        ImGui::TextDisabled("Lucida Engine v0.1.0 (BlackLine)");
+        ImGui::TextDisabled("Lucida Engine v0.5.0 (BlackLine)");
         ImGui::EndMenu();
     }
 
@@ -442,8 +488,10 @@ void EditorUI::DrawMenuBar(World& world, SceneAssets& assets, UiState& ui) {
 
 void EditorUI::DrawPlayToolbar(UiState& ui) {
     const float bar_width = ImGui::GetWindowWidth();
-    const float toolbar_width = 250.0f;
-    const float target_x = (bar_width - toolbar_width) * 0.5f;
+
+    // Center: Simulation Play/Pause/Stop/Step Controls
+    const float sim_width = 260.0f;
+    const float target_x = (bar_width - sim_width) * 0.5f;
     if (target_x > ImGui::GetCursorPosX()) {
         ImGui::SameLine(target_x);
     } else {
@@ -454,66 +502,88 @@ void EditorUI::DrawPlayToolbar(UiState& ui) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 0.0f));
 
     if (ui.play_state == UiState::PlayState::Edit) {
-        if (VectorIconButton("play_btn", VectorIcon::Play, "Play (Cmd+P)", ImVec2(125, 22), IM_COL32(38, 145, 75, 230))) {
+        if (VectorIconButton("play_btn", VectorIcon::Play, "Play (Cmd+P)", ImVec2(120, 22), IM_COL32(38, 145, 75, 230))) {
             ui.request_play = true;
         }
-        DrawTooltip("Start Play Mode (Cmd+P / Ctrl+P)\nSnapshots world state and activates real-time Jolt physics.");
+        DrawTooltip("Start Simulation (Cmd+P / Ctrl+P)\nSnapshots world state and activates real-time Jolt physics.");
     } else {
         float stop_pulse = 0.0f;
         if (ui.enable_ui_animations) {
             stop_pulse = iam_oscillate(ImGui::GetID("stop_btn_pulse"), 0.15f, 2.0f, iam_wave_sine, 0.0f, ImGui::GetIO().DeltaTime);
         }
         const int r_stop = std::clamp(static_cast<int>(185 + stop_pulse * 40.0f), 150, 240);
-        if (VectorIconButton("stop_btn", VectorIcon::Stop, "Stop", ImVec2(75, 22), IM_COL32(r_stop, 45, 45, 230))) {
+        if (VectorIconButton("stop_btn", VectorIcon::Stop, "Stop", ImVec2(70, 22), IM_COL32(r_stop, 45, 45, 230))) {
             ui.request_stop = true;
         }
         DrawTooltip("Stop Simulation (Cmd+P / Ctrl+P)\nRestores the entire scene to its exact pre-play state.");
 
         ImGui::SameLine();
         if (ui.play_state == UiState::PlayState::Playing) {
-            if (VectorIconButton("pause_btn", VectorIcon::Pause, "Pause", ImVec2(75, 22), IM_COL32(195, 145, 25, 230))) {
+            if (VectorIconButton("pause_btn", VectorIcon::Pause, "Pause", ImVec2(70, 22), IM_COL32(195, 145, 25, 230))) {
                 ui.request_pause = true;
             }
             DrawTooltip("Pause Simulation (Cmd+Shift+P / Ctrl+Shift+P)\nFreezes physics and gameplay ticks.");
         } else {
-            if (VectorIconButton("resume_btn", VectorIcon::Play, "Resume", ImVec2(80, 22), IM_COL32(38, 145, 75, 230))) {
+            if (VectorIconButton("resume_btn", VectorIcon::Play, "Resume", ImVec2(75, 22), IM_COL32(38, 145, 75, 230))) {
                 ui.request_play = true;
             }
             DrawTooltip("Resume Simulation (Cmd+Shift+P / Ctrl+Shift+P)\nUnpauses physics simulation.");
 
             ImGui::SameLine();
-            if (VectorIconButton("step_btn", VectorIcon::Step, "Step", ImVec2(70, 22), IM_COL32(45, 105, 195, 230))) {
+            if (VectorIconButton("step_btn", VectorIcon::Step, "Step", ImVec2(65, 22), IM_COL32(45, 105, 195, 230))) {
                 ui.request_step = true;
             }
             DrawTooltip("Step 1 Frame (Cmd+. / Ctrl+.)\nAdvances physics by exactly 1 tick (1/60s).");
         }
     }
 
-    ImGui::PopStyleVar(2);
-
     if (ui.play_state != UiState::PlayState::Edit) {
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(80.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-        ImGui::SliderFloat("##timescale", &ui.gameplay_time_scale, 0.1f, 4.0f, "%.1fx");
-        DrawTooltip("Time Scale\n0.1x = slow motion  |  1.0x = real-time  |  4.0x = fast forward");
-        ImGui::PopStyleVar();
-
-        const char* badge_text = (ui.play_state == UiState::PlayState::Playing) ? "  PLAYING  " : "  PAUSED  ";
-        ImU32 badge_col = (ui.play_state == UiState::PlayState::Playing)
-            ? IM_COL32(38, 155, 70, 220) : IM_COL32(195, 145, 25, 220);
-        ImVec2 badge_size = ImGui::CalcTextSize(badge_text);
-        float right_x = ImGui::GetWindowWidth() - badge_size.x - 16.0f;
-        if (right_x > ImGui::GetCursorPosX() + 4.0f) ImGui::SameLine(right_x);
-        else ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button,        badge_col);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, badge_col);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  badge_col);
+        ImGui::SetNextItemWidth(75.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
-        ImGui::SmallButton(badge_text);
+        ImGui::SliderFloat("##timescale", &ui.gameplay_time_scale, 0.1f, 4.0f, "%.1fx");
+        DrawTooltip("Simulation Time Scale\n0.1x = slow motion  |  1.0x = real-time  |  4.0x = fast forward");
         ImGui::PopStyleVar();
-        ImGui::PopStyleColor(3);
     }
+
+    ImGui::PopStyleVar(2);
+
+    // 3. Right: Active Backend Tag & FPS Readout
+    const char* backend_tag = (ui.current_backend == UiState::RenderBackendType::RadianceCascades3D)
+        ? " RC-3D GI " : " Metal RT ";
+    const ImU32 backend_col = (ui.current_backend == UiState::RenderBackendType::RadianceCascades3D)
+        ? IM_COL32(30, 140, 190, 220) : IM_COL32(50, 120, 60, 220);
+
+    const float fps = ImGui::GetIO().Framerate;
+    const float ms  = (fps > 0.0f) ? (1000.0f / fps) : 0.0f;
+    char fps_buf[48];
+    std::snprintf(fps_buf, sizeof(fps_buf), "%.0f FPS (%.1f ms)", fps, ms);
+
+    const float right_group_width = 240.0f;
+    const float right_x = bar_width - right_group_width;
+    if (right_x > ImGui::GetCursorPosX() + 4.0f) {
+        ImGui::SameLine(right_x);
+    } else {
+        ImGui::SameLine();
+    }
+
+    ImGui::PushStyleColor(ImGuiCol_Button,        backend_col);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, backend_col);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive,  backend_col);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+    if (ImGui::SmallButton(backend_tag)) {
+        if (ui.current_backend == UiState::RenderBackendType::MetalRayTracing) {
+            ui.requested_backend = UiState::RenderBackendType::RadianceCascades3D;
+        } else {
+            ui.requested_backend = UiState::RenderBackendType::MetalRayTracing;
+        }
+    }
+    DrawTooltip("Click to switch Render Backend (Metal Ray Tracer <-> Radiance Cascades 3D)");
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", fps_buf);
 }
 
 void EditorUI::ApplyTheme() {

@@ -44,6 +44,11 @@ struct UiState {
     bool draw_ai_perception      = true;
     bool draw_audio_radii        = true;
 
+    // Viewport Overlays & Visibility Settings
+    bool viewport_show_grid      = true;
+    bool viewport_show_lights    = true;
+    bool viewport_show_bounds    = true;
+
     char hierarchy_search[128] = {0};
     char content_search[128]   = {0};
     std::string content_browser_path = "assets";

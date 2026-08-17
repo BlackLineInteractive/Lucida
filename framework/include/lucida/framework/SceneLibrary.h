@@ -16,6 +16,10 @@ namespace lucida::scenes {
 // opens onto: an empty stage, not somebody else's demo.
 SceneAssets Empty(Registry& registry);
 
+// The original Radiance Cascades 3D Cornell box demo scene with colored diffuse walls,
+// mirror reflections, glass refractions, and multi-cascade dynamic lighting.
+SceneAssets RadianceCascades3D(Registry& registry);
+
 // Analytic primitives under a hard-shadowed key light.
 SceneAssets BasicPrimitives(Registry& registry);
 
@@ -26,7 +30,18 @@ SceneAssets WaterAndFog(Registry& registry);
 // so the whole material axis is visible side by side in one frame.
 SceneAssets MaterialLab(Registry& registry);
 
-enum class BuiltIn : u8 { Empty = 0, BasicPrimitives, WaterAndFog, MaterialLab, Count };
+// Active physics simulation with dynamic spheres, domino stacks, and character controllers.
+SceneAssets PhysicsPlayground(Registry& registry);
+
+enum class BuiltIn : u8 {
+    Empty = 0,
+    RadianceCascades3D,
+    BasicPrimitives,
+    WaterAndFog,
+    MaterialLab,
+    PhysicsPlayground,
+    Count
+};
 
 SceneAssets Build(BuiltIn which, Registry& registry);
 const char* Name(BuiltIn which);

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 BlackLine Interactive
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "lucida/framework/SceneLibrary.h"
+#include "lucida/physics/Components.h"
 
 namespace lucida::scenes {
 namespace {
@@ -183,23 +184,142 @@ SceneAssets MaterialLab(Registry& registry) {
     return assets;
 }
 
+SceneAssets RadianceCascades3D(Registry& registry) {
+    SceneAssets assets;
+    assets.name  = "radiance cascades 3d";
+    assets.model = ShadingModel::WhittedGI;
+
+    // Cornell box materials matching private/Shaders/radiance_cascades_3d
+    const i32 white_wall  = assets.AddMaterial(Material(DIFFUSE, {0.90f, 0.90f, 0.90f}, {0, 0, 0}, 0.65, 0.0), PROC_NONE, "cornell_white");
+    const i32 red_wall    = assets.AddMaterial(Material(DIFFUSE, {0.90f, 0.12f, 0.10f}, {0, 0, 0}, 0.70, 0.0), PROC_NONE, "cornell_red");
+    const i32 green_wall  = assets.AddMaterial(Material(DIFFUSE, {0.08f, 0.92f, 0.12f}, {0, 0, 0}, 0.70, 0.0), PROC_NONE, "cornell_green");
+    const i32 floor_mat   = assets.AddMaterial(Material(DIFFUSE, {0.88f, 0.88f, 0.88f}, {0, 0, 0}, 0.60, 0.0), PROC_NONE, "cornell_floor");
+    const i32 ceiling_mat = assets.AddMaterial(Material(DIFFUSE, {0.92f, 0.92f, 0.92f}, {0, 0, 0}, 0.65, 0.0), PROC_NONE, "cornell_ceiling");
+    const i32 mirror_mat  = assets.AddMaterial(Material(METAL,   {0.98f, 0.98f, 0.98f}, {0, 0, 0}, 0.01, 1.0), PROC_NONE, "mirror_chrome");
+    const i32 glass_mat   = assets.AddMaterial(Material(GLASS,   {0.99f, 0.99f, 1.00f}, {0, 0, 0}, 0.00, 0.0, 1.52), PROC_NONE, "optical_glass");
+    const i32 sun_emitter = assets.AddMaterial(Material(EMISSIVE, {0, 0, 0}, {2.8f, 2.4f, 1.7f}, 1.0, 0.0), PROC_NONE, "sun_aperture");
+
+    // Room boundaries (Floor, Ceiling, Left Red Wall, Right Green Wall, Back White Wall)
+    AddFloor(registry, floor_mat, -1.0f);
+
+    // Ceiling
+    Entity ceiling = CreatePrimitive(registry, PrimitiveType::Box, {0.0f, 3.2f, -3.0f}, ceiling_mat, "Ceiling");
+    registry.Get<PrimitiveShape>(ceiling)->size = Vec3(3.2f, 0.1f, 3.2f);
+    registry.Add<LocalBounds>(ceiling, LocalBounds{Vec3(-3.2f, -0.1f, -3.2f), Vec3(3.2f, 0.1f, 3.2f)});
+
+    // Left Red Wall
+    Entity left_wall = CreatePrimitive(registry, PrimitiveType::Box, {-3.0f, 1.1f, -3.0f}, red_wall, "Left Red Wall");
+    registry.Get<PrimitiveShape>(left_wall)->size = Vec3(0.1f, 2.1f, 3.2f);
+    registry.Add<LocalBounds>(left_wall, LocalBounds{Vec3(-0.1f, -2.1f, -3.2f), Vec3(0.1f, 2.1f, 3.2f)});
+
+    // Right Green Wall
+    Entity right_wall = CreatePrimitive(registry, PrimitiveType::Box, {3.0f, 1.1f, -3.0f}, green_wall, "Right Green Wall");
+    registry.Get<PrimitiveShape>(right_wall)->size = Vec3(0.1f, 2.1f, 3.2f);
+    registry.Add<LocalBounds>(right_wall, LocalBounds{Vec3(-0.1f, -2.1f, -3.2f), Vec3(0.1f, 2.1f, 3.2f)});
+
+    // Back White Wall
+    Entity back_wall = CreatePrimitive(registry, PrimitiveType::Box, {0.0f, 1.1f, -6.0f}, white_wall, "Back White Wall");
+    registry.Get<PrimitiveShape>(back_wall)->size = Vec3(3.2f, 2.1f, 0.1f);
+    registry.Add<LocalBounds>(back_wall, LocalBounds{Vec3(-3.2f, -2.1f, -0.1f), Vec3(3.2f, 2.1f, 0.1f)});
+
+    // Archway Columns
+    Entity pillar_left = CreatePrimitive(registry, PrimitiveType::Cylinder, {-1.2f, 0.2f, -3.5f}, white_wall, "Archway Pillar Left");
+    registry.Get<PrimitiveShape>(pillar_left)->size = Vec3(0.35f, 1.2f, 0.35f);
+    Entity pillar_right = CreatePrimitive(registry, PrimitiveType::Cylinder, {1.2f, 0.2f, -3.5f}, white_wall, "Archway Pillar Right");
+    registry.Get<PrimitiveShape>(pillar_right)->size = Vec3(0.35f, 1.2f, 0.35f);
+
+    // Inner Mirror Chrome Sphere
+    Entity mirror_sphere = CreatePrimitive(registry, PrimitiveType::Sphere, {-1.4f, -0.3f, -4.5f}, mirror_mat, "Mirror Sphere");
+    registry.Get<LocalTransform>(mirror_sphere)->scale = Vec3(0.7f);
+
+    // Inner Mirror Chrome Box (Rotated)
+    Entity mirror_box = CreatePrimitive(registry, PrimitiveType::Box, {1.4f, -0.35f, -4.5f}, mirror_mat, "Mirror Box");
+    registry.Get<PrimitiveShape>(mirror_box)->size = Vec3(0.65f, 0.65f, 0.65f);
+    registry.Get<LocalTransform>(mirror_box)->rotation = glm::angleAxis(glm::radians(28.0f), Vec3(0, 1, 0));
+    registry.Add<LocalBounds>(mirror_box, LocalBounds{Vec3(-0.65f), Vec3(0.65f)});
+
+    // Central Glass Sphere
+    Entity glass_sphere = CreatePrimitive(registry, PrimitiveType::Sphere, {0.0f, -0.15f, -2.4f}, glass_mat, "Glass Sphere");
+    registry.Get<LocalTransform>(glass_sphere)->scale = Vec3(0.85f);
+
+    // Radiance Sun Aperture Light
+    Entity sun_aperture = CreatePrimitive(registry, PrimitiveType::Sphere, {0.0f, 3.05f, -3.5f}, sun_emitter, "Sun Aperture");
+    registry.Get<LocalTransform>(sun_aperture)->scale = Vec3(0.35f);
+
+    CreateLight(registry, {0.0f, 2.9f, -3.5f}, {1.00f, 0.92f, 0.70f}, 75.0f, 1.2f, "Sunlight Radiance");
+    CreateLight(registry, {-1.5f, 2.0f, -2.0f}, {0.70f, 0.82f, 1.00f}, 35.0f, 2.0f, "Sky Ambient Fill");
+
+    assets.environment.fog_enabled = false;
+    assets.environment.grid_enabled = false;
+    assets.spawn = EyeLevelSpawn({0.0f, 1.1f, 3.2f}, -0.06f);
+    return assets;
+}
+
+SceneAssets PhysicsPlayground(Registry& registry) {
+    SceneAssets assets;
+    assets.name  = "physics playground";
+    assets.model = ShadingModel::WhittedGI;
+
+    const CommonMaterials m = AddCommonMaterials(assets);
+    AddFloor(registry, m.floor);
+
+    const i32 domino_mat = assets.AddMaterial(Material(DIFFUSE, {0.15f, 0.45f, 0.85f}, {0, 0, 0}, 0.5, 0.0), PROC_NONE, "domino_blue");
+    const i32 heavy_red  = assets.AddMaterial(Material(DIFFUSE, {0.85f, 0.15f, 0.15f}, {0, 0, 0}, 0.4, 0.0), PROC_NONE, "heavy_red");
+
+    for (int i = 0; i < 8; ++i) {
+        float z = -2.0f - float(i) * 0.9f;
+        Entity domino = CreatePrimitive(registry, PrimitiveType::Box, {0.0f, -0.3f, z}, domino_mat, "Domino " + std::to_string(i + 1));
+        registry.Get<PrimitiveShape>(domino)->size = Vec3(0.4f, 0.7f, 0.15f);
+        registry.Add<LocalBounds>(domino, LocalBounds{Vec3(-0.4f, -0.7f, -0.15f), Vec3(0.4f, 0.7f, 0.15f)});
+        RigidBody rb{};
+        rb.type = BodyType::Dynamic;
+        rb.shape = ShapeType::Box;
+        rb.mass = 5.0f;
+        rb.friction = 0.4f;
+        rb.restitution = 0.2f;
+        registry.Add<RigidBody>(domino, rb);
+    }
+
+    Entity ball = CreatePrimitive(registry, PrimitiveType::Sphere, {0.0f, 0.5f, -0.5f}, heavy_red, "Bowling Ball");
+    registry.Get<LocalTransform>(ball)->scale = Vec3(0.6f);
+    RigidBody ball_rb{};
+    ball_rb.type = BodyType::Dynamic;
+    ball_rb.shape = ShapeType::Sphere;
+    ball_rb.mass = 25.0f;
+    ball_rb.friction = 0.3f;
+    ball_rb.restitution = 0.6f;
+    registry.Add<RigidBody>(ball, ball_rb);
+
+    CreateLight(registry, {-5.0f, 8.0f, 2.0f}, {1.0f, 0.98f, 0.92f}, 80.0f, 1.5f, "Key Light");
+    CreateLight(registry, { 5.0f, 6.0f, 2.0f}, {0.6f, 0.75f, 1.00f}, 40.0f, 2.0f, "Fill Light");
+
+    assets.environment.fog_enabled = false;
+    assets.environment.grid_enabled = true;
+    assets.spawn = EyeLevelSpawn({2.8f, 1.6f, 2.5f}, -0.2f);
+    return assets;
+}
+
 SceneAssets Build(BuiltIn which, Registry& registry) {
     switch (which) {
-    case BuiltIn::Empty:           return Empty(registry);
-    case BuiltIn::BasicPrimitives: return BasicPrimitives(registry);
-    case BuiltIn::MaterialLab:     return MaterialLab(registry);
+    case BuiltIn::Empty:              return Empty(registry);
+    case BuiltIn::RadianceCascades3D: return RadianceCascades3D(registry);
+    case BuiltIn::BasicPrimitives:    return BasicPrimitives(registry);
+    case BuiltIn::MaterialLab:        return MaterialLab(registry);
+    case BuiltIn::PhysicsPlayground:  return PhysicsPlayground(registry);
     case BuiltIn::WaterAndFog:
-    default:                       return WaterAndFog(registry);
+    default:                          return WaterAndFog(registry);
     }
 }
 
 const char* Name(BuiltIn which) {
     switch (which) {
-    case BuiltIn::Empty:           return "Empty";
-    case BuiltIn::BasicPrimitives: return "Basic primitives";
-    case BuiltIn::MaterialLab:     return "Material lab";
-    case BuiltIn::WaterAndFog:     return "Water and fog";
-    default:                       return "?";
+    case BuiltIn::Empty:              return "Empty Scene";
+    case BuiltIn::RadianceCascades3D: return "Radiance Cascades 3D (GI)";
+    case BuiltIn::BasicPrimitives:    return "Whitted RT Studio";
+    case BuiltIn::MaterialLab:        return "Material Lab (PBR)";
+    case BuiltIn::PhysicsPlayground:  return "Physics Sandbox";
+    case BuiltIn::WaterAndFog:        return "Water & Volumetric Fog";
+    default:                          return "?";
     }
 }
 
