@@ -17,12 +17,13 @@
 namespace lucida {
 
 struct WindowDesc {
-    std::string title  = "Lucida";
-    i32  width         = 1280;
-    i32  height        = 720;
-    bool fullscreen    = false;
-    bool resizable     = true;
-    bool metal_surface = true;   // create a CAMetalLayer for the Metal backend
+    std::string title     = "Lucida Engine";
+    std::string icon_path = "media/ico.jpg";
+    i32  width            = 1280;
+    i32  height           = 720;
+    bool fullscreen       = false;
+    bool resizable        = true;
+    bool metal_surface    = true;   // create a CAMetalLayer for the Metal backend
 };
 
 class IPlatform {
@@ -40,6 +41,7 @@ public:
     virtual void SetMouseCaptured(bool captured) = 0;
     virtual void ToggleFullscreen() = 0;
     virtual void GetDrawableSize(i32& width, i32& height) const = 0;
+    virtual void SetWindowIcon(const std::string& icon_path) = 0;
 
     // ImGui platform half. The graphics half belongs to the render backend.
     virtual void OverlayInit() = 0;

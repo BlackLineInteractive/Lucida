@@ -40,7 +40,7 @@ static std::string ExecutableDir() {
 
 static std::string ReadShader(const std::string& rel_path) {
     const std::string base = ExecutableDir();
-    for (const auto& prefix : {base, base + "../", base + "shaders/", std::string("shaders/"), std::string("")}) {
+    for (const auto& prefix : {base, base + "../", base + "../../", base + "../../../", base + "../Resources/", base + "shaders/", std::string("shaders/"), std::string("")}) {
         std::ifstream f(prefix + rel_path);
         if (f.is_open()) {
             std::stringstream ss;

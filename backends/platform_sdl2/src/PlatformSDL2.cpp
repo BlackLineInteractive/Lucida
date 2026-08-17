@@ -9,10 +9,12 @@
 #include <SDL2/SDL.h>
 #if LUCIDA_PLATFORM_MACOS
 #include <SDL2/SDL_metal.h>
+#import <Cocoa/Cocoa.h>
 #endif
 
 #include "backends/imgui_impl_sdl2.h"
 #include "imgui.h"
+#include <stb_image.h>
 
 #include <array>
 
@@ -64,6 +66,8 @@ public:
             return false;
         }
         m_fullscreen = desc.fullscreen;
+
+        SetWindowIcon(desc.icon_path);
 
 #if LUCIDA_PLATFORM_MACOS
         if (desc.metal_surface) {
@@ -168,6 +172,71 @@ public:
         }
         width  = w;
         height = h;
+    }
+
+    void SetWindowIcon(const std::string& icon_path) override {
+        if (!m_window) return;
+
+        const char* candidates[] = {
+            icon_path.c_str(),
+            "media/ico.jpg",
+            "../media/ico.jpg",
+            "../../media/ico.jpg",
+            "../../../media/ico.jpg"
+        };
+
+        int w = 0, h = 0, channels = 0;
+        stbi_uc* pixels = nullptr;
+        std::string found_path;
+
+        for (const char* path : candidates) {
+            if (!path || !path[0]) continue;
+            pixels = stbi_load(path, &w, &h, &channels, 4);
+            if (pixels) {
+                found_path = path;
+                break;
+            }
+        }
+
+        if (!pixels) {
+            LUCIDA_WARN(Core, "Application icon not found: %s", icon_path.c_str());
+            return;
+        }
+
+        // 1. Set SDL2 Window Icon
+        Uint32 rmask, gmask, bmask, amask;
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+        rmask = 0xff000000;
+        gmask = 0x00ff0000;
+        bmask = 0x0000ff00;
+        amask = 0x000000ff;
+#else
+        rmask = 0x000000ff;
+        gmask = 0x0000ff00;
+        bmask = 0x00ff0000;
+        amask = 0xff000000;
+#endif
+
+        SDL_Surface* surface = SDL_CreateRGBSurfaceFrom(
+            pixels, w, h, 32, w * 4, rmask, gmask, bmask, amask);
+        if (surface) {
+            SDL_SetWindowIcon(m_window, surface);
+            SDL_FreeSurface(surface);
+        }
+
+        // 2. Set macOS Dock / Application Icon
+#if LUCIDA_PLATFORM_MACOS
+        @autoreleasepool {
+            NSString* nsPath = [NSString stringWithUTF8String:found_path.c_str()];
+            NSImage* app_image = [[NSImage alloc] initWithContentsOfFile:nsPath];
+            if (app_image) {
+                [NSApp setApplicationIconImage:app_image];
+            }
+        }
+#endif
+
+        stbi_image_free(pixels);
+        LUCIDA_INFO(Core, "Loaded engine icon: %s (%dx%d)", found_path.c_str(), w, h);
     }
 
     void OverlayInit() override {

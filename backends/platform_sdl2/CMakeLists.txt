@@ -9,4 +9,10 @@ add_library(lucida::platform_sdl2 ALIAS lucida_platform_sdl2)
 target_include_directories(lucida_platform_sdl2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(lucida_platform_sdl2
     PUBLIC  lucida::core lucida::input lucida::render
-    PRIVATE lucida_imgui ${LUCIDA_SDL2_TARGET})
+    PRIVATE lucida_imgui lucida_stb ${LUCIDA_SDL2_TARGET})
+
+if(APPLE)
+    find_library(COCOA_LIBRARY Cocoa REQUIRED)
+    target_link_libraries(lucida_platform_sdl2 PRIVATE ${COCOA_LIBRARY})
+    set_source_files_properties(src/PlatformSDL2.cpp PROPERTIES COMPILE_FLAGS "-x objective-c++")
+endif()
