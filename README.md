@@ -35,7 +35,11 @@ Built to deliver high visual fidelity, real-time procedural materials, active ph
 ## Showcase
 
 <p align="center">
-  <img src="media/0.5.png" alt="Lucida Engine 0.5 New Viewport" width="100%">
+  <img src="media/0.6.png" alt="Lucida Engine 0.6 New UI" width="100%">
+</p>
+
+<p align="center">
+  <img src="media/0.5.png" alt="Lucida Engine 0.5 Viewport" width="100%">
 </p>
 
 <p align="center">
