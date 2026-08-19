@@ -70,7 +70,7 @@ Tested on MacBook Pro 16" 2019 (Intel i9-9880H, AMD Radeon Pro 5500M 8 GB - comp
 
 | Scene | Resolution | Pipeline | Frame rate |
 | --- | --- | --- | --- |
-| Sponza (~5.7 M triangles) | 1080x720 | Full RT | 15-30 fps |
+| Sponza 4K (~5.7 M triangles) | 1080x720 | Full RT | 15-30 fps |
 | Demo Scene (primitives, water, fog) | 1920x1080 | Full RT | 60-110 fps |
 
 Tracing is deterministic Whitted-style with analytic soft shadows and AO. No stochastic noise, no accumulation ghosting, and no temporal blur.
