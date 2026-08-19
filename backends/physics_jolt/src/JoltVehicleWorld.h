@@ -25,7 +25,7 @@
 struct CarInput {
     float throttle  = 0.0f;  // 0 → 1
     float brake     = 0.0f;  // 0 → 1
-    float steer     = 0.0f;  // −1 (left) → +1 (right)
+    float steer     = 0.0f;  // -1 (left) → +1 (right)
     bool  handbrake = false;
     bool  reset     = false;  // teleport back to spawn
 };

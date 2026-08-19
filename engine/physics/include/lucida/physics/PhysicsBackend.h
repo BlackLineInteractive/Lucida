@@ -134,7 +134,7 @@ public:
     virtual VehicleState  GetVehicleState(VehicleHandle vehicle) const = 0;
     virtual void          ResetVehicle(VehicleHandle vehicle) = 0;
 
-    // Character controller — capsule that slides, steps and reports grounded state.
+    // Character controller - capsule that slides, steps and reports grounded state.
     // Uses Jolt CharacterVirtual; kept behind the interface so Bullet can implement
     // the same five methods without changing any gameplay code.
     virtual CharacterHandle CreateCharacter(const CharacterDesc& desc) = 0;
