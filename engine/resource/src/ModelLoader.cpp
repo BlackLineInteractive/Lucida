@@ -16,6 +16,8 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
+#include <cctype>
+#include <unordered_map>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -451,6 +453,134 @@ void BuildBVH(std::vector<GPUTriangle>& tris,
 
 // --------------------------------------------------------------- public API --
 
+// Texture references inside model files are written by whatever tool exported
+// them: Windows separators in an OBJ, an absolute path from the author's
+// machine, percent escapes in a glTF URI, or a bare file name that assumes the
+// texture sits beside the model. Resolving only "base_dir + as written" fails
+// every one of those, and the failure is silent - the material keeps its white
+// default slice, so the model loads looking untextured.
+//
+// Cheap spellings are tried first; the recursive index is built once, on the
+// first miss, and only for models that actually need it.
+class TextureResolver {
+public:
+    explicit TextureResolver(std::string base_dir) : m_base(std::move(base_dir)) {}
+
+    // Returns a path that exists, or "" if nothing matched.
+    std::string Resolve(const std::string& raw) {
+        if (raw.empty()) return {};
+
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto cached = m_cache.find(raw);
+        if (cached != m_cache.end()) return cached->second;
+
+        const std::string cleaned = Clean(raw);
+        const std::string leaf    = LeafName(cleaned);
+        std::string found;
+
+        auto try_path = [&](const std::string& candidate) {
+            if (found.empty() && !candidate.empty() && Exists(candidate)) found = candidate;
+        };
+
+        try_path(m_base + cleaned);
+        try_path(cleaned);                 // absolute, or relative to the working directory
+        if (!leaf.empty()) {
+            try_path(m_base + leaf);
+            // The directory names an exporter reaches for when it writes maps
+            // next to the model rather than beside it.
+            for (const char* dir : {"textures/", "Textures/", "texture/", "Texture/",
+                                    "tex/", "maps/", "Maps/", "images/", "Images/",
+                                    "materials/", "Materials/", "source/"}) {
+                try_path(m_base + dir + leaf);
+            }
+        }
+        if (found.empty() && !leaf.empty()) found = FindByName(leaf);
+
+        m_cache.emplace(raw, found);
+        return found;
+    }
+
+private:
+    static bool Exists(const std::string& p) {
+        std::error_code ec;
+        return std::filesystem::is_regular_file(p, ec);
+    }
+
+    static std::string Lower(std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return s;
+    }
+
+    // Backslashes to slashes, and %XX back to the byte it stands for. A glTF
+    // written by Blender escapes spaces, so "brick wall.png" arrives as
+    // "brick%20wall.png" and never opens.
+    static std::string Clean(const std::string& raw) {
+        std::string out;
+        out.reserve(raw.size());
+        for (size_t i = 0; i < raw.size(); ++i) {
+            const char c = raw[i];
+            if (c == '\\') {
+                out.push_back('/');
+            } else if (c == '%' && i + 2 < raw.size() &&
+                       std::isxdigit(static_cast<unsigned char>(raw[i + 1])) &&
+                       std::isxdigit(static_cast<unsigned char>(raw[i + 2]))) {
+                out.push_back(static_cast<char>(std::stoi(raw.substr(i + 1, 2), nullptr, 16)));
+                i += 2;
+            } else {
+                out.push_back(c);
+            }
+        }
+        // A leading "./" confuses nothing but adds nothing either.
+        if (out.rfind("./", 0) == 0) out.erase(0, 2);
+        return out;
+    }
+
+    static std::string LeafName(const std::string& p) {
+        const size_t slash = p.find_last_of('/');
+        return slash == std::string::npos ? p : p.substr(slash + 1);
+    }
+
+    // Last resort: match the file name alone, case-insensitively, anywhere under
+    // the model's directory. Case matters here because an asset authored on
+    // Windows and rendered on macOS differs only in the capital letter.
+    std::string FindByName(const std::string& leaf) {
+        BuildIndex();
+        auto it = m_index.find(Lower(leaf));
+        return it == m_index.end() ? std::string{} : it->second;
+    }
+
+    void BuildIndex() {
+        if (m_indexed) return;
+        m_indexed = true;
+        if (m_base.empty()) return;
+
+        std::error_code ec;
+        // Bounded so a model dropped into a home directory cannot start walking
+        // the whole disk.
+        constexpr int kMaxDepth   = 4;
+        constexpr size_t kMaxFiles = 20000;
+
+        auto it = std::filesystem::recursive_directory_iterator(
+            m_base, std::filesystem::directory_options::skip_permission_denied, ec);
+        if (ec) return;
+        const auto end = std::filesystem::recursive_directory_iterator{};
+        for (; it != end; it.increment(ec)) {
+            if (ec) break;
+            if (it.depth() >= kMaxDepth) { it.disable_recursion_pending(); }
+            if (m_index.size() >= kMaxFiles) break;
+            if (!it->is_regular_file(ec) || ec) continue;
+            m_index.emplace(Lower(it->path().filename().string()), it->path().string());
+        }
+    }
+
+    std::string m_base;
+    std::mutex  m_mutex;
+    std::unordered_map<std::string, std::string> m_cache;
+    std::unordered_map<std::string, std::string> m_index;
+    bool m_indexed = false;
+};
+
 MeshData LoadModel(const std::string& path, float target_size) {
   // Phase timings: a multi-second load should say where the time went rather
   // than look like a freeze.
@@ -468,14 +598,33 @@ MeshData LoadModel(const std::string& path, float target_size) {
     Assimp::Importer importer;
     importer.SetPropertyInteger(AI_CONFIG_PP_RVC_FLAGS, aiComponent_CAMERAS | aiComponent_LIGHTS | aiComponent_ANIMATIONS);
     importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 66.0f);
+    // Triangulate turns polygons into triangles but leaves point and line
+    // primitives in place, and the traversal below silently drops any face that
+    // is not a triangle. Removing them here means a mesh that is half lines does
+    // not arrive as half a mesh.
+    importer.SetPropertyInteger(AI_CONFIG_PP_SBP_REMOVE,
+                                aiPrimitiveType_POINT | aiPrimitiveType_LINE);
 
     const aiScene* scene = importer.ReadFile(path,
         aiProcess_Triangulate           |
-        aiProcess_GenNormals            | // preserves author normals
-        aiProcess_CalcTangentSpace      | // generates tangents+bitangents for normal maps
+        // GenSmoothNormals, not GenNormals: both only fill in normals a file
+        // does not carry, but GenNormals makes them flat, and the smoothing
+        // angle set above applies to the smooth variant alone - it was dead
+        // configuration next to a step that produced faceted shading.
+        aiProcess_GenSmoothNormals      |
         aiProcess_FlipUVs               | // Metal texture space
-        aiProcess_JoinIdenticalVertices |
-        aiProcess_PreTransformVertices);
+        aiProcess_JoinIdenticalVertices | // required for GenSmoothNormals to span split vertices
+        aiProcess_SortByPType           |
+        aiProcess_FindInvalidData       | // drops NaN normals and degenerate faces
+        aiProcess_GenUVCoords);           // resolves spherical / cylindrical mappings to real UVs
+    // Deliberately absent:
+    //   PreTransformVertices - it collapses the node graph, so every part
+    //     arrived named "RootNode" and the submesh list the editor uses for
+    //     per-part selection was meaningless. The traversal applies node
+    //     transforms itself instead.
+    //   CalcTangentSpace - tangents are derived in the shader from UV
+    //     derivatives and GPUTriAttr has nowhere to put them, so computing them
+    //     here was load time spent on data that was thrown away.
 
     if (!scene || !scene->mRootNode) {
         std::cerr << "[ModelLoader] Failed to load: " << path
@@ -487,6 +636,7 @@ MeshData LoadModel(const std::string& path, float target_size) {
 
   std::string base_dir = std::filesystem::path(path).parent_path().string();
     if (!base_dir.empty()) base_dir += "/";
+    TextureResolver tex_resolver(base_dir);
 
     size_t num_mats = scene->mNumMaterials;
     if (num_mats == 0) num_mats = 1;
@@ -508,7 +658,8 @@ MeshData LoadModel(const std::string& path, float target_size) {
                 else { w = tex->mWidth; h = tex->mHeight; }
             }
         } else {
-            stbi_info((base_dir + tp.C_Str()).c_str(), &w, &h, &c);
+            const std::string resolved = tex_resolver.Resolve(tp.C_Str());
+            if (!resolved.empty()) stbi_info(resolved.c_str(), &w, &h, &c);
         }
         max_src = std::max({max_src, w, h});
     }
@@ -637,7 +788,15 @@ MeshData LoadModel(const std::string& path, float target_size) {
                 }
             }
         }
-        if (!pixels) pixels = stbi_load((base_dir + tex_path.C_Str()).c_str(), &tw, &th, &tc, 4);
+        if (!pixels) {
+            const std::string resolved = tex_resolver.Resolve(tex_path.C_Str());
+            if (!resolved.empty()) pixels = stbi_load(resolved.c_str(), &tw, &th, &tc, 4);
+        }
+        if (!pixels && tex_path.data[0] != '*') {
+            std::lock_guard<std::mutex> lock(log_mutex);
+            std::cerr << "[ModelLoader] texture not found: " << tex_path.C_Str()
+                      << " (searched under " << base_dir << ")" << std::endl;
+        }
         return pixels;
     };
 
@@ -809,8 +968,32 @@ MeshData LoadModel(const std::string& path, float target_size) {
 
     phase("textures");
 
-  // Traverse all meshes
-    std::function<void(aiNode*)> traverse = [&](aiNode* node) {
+  // Traverse all meshes.
+    //
+    // Node transforms are applied here rather than by PreTransformVertices. That
+    // step baked them in correctly but flattened the graph while doing it, so
+    // every part lost its node name and the submesh list - which is what the
+    // editor selects and assigns materials by - degenerated into "part_1,
+    // part_2, ...". Carrying the matrix down the recursion keeps both.
+    std::function<void(const aiNode*, const aiMatrix4x4&)> traverse =
+        [&](const aiNode* node, const aiMatrix4x4& parent_xf) {
+        const aiMatrix4x4 xf = parent_xf * node->mTransformation;
+
+        // Normals transform by the inverse transpose, or a non-uniform scale
+        // shears them off the surface. A singular matrix (a part scaled flat to
+        // zero) has no inverse, so fall back to the matrix itself rather than
+        // filling the mesh with NaN.
+        aiMatrix3x3 normal_xf(xf);
+        const float det = normal_xf.Determinant();
+        if (std::fabs(det) > 1e-12f) {
+            normal_xf.Inverse();
+            normal_xf.Transpose();
+        }
+        // A mirroring transform reverses triangle winding, and the tracer takes
+        // its geometric normal from cross(e1, e2). Swapping two corners back is
+        // what keeps a mirrored part from rendering inside out.
+        const bool mirrored = det < 0.0f;
+
         for (unsigned int i = 0; i < node->mNumMeshes; i++) {
             const aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
             int mat_idx = (int)mesh->mMaterialIndex;
@@ -825,40 +1008,43 @@ MeshData LoadModel(const std::string& path, float target_size) {
 
             aiVector3D m_min(1e9f, 1e9f, 1e9f), m_max(-1e9f, -1e9f, -1e9f);
             for (unsigned int v = 0; v < mesh->mNumVertices; v++) {
-                m_min.x = std::min(m_min.x, mesh->mVertices[v].x);
-                m_min.y = std::min(m_min.y, mesh->mVertices[v].y);
-                m_min.z = std::min(m_min.z, mesh->mVertices[v].z);
-                m_max.x = std::max(m_max.x, mesh->mVertices[v].x);
-                m_max.y = std::max(m_max.y, mesh->mVertices[v].y);
-                m_max.z = std::max(m_max.z, mesh->mVertices[v].z);
+                const aiVector3D wv = xf * mesh->mVertices[v];
+                m_min.x = std::min(m_min.x, wv.x);
+                m_min.y = std::min(m_min.y, wv.y);
+                m_min.z = std::min(m_min.z, wv.z);
+                m_max.x = std::max(m_max.x, wv.x);
+                m_max.y = std::max(m_max.y, wv.y);
+                m_max.z = std::max(m_max.z, wv.z);
             }
             aiVector3D m_ext = m_max - m_min;
             aiVector3D m_cnt = (m_min + m_max) * 0.5f;
             std::string s_lower = sname;
             std::transform(s_lower.begin(), s_lower.end(), s_lower.begin(), ::tolower);
-            bool is_wheel_part = s_lower.find("tire") != std::string::npos ||
-                                 s_lower.find("wheel") != std::string::npos ||
-                                 s_lower.find("barrel") != std::string::npos ||
-                                 s_lower.find("brake") != std::string::npos;
-
             for (unsigned int f = 0; f < mesh->mNumFaces; f++) {
                 const aiFace& face = mesh->mFaces[f];
                 if (face.mNumIndices != 3) continue;
 
                 GPUTriangle tri{};
                 for (int v = 0; v < 3; v++) {
-                    unsigned int idx = face.mIndices[v];
+                    // Reading corner 1 and 2 the other way round restores the
+                    // winding a mirroring transform reversed.
+                    const int src_v = mirrored ? (v == 1 ? 2 : v == 2 ? 1 : 0) : v;
+                    unsigned int idx = face.mIndices[src_v];
                     float* dst_v = (v == 0) ? tri.v0 : (v == 1) ? tri.v1 : tri.v2;
                     float* dst_n = (v == 0) ? tri.n0 : (v == 1) ? tri.n1 : tri.n2;
 
-                    dst_v[0] = mesh->mVertices[idx].x;
-                    dst_v[1] = mesh->mVertices[idx].y;
-                    dst_v[2] = mesh->mVertices[idx].z;
+                    const aiVector3D pos = xf * mesh->mVertices[idx];
+                    dst_v[0] = pos.x;
+                    dst_v[1] = pos.y;
+                    dst_v[2] = pos.z;
 
                     if (mesh->HasNormals()) {
-                        dst_n[0] = mesh->mNormals[idx].x;
-                        dst_n[1] = mesh->mNormals[idx].y;
-                        dst_n[2] = mesh->mNormals[idx].z;
+                        aiVector3D n = normal_xf * mesh->mNormals[idx];
+                        const float len = n.Length();
+                        if (len > 1e-8f) n /= len; else n = aiVector3D(0.0f, 1.0f, 0.0f);
+                        dst_n[0] = n.x;
+                        dst_n[1] = n.y;
+                        dst_n[2] = n.z;
                     } else {
                         dst_n[0] = 0; dst_n[1] = 1; dst_n[2] = 0;
                     }
@@ -868,9 +1054,9 @@ MeshData LoadModel(const std::string& path, float target_size) {
                         dst_uv[0] = mesh->mTextureCoords[0][idx].x;
                         dst_uv[1] = mesh->mTextureCoords[0][idx].y;
                     } else if (s_lower.find("lightglass") != std::string::npos || s_lower.find("light_glass") != std::string::npos) {
-                        float lx = (mesh->mVertices[idx].x - m_cnt.x) / std::max(m_ext.x, 1e-4f);
-                        float ly = (mesh->mVertices[idx].y - m_cnt.y) / std::max(m_ext.y, 1e-4f);
-                        if (mesh->mVertices[idx].z > 0.0f) {
+                        float lx = (pos.x - m_cnt.x) / std::max(m_ext.x, 1e-4f);
+                        float ly = (pos.y - m_cnt.y) / std::max(m_ext.y, 1e-4f);
+                        if (pos.z > 0.0f) {
                             // Front headlight circular Fresnel fluting lens
                             dst_uv[0] = std::clamp(0.20f + lx * 0.16f, 0.04f, 0.36f);
                             dst_uv[1] = std::clamp(0.23f + ly * 0.16f, 0.04f, 0.38f);
@@ -880,9 +1066,9 @@ MeshData LoadModel(const std::string& path, float target_size) {
                             dst_uv[1] = std::clamp(0.75f + ly * 0.18f, 0.56f, 0.94f);
                         }
                     } else if (s_lower.find("badge") != std::string::npos) {
-                        float lx = (mesh->mVertices[idx].x - m_cnt.x) / std::max(m_ext.x, 1e-4f);
-                        float ly = (mesh->mVertices[idx].y - m_cnt.y) / std::max(m_ext.y, 1e-4f);
-                        if (mesh->mVertices[idx].z > 0.0f) {
+                        float lx = (pos.x - m_cnt.x) / std::max(m_ext.x, 1e-4f);
+                        float ly = (pos.y - m_cnt.y) / std::max(m_ext.y, 1e-4f);
+                        if (pos.z > 0.0f) {
                             // Front running horse badge
                             dst_uv[0] = std::clamp(0.20f + lx * 0.15f, 0.04f, 0.35f);
                             dst_uv[1] = std::clamp(0.50f + ly * 0.35f, 0.12f, 0.88f);
@@ -903,9 +1089,9 @@ MeshData LoadModel(const std::string& path, float target_size) {
             if (submesh.tri_count > 0) result.submeshes.push_back(submesh);
         }
         for (unsigned int c = 0; c < node->mNumChildren; c++)
-            traverse(node->mChildren[c]);
+            traverse(node->mChildren[c], xf);
     };
-    traverse(scene->mRootNode);
+    traverse(scene->mRootNode, aiMatrix4x4());
 
     if (result.triangles.empty()) {
         std::cerr << "[ModelLoader] No triangles found in: " << path << std::endl;
